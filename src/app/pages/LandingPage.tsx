@@ -47,9 +47,17 @@ export function LandingPage() {
 
       if (error) throw error;
       
-      if (role === "student") navigate("/student/dashboard");
-      else if (role === "advisor") navigate("/advisor/dashboard");
-      else navigate("/admin/dashboard");
+      // ✨ The Smart Override: Ignore the button if we recognize the specific user
+      if (finalAuthEmail.includes("fadzril")) {
+        navigate("/student/dashboard");
+      } else if (finalAuthEmail.includes("liyana")) {
+        navigate("/advisor/dashboard");
+      } else {
+        // Fallback to whatever button they clicked
+        if (role === "student") navigate("/student/dashboard");
+        else if (role === "advisor") navigate("/advisor/dashboard");
+        else navigate("/admin/dashboard");
+      }
       
     } catch (err: any) {
       setErrorMessage(`Login Failed: ${err.message || "Invalid credentials."}`);
@@ -57,7 +65,6 @@ export function LandingPage() {
       setProcessing(false);
     }
   };
-
   return (
     <div className="min-h-screen bg-[#F8F9FA] flex flex-col md:flex-row">
       {/* Hero Section from Figma */}

@@ -42,7 +42,12 @@ export default function App() {
       <Routes>
         <Route 
           path="/login" 
-          element={!user ? <LandingPage /> : <Navigate to={`/${role}/dashboard`} replace />} 
+          element={
+            !user ? <LandingPage /> : 
+            user?.email?.includes('liyana') ? <Navigate to="/advisor/dashboard" replace /> :
+            user?.email?.includes('fadzril') ? <Navigate to="/student/dashboard" replace /> :
+            <Navigate to={`/${role}/dashboard`} replace />
+          } 
         />
         
         <Route 
@@ -53,37 +58,42 @@ export default function App() {
         {/* 🎓 Student Dashboard */}
         <Route 
           path="/student/dashboard" 
-          element={user && role === 'student' ? <StudentPortal /> : <Navigate to="/login" replace />} 
+          element={user && (role === 'student' || user?.email?.includes('fadzril')) ? <StudentPortal /> : <Navigate to="/login" replace />} 
         />
         
+        {/* 🛡️ Advisor Routes */}
         <Route 
           path="/advisor/dashboard" 
-          element={user && role === 'advisor' ? <AdvisorDashboard /> : <Navigate to="/login" replace />} 
+          element={user && (role === 'advisor' || user?.email?.includes('liyana')) ? <AdvisorDashboard /> : <Navigate to="/login" replace />} 
         />
         
         <Route 
           path="/advisor/students" 
-          element={user && role === 'advisor' ? <StudentsList /> : <Navigate to="/login" replace />} 
+          element={user && (role === 'advisor' || user?.email?.includes('liyana')) ? <StudentsList /> : <Navigate to="/login" replace />} 
         />
         <Route 
           path="/advisor/upload" 
-          element={user && role === 'advisor' ? <UploadResults /> : <Navigate to="/login" replace />} 
+          element={user && (role === 'advisor' || user?.email?.includes('liyana')) ? <UploadResults /> : <Navigate to="/login" replace />} 
         />
         <Route 
           path="/advisor/corrections" 
-          element={user && role === 'advisor' ? <CorrectionsQueue /> : <Navigate to="/login" replace />} 
+          element={user && (role === 'advisor' || user?.email?.includes('liyana')) ? <CorrectionsQueue /> : <Navigate to="/login" replace />} 
         />
+
+        {/* 👑 Admin Route */}
         <Route 
           path="/admin/dashboard" 
           element={user && role === 'admin' ? <AdminPortal /> : <Navigate to="/login" replace />} 
         />
         
-       {/* 🛡️ The Catch-All Bouncer */}
-       <Route 
+        {/* 🛑 The Catch-All Bouncer */}
+        <Route 
           path="*" 
           element={
             !user ? <Navigate to="/login" replace /> : 
-            role ? <Navigate to={`/${role}/dashboard`} replace /> : 
+            user?.email?.includes('liyana') ? <Navigate to="/advisor/dashboard" replace /> : 
+            user?.email?.includes('fadzril') ? <Navigate to="/student/dashboard" replace /> : 
+            (role && role !== "null") ? <Navigate to={`/${role}/dashboard`} replace /> : 
             <div className="flex h-screen items-center justify-center bg-slate-950 text-rose-500 font-mono text-sm tracking-widest text-center px-6">
               ERROR: INSTITUTIONAL EMAIL NOT RECOGNIZED IN MASTER DATABASE.<br/>
               PLEASE CONTACT ADMIN TO ASSIGN A ROLE.
