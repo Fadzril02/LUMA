@@ -65,8 +65,10 @@ export function LandingPage() {
       setProcessing(false);
     }
   };
+
   return (
     <div className="min-h-screen bg-[#F8F9FA] flex flex-col md:flex-row">
+      
       {/* Hero Section from Figma */}
       <div className="flex-1 bg-[#990033] text-white p-8 md:p-16 flex flex-col justify-center relative overflow-hidden">
         {/* Abstract shapes for design */}
@@ -94,7 +96,7 @@ export function LandingPage() {
             </p>
           </motion.div>
           
-          <div className="flex items-center space-x-4 text-sm font-medium text-white/90">
+          <div className="flex items-center space-x-4 text-sm font-medium text-white/90 flex-wrap gap-y-2">
             <span className="flex items-center"><GraduationCap className="w-4 h-4 mr-2 text-[#FFCC00]" /> Students</span>
             <span className="flex items-center"><Users className="w-4 h-4 mr-2 text-[#FFCC00]" /> Academic Advisors</span>
             <span className="flex items-center"><Settings className="w-4 h-4 mr-2 text-[#FFCC00]" /> Administrators</span>
@@ -102,97 +104,101 @@ export function LandingPage() {
         </div>
       </div>
 
-      {/* Login Section */}
-      <div className="w-full md:w-[450px] lg:w-[500px] p-8 md:p-12 flex items-center justify-center">
-        <Card className="w-full border-[#990033]/20 shadow-xl">
-          <CardHeader className="text-center pb-4">
-            <CardTitle className="text-2xl text-gray-900">Sign In</CardTitle>
-            <p className="text-sm text-gray-500 mt-2">Access your SE Smart AA Dashboard</p>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleLogin} className="space-y-6">
-              
-              {errorMessage && (
-                <div className="rounded-lg bg-red-50 border border-red-200 p-3.5 text-xs font-mono text-red-600">
-                  {errorMessage}
-                </div>
-              )}
-
-              <div className="space-y-4">
-                <div className="grid grid-cols-3 gap-2 p-1 bg-gray-100 rounded-lg">
-                  {(["student", "advisor", "admin"] as const).map((r) => (
-                    <button
-                      key={r}
-                      type="button"
-                      onClick={() => setRole(r)}
-                      className={`py-2 px-1 text-xs sm:text-sm rounded-md font-medium transition-all capitalize ${
-                        role === r
-                          ? "bg-white text-[#990033] shadow-sm ring-1 ring-gray-200"
-                          : "text-gray-500 hover:text-gray-900"
-                      }`}
-                    >
-                      {r}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="utmId">UTMID / Email</Label>
-                  <Input 
-                    id="utmId" 
-                    value={utmId}
-                    onChange={(e) => setUtmId(e.target.value)}
-                    placeholder="e.g., A20EC0001" 
-                    required 
-                  />
-                </div>
+      {/* Login Section - WIDENED WHITE BACKGROUND */}
+      <div className="w-full lg:w-[500px] xl:w-[800px] bg-white flex items-center justify-center p-8 md:p-12 shadow-2xl z-10 relative">
+        
+        {/* Inner container to keep the card perfectly sized inside the wider white panel */}
+        <div className="w-full max-w-[420px]">
+          <Card className="w-full border-[#990033]/10 shadow-xl bg-white">
+            <CardHeader className="text-center pb-4">
+              <CardTitle className="text-2xl text-gray-900">Sign In</CardTitle>
+              <p className="text-sm text-gray-500 mt-2">Access your SE Smart AA Dashboard</p>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleLogin} className="space-y-6">
                 
-                <div className="space-y-2">
-                  <Label htmlFor="password">Password</Label>
-                  <div className="relative flex items-center">
-                    <Input 
-                      id="password" 
-                      type={showPassword ? "text" : "password"} 
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="••••••••" 
-                      className="pr-10 w-full"
-                      required 
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 text-gray-400 hover:text-gray-600 focus:outline-none cursor-pointer"
-                    >
-                      {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                    </button>
+                {errorMessage && (
+                  <div className="rounded-lg bg-red-50 border border-red-200 p-3.5 text-xs font-mono text-red-600">
+                    {errorMessage}
+                  </div>
+                )}
+
+                <div className="space-y-4">
+                  <div className="grid grid-cols-3 gap-2 p-1 bg-gray-100 rounded-lg">
+                    {(["student", "advisor", "admin"] as const).map((r) => (
+                      <button
+                        key={r}
+                        type="button"
+                        onClick={() => setRole(r)}
+                        className={`py-2 px-1 text-xs sm:text-sm rounded-md font-medium transition-all capitalize ${
+                          role === r
+                            ? "bg-white text-[#990033] shadow-sm ring-1 ring-gray-200"
+                            : "text-gray-500 hover:text-gray-900"
+                        }`}
+                      >
+                        {r}
+                      </button>
+                    ))}
                   </div>
                 </div>
+
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="utmId">UTMID / Email</Label>
+                    <Input 
+                      id="utmId" 
+                      value={utmId}
+                      onChange={(e) => setUtmId(e.target.value)}
+                      placeholder="e.g., A20EC0001" 
+                      required 
+                      className="border-gray-300 focus:border-[#990033] focus:ring-[#990033]"
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="password">Password</Label>
+                    <div className="relative flex items-center">
+                      <Input 
+                        id="password" 
+                        type={showPassword ? "text" : "password"} 
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="••••••••" 
+                        className="pr-10 w-full border-gray-300 focus:border-[#990033] focus:ring-[#990033]"
+                        required 
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 text-gray-400 hover:text-gray-600 focus:outline-none cursor-pointer"
+                      >
+                        {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <Button 
+                  type="submit" 
+                  disabled={processing || loading}
+                  className="w-full text-base h-11 bg-[#990033] hover:bg-[#80002A] text-white transition-all shadow-md cursor-pointer font-medium"
+                >
+                  {processing ? "AUTHENTICATING..." : `Sign In to ${role.charAt(0).toUpperCase() + role.slice(1)} Portal`}
+                </Button>
+              </form>
+
+              <div className="mt-6 text-center border-t border-gray-100 pt-5">
+                <Link
+                  to="/showcase"
+                  className="text-sm font-medium text-gray-500 hover:text-[#990033] underline transition-colors cursor-pointer"
+                >
+                  View Feature Showcase
+                </Link>
               </div>
 
-              <Button 
-                type="submit" 
-                disabled={processing || loading}
-                className="w-full text-base h-11 bg-[#990033] hover:bg-[#80002A] text-white transition-all shadow-md cursor-pointer font-medium"
-              >
-                {processing ? "AUTHENTICATING..." : `Sign In to ${role.charAt(0).toUpperCase() + role.slice(1)} Portal`}
-              </Button>
-            </form> {/* 👈 THE FORM CLOSES HERE */}
-
-            {/* ✨ MOVE THE SHOWCASE LINK DOWN HERE, OUTSIDE THE FORM! */}
-            <div className="mt-6 text-center border-t border-gray-100 pt-4">
-              <Link
-                to="/showcase"
-                className="text-sm font-medium text-gray-500 hover:text-[#990033] underline transition-colors cursor-pointer"
-              >
-                View Feature Showcase
-              </Link>
-            </div>
-
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   );

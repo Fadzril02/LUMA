@@ -2,33 +2,17 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
-// ✨ Real Components
+// ✨ Real Components (Ensure these paths match your actual folder structure)
 import { LandingPage } from './pages/LandingPage'; 
 import { StudentPortal } from './pages/student/StudentPortal';
 import { Showcase } from './pages/Showcase';
-import AdvisorDashboard from './pages/advisor/AdvisorDashboard';
+import { AdvisorPortal } from './pages/advisor/AdvisorPortal'; 
 import { AdminPortal } from './pages/admin/AdminPortal';
-import { StudentsList } from './pages/advisor/StudentsList';
-import { UploadResults } from './pages/advisor/UploadResults';
-import { CorrectionsQueue } from './pages/advisor/CorrectionsQueue';
-
-// 🚧 Admin Placeholder (Keep this until we build the real Admin portal)
-const AdminDashboard = () => {
-  const { profile, logout } = useAuth();
-  return (
-    <div className="p-8 text-white bg-slate-950 min-h-screen font-sans">
-      <div className="max-w-4xl mx-auto border border-slate-800 bg-slate-900/40 p-6 rounded-2xl">
-        <h1 className="text-xl font-bold text-amber-400 mb-2">System Administration Control Desk</h1>
-        <p className="text-sm text-slate-400 mb-6">Security Context Profile: {profile?.name || 'System Operator'}</p>
-        <button onClick={logout} className="rounded-xl bg-slate-800 px-4 py-2 text-xs font-semibold hover:bg-rose-500/20 hover:text-rose-400 transition-all cursor-pointer">Terminate Session (Logout)</button>
-      </div>
-    </div>
-  );
-};
 
 export default function App() {
   const { user, role, loading } = useAuth();
 
+  // 1. Loading State (Fires while Supabase verifies the session)
   if (loading) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-slate-950 text-emerald-400 font-mono text-xs tracking-widest">
@@ -40,63 +24,51 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
+        {/* 🚪 Login / Landing Page */}
         <Route 
           path="/login" 
           element={
             !user ? <LandingPage /> : 
-            user?.email?.includes('liyana') ? <Navigate to="/advisor/dashboard" replace /> :
-            user?.email?.includes('fadzril') ? <Navigate to="/student/dashboard" replace /> :
-            <Navigate to={`/${role}/dashboard`} replace />
+            role ? <Navigate to={`/${role}/dashboard`} replace /> :
+            <Navigate to="/unassigned" replace />
           } 
         />
         
+        {/* 🌐 Public Route (No auth required) */}
         <Route 
           path="/showcase" 
           element={<Showcase />} 
         />
         
-        {/* 🎓 Student Dashboard */}
+        {/* 🎓 SECURED: Student Portal */}
         <Route 
           path="/student/dashboard" 
-          element={user && (role === 'student' || user?.email?.includes('fadzril')) ? <StudentPortal /> : <Navigate to="/login" replace />} 
-        />
-        
-        {/* 🛡️ Advisor Routes */}
-        <Route 
-          path="/advisor/dashboard" 
-          element={user && (role === 'advisor' || user?.email?.includes('liyana')) ? <AdvisorDashboard /> : <Navigate to="/login" replace />} 
-        />
-        
-        <Route 
-          path="/advisor/students" 
-          element={user && (role === 'advisor' || user?.email?.includes('liyana')) ? <StudentsList /> : <Navigate to="/login" replace />} 
-        />
-        <Route 
-          path="/advisor/upload" 
-          element={user && (role === 'advisor' || user?.email?.includes('liyana')) ? <UploadResults /> : <Navigate to="/login" replace />} 
-        />
-        <Route 
-          path="/advisor/corrections" 
-          element={user && (role === 'advisor' || user?.email?.includes('liyana')) ? <CorrectionsQueue /> : <Navigate to="/login" replace />} 
+          element={user && role === 'student' ? <StudentPortal /> : <Navigate to="/login" replace />} 
         />
 
-        {/* 👑 Admin Route */}
+        {/* 🛡️ SECURED: Advisor Portal */}
+        <Route 
+          path="/advisor/dashboard" 
+          element={user && role === 'advisor' ? <AdvisorPortal /> : <Navigate to="/login" replace />} 
+        />
+
+        {/* 👑 SECURED: Admin Portal */}
         <Route 
           path="/admin/dashboard" 
           element={user && role === 'admin' ? <AdminPortal /> : <Navigate to="/login" replace />} 
         />
         
-        {/* 🛑 The Catch-All Bouncer */}
+        {/* 🛑 The Catch-All Bouncer (Handles missing roles or 404 URLs) */}
         <Route 
           path="*" 
           element={
             !user ? <Navigate to="/login" replace /> : 
-            user?.email?.includes('liyana') ? <Navigate to="/advisor/dashboard" replace /> : 
-            user?.email?.includes('fadzril') ? <Navigate to="/student/dashboard" replace /> : 
-            (role && role !== "null") ? <Navigate to={`/${role}/dashboard`} replace /> : 
-            <div className="flex h-screen items-center justify-center bg-slate-950 text-rose-500 font-mono text-sm tracking-widest text-center px-6">
-              ERROR: INSTITUTIONAL EMAIL NOT RECOGNIZED IN MASTER DATABASE.<br/>
-              PLEASE CONTACT ADMIN TO ASSIGN A ROLE.
+            role ? <Navigate to={`/${role}/dashboard`} replace /> : 
+            <div className="flex h-screen items-center justify-center bg-slate-950 text-rose-500 font-mono text-sm tracking-widest text-center px-6 leading-relaxed">
+              <div>
+                <p className="mb-2 font-bold text-base">ERROR: INSTITUTIONAL EMAIL NOT RECOGNIZED IN MASTER DATABASE.</p>
+                <p>PLEASE CONTACT ADMIN TO ASSIGN A ROLE.</p>
+              </div>
             </div>
           } 
         />
