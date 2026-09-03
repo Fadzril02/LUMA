@@ -1,116 +1,184 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { User } from '@supabase/supabase-js';
-import { db } from '../lib/supabase';
+import { Session, User } from '@supabase/supabase-js';
+import { supabase } from '../lib/supabase';
 
-type UserRole = 'student' | 'advisor' | 'admin' | null;
+export interface AdvisorProfile {
+  id: string;
+  university_id: string;
+  staff_id: string;
+  full_name: string;
+  email: string;
+  department?: string;
+  tier: 'freemium' | 'pro' | 'department' | 'enterprise';
+  monthly_audit_count: number;
+}
 
 interface AuthContextType {
   user: User | null;
-  role: UserRole;
-  profile: any | null;
-  loading: boolean;
-  logout: () => Promise<void>;
+  session: Session | null;
+  advisor: AdvisorProfile | null;
+  isLoading: boolean;
+  signInWithEmail: (email: string, password: string) => Promise<{ error: Error | null }>;
+  signUpAdvisor: (data: {
+    email: string;
+    password: string;
+    fullName: string;
+    staffId: string;
+    universityId: string;
+    department?: string;
+  }) => Promise<{ error: Error | null }>;
+  signOut: () => Promise<void>;
+  refreshAdvisorProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [role, setRole] = useState<UserRole>(null);
-  const [profile, setProfile] = useState<any | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [session, setSession] = useState<Session | null>(null);
+  const [advisor, setAdvisor] = useState<AdvisorProfile | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+
+  const fetchAdvisorProfile = async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('advisors')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      if (error) {
+        console.warn('Advisor profile not found or RLS restricted:', error.message);
+        setAdvisor(null);
+      } else {
+        setAdvisor(data as AdvisorProfile);
+      }
+    } catch (err) {
+      console.error('Error fetching advisor profile:', err);
+      setAdvisor(null);
+    }
+  };
 
   useEffect(() => {
-    let mounted = true;
-
-    // 🧠 1. The Resolver: It takes whatever session it is handed and finds the role.
-    const resolveProfile = async (currentSession: any) => {
-      if (!currentSession) {
-        if (mounted) {
-          setUser(null);
-          setRole(null);
-          setProfile(null);
-          setLoading(false);
-        }
-        return;
-      }
-
-      try {
-        if (mounted) setUser(currentSession.user);
-        const email = currentSession.user.email;
-
-        // ✨ Check Students
-        const { data: student } = await db.from('students').select('*').eq('institutional_email', email).maybeSingle();
-        if (student) {
-          if (mounted) { setRole('student'); setProfile(student); }
-          return;
-        }
-
-        // ✨ Check Advisors
-        const { data: advisor } = await db.from('advisors').select('*').eq('institutional_email', email).maybeSingle();
-        if (advisor) {
-          if (mounted) { setRole('advisor'); setProfile(advisor); }
-          return;
-        }
-
-        // ✨ Check Admins
-        const { data: admin } = await db.from('admins').select('*').eq('institutional_email', email).maybeSingle();
-        if (admin) {
-          if (mounted) { setRole('admin'); setProfile(admin); }
-          return;
-        }
-
-        // 🚫 Not found in any table
-        if (mounted) { setRole(null); setProfile(null); }
-
-      } catch (err) {
-        console.error("Auth Context Resolution Error:", err);
-      } finally {
-        // 🛡️ Always unlock the loading screen no matter what happens
-        if (mounted) setLoading(false);
-      }
-    };
-
-    // 🚀 2. Initial Mount Fetch
-    db.auth.getSession().then(({ data: { session } }) => {
-      resolveProfile(session);
-    });
-
-    // 📡 3. Cross-Tab & Event Listener (Never calls getSession manually!)
-    const { data: { subscription } } = db.auth.onAuthStateChange((event, session) => {
-      if (mounted) {
-        if (event === 'SIGNED_OUT') {
-          setLoading(true);
-          resolveProfile(null);
-        } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-          setLoading(true);
-          resolveProfile(session); // Pass the session directly, no manual fetching!
-        }
+    // Initial session load
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      if (session?.user) {
+        fetchAdvisorProfile(session.user.id).finally(() => setIsLoading(false));
+      } else {
+        setIsLoading(false);
       }
     });
+
+    // Listen for auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (_event, session) => {
+        setSession(session);
+        setUser(session?.user ?? null);
+        if (session?.user) {
+          await fetchAdvisorProfile(session.user.id);
+        } else {
+          setAdvisor(null);
+        }
+        setIsLoading(false);
+      }
+    );
 
     return () => {
-      mounted = false;
       subscription.unsubscribe();
     };
   }, []);
 
-  const logout = async () => {
-    setLoading(true);
-    await db.auth.signOut();
+  const signInWithEmail = async (email: string, password: string) => {
+    setIsLoading(true);
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    setIsLoading(false);
+    return { error };
+  };
+
+  const signUpAdvisor = async (data: {
+    email: string;
+    password: string;
+    fullName: string;
+    staffId: string;
+    universityId: string;
+    department?: string;
+  }) => {
+    setIsLoading(true);
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email: data.email,
+      password: data.password,
+    });
+
+    if (authError || !authData.user) {
+      setIsLoading(false);
+      return { error: authError };
+    }
+
+    // Insert Advisor Profile
+    const { error: profileError } = await supabase.from('advisors').insert({
+      id: authData.user.id,
+      university_id: data.universityId,
+      staff_id: data.staffId,
+      full_name: data.fullName,
+      email: data.email,
+      department: data.department || 'Computer Science',
+      tier: 'freemium',
+      monthly_audit_count: 0,
+    });
+
+    if (profileError) {
+      console.error('Failed to create advisor profile:', profileError);
+      setIsLoading(false);
+      return { error: profileError };
+    }
+
+    await fetchAdvisorProfile(authData.user.id);
+    setIsLoading(false);
+    return { error: null };
+  };
+
+  const signOut = async () => {
+    setIsLoading(true);
+    await supabase.auth.signOut();
+    setUser(null);
+    setSession(null);
+    setAdvisor(null);
+    setIsLoading(false);
+  };
+
+  const refreshAdvisorProfile = async () => {
+    if (user) {
+      await fetchAdvisorProfile(user.id);
+    }
   };
 
   return (
-    <AuthContext.Provider value={{ user, role, profile, loading, logout }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        session,
+        advisor,
+        isLoading,
+        signInWithEmail,
+        signUpAdvisor,
+        signOut,
+        refreshAdvisorProfile,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
-};
+}
 
-export const useAuth = () => {
+export function useAuth() {
   const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be nested cleanly within an operational <AuthProvider /> wrapper stack.');
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
-};
+}

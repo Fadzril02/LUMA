@@ -89,7 +89,7 @@ export function LandingPage() {
             transition={{ duration: 0.5 }}
           >
             <h2 className="text-4xl md:text-5xl font-bold mb-6 leading-tight">
-              SE Smart Academic Assessment (AA) System
+              SE Smart Academic Advisor (AA) System
             </h2>
             <p className="text-lg text-white/80 mb-8">
               A comprehensive platform streamlining academic tracking, pre-requisite validation, and result management for the Software Engineering program.

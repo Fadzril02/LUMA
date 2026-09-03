@@ -1,22 +1,42 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { AdvisorLogin } from '../pages/auth/AdvisorLogin';
+import { AdvisorDashboard } from '../pages/advisor/AdvisorDashboard';
+import { CohortSetup } from '../pages/advisor/CohortSetup';
+import { Loader2 } from 'lucide-react';
 
-// ✨ Real Components (Ensure these paths match your actual folder structure)
-import { LandingPage } from './pages/LandingPage'; 
-import { StudentPortal } from './pages/student/StudentPortal';
-import { Showcase } from './pages/Showcase';
-import { AdvisorPortal } from './pages/advisor/AdvisorPortal'; 
-import { AdminPortal } from './pages/admin/AdminPortal';
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { user, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-slate-300">
+        <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mb-3" />
+        <span className="text-xs font-mono tracking-widest text-slate-400">
+          INITIALIZING L.U.M.A. SECURE CONTEXT...
+        </span>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return <>{children}</>;
+}
 
 export default function App() {
-  const { user, role, loading } = useAuth();
+  const { user, isLoading } = useAuth();
 
-  // 1. Loading State (Fires while Supabase verifies the session)
-  if (loading) {
+  if (isLoading) {
     return (
-      <div className="flex h-screen w-screen items-center justify-center bg-slate-950 text-emerald-400 font-mono text-xs tracking-widest">
-        SYNCHRONIZING ENTERPRISE SECURITY CONTEXT...
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-slate-300">
+        <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mb-3" />
+        <span className="text-xs font-mono tracking-widest text-slate-400">
+          INITIALIZING L.U.M.A. SECURE CONTEXT...
+        </span>
       </div>
     );
   }
@@ -24,53 +44,50 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* 🚪 Login / Landing Page */}
-        <Route 
-          path="/login" 
-          element={
-            !user ? <LandingPage /> : 
-            role ? <Navigate to={`/${role}/dashboard`} replace /> :
-            <Navigate to="/unassigned" replace />
-          } 
-        />
-        
-        {/* 🌐 Public Route (No auth required) */}
-        <Route 
-          path="/showcase" 
-          element={<Showcase />} 
-        />
-        
-        {/* 🎓 SECURED: Student Portal */}
-        <Route 
-          path="/student/dashboard" 
-          element={user && role === 'student' ? <StudentPortal /> : <Navigate to="/login" replace />} 
+        {/* Public Login Route */}
+        <Route
+          path="/login"
+          element={!user ? <AdvisorLogin /> : <Navigate to="/advisor" replace />}
         />
 
-        {/* 🛡️ SECURED: Advisor Portal */}
-        <Route 
-          path="/advisor/dashboard" 
-          element={user && role === 'advisor' ? <AdvisorPortal /> : <Navigate to="/login" replace />} 
+        {/* Protected Advisor Triage Dashboard */}
+        <Route
+          path="/advisor"
+          element={
+            <ProtectedRoute>
+              <AdvisorDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/advisor/dashboard"
+          element={
+            <ProtectedRoute>
+              <AdvisorDashboard />
+            </ProtectedRoute>
+          }
         />
 
-        {/* 👑 SECURED: Admin Portal */}
-        <Route 
-          path="/admin/dashboard" 
-          element={user && role === 'admin' ? <AdminPortal /> : <Navigate to="/login" replace />} 
-        />
-        
-        {/* 🛑 The Catch-All Bouncer (Handles missing roles or 404 URLs) */}
-        <Route 
-          path="*" 
+        {/* Protected Cohort & Syllabus Setup */}
+        <Route
+          path="/advisor/setup"
           element={
-            !user ? <Navigate to="/login" replace /> : 
-            role ? <Navigate to={`/${role}/dashboard`} replace /> : 
-            <div className="flex h-screen items-center justify-center bg-slate-950 text-rose-500 font-mono text-sm tracking-widest text-center px-6 leading-relaxed">
-              <div>
-                <p className="mb-2 font-bold text-base">ERROR: INSTITUTIONAL EMAIL NOT RECOGNIZED IN MASTER DATABASE.</p>
-                <p>PLEASE CONTACT ADMIN TO ASSIGN A ROLE.</p>
-              </div>
-            </div>
-          } 
+            <ProtectedRoute>
+              <CohortSetup />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Root Redirect */}
+        <Route
+          path="/"
+          element={user ? <Navigate to="/advisor" replace /> : <Navigate to="/login" replace />}
+        />
+
+        {/* Catch-All */}
+        <Route
+          path="*"
+          element={<Navigate to="/" replace />}
         />
       </Routes>
     </BrowserRouter>

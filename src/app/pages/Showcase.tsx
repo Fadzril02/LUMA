@@ -67,46 +67,45 @@ export function Showcase() {
 
   const features = [
     {
-      title: "Academic Advisor CRM",
-      description: "High-fidelity dashboard with real-time cohort calculations and dynamic status badges.",
+      title: "Advisor Command Center",
+      description: "A centralized CRM providing 360-degree visibility into cohort performance with predictive analytics.",
       route: "/advisor/dashboard",
       icon: LayoutDashboard,
       color: "#990033",
       highlights: [
-        liveMetrics.isLoading ? "Loading..." : `${liveMetrics.totalStudents} Active Profiles`, 
-        liveMetrics.isLoading ? "Loading..." : `${liveMetrics.atRiskAlerts} Intervention Alerts`
+        liveMetrics.isLoading ? "Loading..." : `${liveMetrics.totalStudents} Active User Base`, 
+        liveMetrics.isLoading ? "Loading..." : `Real-time At-Risk Detection`
       ],
     },
     {
-      title: "AI Pipeline & Forgery Engine",
-      description: "Zero-trust architecture analyzing structural PDF metadata to detect design software tampering.",
+      title: "AI Compliance Engine",
+      description: "Automated document verification workflow that mitigates fraud risk through structural metadata validation.",
       route: "/advisor/upload",
       icon: Cpu,
-      color: "#4F46E5", // Indigo for AI
-      highlights: ["Gemini 2.5 Flash", "Metadata Analysis", "Canva/Illustrator Blocking"],
+      color: "#4F46E5",
+      highlights: ["Zero-Trust Security", "Automated Compliance", "Audit Trail Readiness"],
     },
     {
-      title: "Self-Cleaning Data Loop",
-      description: "Maker-checker workflow shifting data entry to students, leaving advisors with read-only audits.",
+      title: "Student Self-Service Portal",
+      description: "Empowering end-users to manage data intake while minimizing administrative overhead for staff.",
       route: "/student/dashboard",
       icon: Users,
       color: "#030213",
-      highlights: ["Automated Formatting", "Split-Screen Audit", "Instant CGPA Updates"],
+      highlights: ["User-Centric UI", "Data Integrity Loop", "Frictionless Workflow"],
     },
     {
-      title: "Master Curriculum Admin",
-      description: "Dynamic module for building prerequisite dependency trees and elective grouping tracks.",
+      title: "Operational Admin Core",
+      description: "Enterprise-grade curriculum management system designed for rapid deployment and batch synchronization.",
       route: "/admin/dashboard",
       icon: Server,
       color: "#d4183d",
       highlights: [
-        "Drag & Drop Syllabus", 
-        "Live Dependency Mapping",
-        "Cohort Rulesets"
+        "Scalable Architecture", 
+        "Dynamic Rule Engine",
+        "Multi-Cohort Synchronization"
       ],
     },
   ];
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#990033] via-[#7a0026] to-[#990033] font-sans selection:bg-[#FFCC00] selection:text-black">
       
@@ -215,8 +214,7 @@ export function Showcase() {
                     <p className="text-gray-600 mb-6 leading-relaxed">{feature.description}</p>
                     <div className="flex flex-wrap gap-2 mb-6">
                       {feature.highlights.map((highlight, hIdx) => (
-                        <Badge key={hIdx} variant="secondary" className="bg-gray-100 text-gray-700 hover:bg-gray-200 border-none px-3 py-1 text-xs">
-                          {highlight}
+                        <Badge key={hIdx} variant="outline" className="bg-gray-100 text-gray-700 hover:bg-gray-200 border-none px-3 py-1 text-xs">                          {highlight}
                         </Badge>
                       ))}
                     </div>
