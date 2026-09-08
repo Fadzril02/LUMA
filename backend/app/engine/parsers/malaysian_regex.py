@@ -1,11 +1,13 @@
 """
-[PROJECT_NAME] Malaysian University Regex Parser
-Company: [COMPANY_NAME]
+Smart Academic Assessment System - Malaysian University Regex Parser
 """
 
 import re
 from typing import List, Dict, Any, Tuple, Optional
-from backend.app.schemas.audit import ParsedLineItem
+try:
+    from app.schemas.audit import ParsedLineItem
+except ImportError:
+    from backend.app.schemas.audit import ParsedLineItem
 
 
 # Grade Regex Pattern: A+, A, A-, B+, B, B-, C+, C, C-, D+, D, E, HL, PC, EX, TD, TS, TL

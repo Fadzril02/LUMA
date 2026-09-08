@@ -1,20 +1,32 @@
 """
-[PROJECT_NAME] Audit Processing Endpoints
-Company: [COMPANY_NAME]
+Smart Academic Assessment System - Degree Audit Processing Endpoints
 """
 
-from fastapi import APIRouter, HTTPException, Depends, status
-from backend.app.schemas.audit import (
-    StorageAuditRequest,
-    DegreeAuditResponse,
-    AuditSummary,
-    CourseAuditResult
-)
-from backend.app.engine.extractor import PDFExtractor
-from backend.app.engine.parsers.malaysian_regex import MalaysianTranscriptParser
-from backend.app.engine.graph_resolver import PrerequisiteGraphResolver
-from backend.app.engine.llm_fallback import MicroLLMFallback
-from backend.app.services.supabase_service import SupabaseService
+from fastapi import APIRouter, HTTPException, status
+try:
+    from app.schemas.audit import (
+        StorageAuditRequest,
+        DegreeAuditResponse,
+        AuditSummary,
+        CourseAuditResult
+    )
+    from app.engine.extractor import PDFExtractor
+    from app.engine.parsers.malaysian_regex import MalaysianTranscriptParser
+    from app.engine.graph_resolver import PrerequisiteGraphResolver
+    from app.engine.llm_fallback import MicroLLMFallback
+    from app.core.supabase_client import SupabaseService
+except ImportError:
+    from backend.app.schemas.audit import (
+        StorageAuditRequest,
+        DegreeAuditResponse,
+        AuditSummary,
+        CourseAuditResult
+    )
+    from backend.app.engine.extractor import PDFExtractor
+    from backend.app.engine.parsers.malaysian_regex import MalaysianTranscriptParser
+    from backend.app.engine.graph_resolver import PrerequisiteGraphResolver
+    from backend.app.engine.llm_fallback import MicroLLMFallback
+    from backend.app.core.supabase_client import SupabaseService
 
 router = APIRouter(prefix="/audit", tags=["Degree Audit"])
 supabase_svc = SupabaseService()
@@ -30,7 +42,7 @@ llm_fallback = MicroLLMFallback()
 async def process_storage_transcript(request: StorageAuditRequest):
     """
     Zero-Waste Direct Storage Processing:
-    1. Downloads PDF bytes securely from Supabase Storage bucket ('transcripts') using Service Role Key.
+    1. Downloads PDF bytes securely from Supabase Storage bucket ('transcripts' or 'academic-slips').
     2. Runs PyMuPDF in-memory text extraction (<50ms).
     3. Executes Malaysian university regex parser (extracts course codes & grades).
     4. Triggers micro-LLM fallback strictly for unmatched/ambiguous lines if needed.

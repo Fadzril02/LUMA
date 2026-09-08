@@ -1,12 +1,16 @@
 """
-Unit Tests for [PROJECT_NAME] Zero-Waste Engine
-Company: [COMPANY_NAME]
+Unit Tests for Smart Academic Assessment System Zero-Waste Engine
 """
 
 import unittest
-from backend.app.engine.parsers.malaysian_regex import MalaysianTranscriptParser
-from backend.app.engine.graph_resolver import PrerequisiteGraphResolver
-from backend.app.schemas.audit import ParsedLineItem
+try:
+    from app.engine.parsers.malaysian_regex import MalaysianTranscriptParser
+    from app.engine.graph_resolver import PrerequisiteGraphResolver
+    from app.schemas.audit import ParsedLineItem
+except ImportError:
+    from backend.app.engine.parsers.malaysian_regex import MalaysianTranscriptParser
+    from backend.app.engine.graph_resolver import PrerequisiteGraphResolver
+    from backend.app.schemas.audit import ParsedLineItem
 
 
 def test_malaysian_regex_parser():
@@ -98,7 +102,10 @@ def test_or_prerequisite_and_exemption():
 
 
 def test_csv_course_parser():
-    from backend.app.engine.parsers.csv_course_parser import CSVCourseParser
+    try:
+        from app.engine.parsers.csv_course_parser import CSVCourseParser
+    except ImportError:
+        from backend.app.engine.parsers.csv_course_parser import CSVCourseParser
     
     sample_csv = """course_code,course_name,credits,category,prerequisites
 SECJ1013,Programming Technique I,3,Core,None
@@ -125,4 +132,3 @@ SECJ3032,Final Year Project 1,2,Core,SECJ2203 AND SECJ2013 min_credits: 80
     c4 = [c for c in courses if c["code"] == "SECJ3032"][0]
     assert c4["prerequisites"]["min_credits"] == 80
     assert "SECJ2203" in c4["prerequisites"]["courses"]
-

@@ -1,14 +1,20 @@
 """
-[PROJECT_NAME] Prerequisite Graph & Traffic Light Audit Resolver
-Company: [COMPANY_NAME]
+Smart Academic Assessment System - Prerequisite Graph & Traffic Light Audit Resolver
 """
 
 from typing import List, Dict, Any, Set
-from backend.app.schemas.audit import (
-    ParsedLineItem,
-    CourseAuditResult,
-    AuditSummary
-)
+try:
+    from app.schemas.audit import (
+        ParsedLineItem,
+        CourseAuditResult,
+        AuditSummary
+    )
+except ImportError:
+    from backend.app.schemas.audit import (
+        ParsedLineItem,
+        CourseAuditResult,
+        AuditSummary
+    )
 
 
 DEFAULT_DOMAINS = [

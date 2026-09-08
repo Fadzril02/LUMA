@@ -1,14 +1,18 @@
 """
-[PROJECT_NAME] Course Catalog & CSV Ingestion Endpoints
-Company: [COMPANY_NAME]
+Smart Academic Assessment System - Course Catalog & Ingestion Endpoints
 """
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, status
 from fastapi.responses import PlainTextResponse
 from typing import Optional
-from backend.app.schemas.course import CourseCSVUploadResponse
-from backend.app.engine.parsers.csv_course_parser import CSVCourseParser
-from backend.app.services.supabase_service import SupabaseService
+try:
+    from app.schemas.course import CourseCSVUploadResponse
+    from app.engine.parsers.csv_course_parser import CSVCourseParser
+    from app.core.supabase_client import SupabaseService
+except ImportError:
+    from backend.app.schemas.course import CourseCSVUploadResponse
+    from backend.app.engine.parsers.csv_course_parser import CSVCourseParser
+    from backend.app.core.supabase_client import SupabaseService
 
 router = APIRouter(prefix="/courses", tags=["Course Catalog"])
 supabase_svc = SupabaseService()
@@ -40,7 +44,7 @@ async def upload_courses_csv(
     Parses curriculum CSV and inserts prerequisite rules directly into the university catalog.
     Supports complex prerequisites like 'SECJ1013 AND SECJ1023', 'SECJ1013 OR SECD2523', and credit gates.
     """
-    if not file.filename.endswith(('.csv', '.txt')):
+    if not file.filename or not file.filename.endswith(('.csv', '.txt')):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid file format. Please upload a standard CSV file."
@@ -82,7 +86,7 @@ async def upload_courses_csv(
 )
 async def get_csv_template():
     """
-    Returns a ready-to-use CSV template for lecturers to populate course codes and prerequisites.
+    Returns a ready-to-use CSV template for lecturers/admins to populate course codes and prerequisites.
     """
     return PlainTextResponse(
         content=SAMPLE_CSV_TEMPLATE,

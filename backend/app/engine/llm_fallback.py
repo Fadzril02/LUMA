@@ -1,13 +1,16 @@
 """
-[PROJECT_NAME] Micro-LLM Fallback Module (Zero-Waste)
-Company: [COMPANY_NAME]
+Smart Academic Assessment System - Micro-LLM Fallback Module (Zero-Waste)
 """
 
 import json
 from typing import List, Optional
 from openai import OpenAI
-from backend.app.core.config import settings
-from backend.app.schemas.audit import ParsedLineItem
+try:
+    from app.core.config import settings
+    from app.schemas.audit import ParsedLineItem
+except ImportError:
+    from backend.app.core.config import settings
+    from backend.app.schemas.audit import ParsedLineItem
 
 
 FALLBACK_SYSTEM_PROMPT = """You are a specialized Malaysian University Transcript line parser.

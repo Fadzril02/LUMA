@@ -1,16 +1,19 @@
 """
-[PROJECT_NAME] FastAPI Application Entrypoint
-Company: [COMPANY_NAME]
+Smart Academic Assessment System - FastAPI Application Entrypoint
 """
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from backend.app.core.config import settings
-from backend.app.api.v1.router import api_router
+try:
+    from app.core.config import settings
+    from app.v1.router import api_router
+except ImportError:
+    from backend.app.core.config import settings
+    from backend.app.v1.router import api_router
 
 app = FastAPI(
     title=f"{settings.PROJECT_NAME} API Engine",
-    description=f"Automated Degree Audit & Transcript Parser Micro-SaaS by {settings.COMPANY_NAME}",
+    description=f"Automated Degree Audit & Transcript Parser Engine by {settings.COMPANY_NAME}",
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc"
@@ -34,10 +37,11 @@ async def root():
     return {
         "message": f"Welcome to {settings.PROJECT_NAME} Engine",
         "company": settings.COMPANY_NAME,
+        "environment": settings.ENVIRONMENT,
         "docs": "/docs"
     }
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("backend.app.main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("app.main:app", host="0.0.0.0", port=settings.PORT, reload=True)

@@ -1,10 +1,12 @@
 """
-[PROJECT_NAME] Health & System Status Endpoints
-Company: [COMPANY_NAME]
+Smart Academic Assessment System - Health & Diagnostics Endpoints
 """
 
 from fastapi import APIRouter
-from backend.app.core.config import settings
+try:
+    from app.core.config import settings
+except ImportError:
+    from backend.app.core.config import settings
 
 router = APIRouter(tags=["System"])
 

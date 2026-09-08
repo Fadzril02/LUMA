@@ -39,6 +39,18 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# Python bytecode & environments
+__pycache__/
+*.py[cod]
+*.pyc
+*$py.class
+.pytest_cache/
+.venv/
+venv/
+env/
+*.pdf
+temp_*
+
 # System Files
 .DS_Store
 Thumbs.db
