@@ -93,6 +93,20 @@ pytest tests/
 
 ---
 
-## 🔒 Security Best Practices
-* **Zero Secret Leakage:** Never commit `.env` or files containing secret keys.
-* **Service Role Isolation:** The backend uses Supabase Service Role strictly server-side for authenticated storage downloads and audit persistence.
+## 🔒 Security & Data Retention Policy
+
+### Data Retention & Transcript PDF Purging
+To comply with student privacy policies and minimize sensitive data footprint during pilot/UAT testing, raw transcript PDF files are not retained permanently in storage after processing:
+
+1. **Purge Condition:** A document PDF may only be purged **after** its status has been set to `'Approved'` by an academic advisor. Documents in `'Pending_Student_Verification'`, `'Pending_Advisor_Approval'`, or `'Rejected'` cannot be purged to preserve source verification capabilities.
+2. **Preservation of Audit Trail:** Purging deletes the actual binary PDF from the Supabase Storage bucket (`academic-slips`) and sets `file_path = '[PURGED]'` in the `uploaded_documents` table. The database row, extracted course grades, and foreign keys (`results.document_id`, `correction_requests.document_id`) remain intact.
+3. **Immutable Audit Logging:** Every purge operation is automatically recorded in `system_audit_logs` with action type `'DELETE'`.
+4. **Execution Methods (Phase 1 / Pilot):**
+   * **Admin API Endpoint:** `POST /api/v1/audit/purge-document` (payload: `{"document_id": "<UUID>"}`)
+   * **Admin CLI Utility:**
+     ```bash
+     python scripts/purge_document.py --doc-id <UUID>
+     python scripts/purge_document.py --matric <MATRIC_NO>
+     ```
+5. **Phase 2 Roadmap:** Automatic purge-on-approval will be activated once UAT confidence in zero-waste extraction is fully established.
+

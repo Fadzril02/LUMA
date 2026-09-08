@@ -21,17 +21,20 @@ export function ProtectedRoute({ children, allowedRole }: ProtectedRouteProps) {
 
   // 2. If nobody is logged in, kick them back to the login screen
   if (!profile) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/" replace />;
   }
 
   // 3. If they are logged in, but are trying to access the WRONG portal, redirect them to their correct home
-  if (profile.role !== allowedRole) {
-    if (profile.role === 'Student') return <Navigate to="/student-portal" replace />;
-    if (profile.role === 'Advisor') return <Navigate to="/advisor-portal" replace />;
-    if (profile.role === 'Admin') return <Navigate to="/admin" replace />;
+  const userRole = (profile.role || '').toLowerCase();
+  const targetRole = allowedRole.toLowerCase();
+
+  if (userRole !== targetRole) {
+    if (userRole === 'student') return <Navigate to="/student" replace />;
+    if (userRole === 'advisor') return <Navigate to="/advisor" replace />;
+    if (userRole === 'admin') return <Navigate to="/admin" replace />;
     
     // Total fallback if role is unrecognized
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/" replace />;
   }
 
   // 4. If they pass all checks, open the doors!

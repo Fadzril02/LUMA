@@ -2,19 +2,21 @@
 Smart Academic Assessment System - Prerequisite Graph & Traffic Light Audit Resolver
 """
 
-from typing import List, Dict, Any, Set
+from typing import List, Dict, Any, Set, Tuple, Optional
 try:
     from app.schemas.audit import (
         ParsedLineItem,
         CourseAuditResult,
         AuditSummary
     )
+    from app.engine.parsers.malaysian_regex import GRADE_POINTS, NEUTRAL_PASSING_GRADES
 except ImportError:
     from backend.app.schemas.audit import (
         ParsedLineItem,
         CourseAuditResult,
         AuditSummary
     )
+    from backend.app.engine.parsers.malaysian_regex import GRADE_POINTS, NEUTRAL_PASSING_GRADES
 
 
 DEFAULT_DOMAINS = [
@@ -24,8 +26,6 @@ DEFAULT_DOMAINS = [
     "Soft Skills",
     "Project Management"
 ]
-
-NEUTRAL_PASSING_GRADES = {"HL", "PC", "EX"}
 
 
 def infer_course_domain(code: str, name: str, category: str = "") -> str:
@@ -43,6 +43,54 @@ def infer_course_domain(code: str, name: str, category: str = "") -> str:
         return "Soft Skills"
     else:
         return "Core Development"
+
+
+def check_course_prerequisite_satisfied(
+    prereq_code: str,
+    passed_courses: Dict[str, ParsedLineItem],
+    min_grade: Optional[str] = None
+) -> Tuple[bool, Optional[str]]:
+    """
+    Evaluates whether a student satisfies an individual prerequisite course requirement.
+    
+    Evaluation Rules:
+    1. The prerequisite course must be present in passed_courses (status in ['Passed', 'Exempted']).
+    2. Neutral passing grades ('HL', 'PC', 'EX') signify credit transfer / exemptions and always
+       satisfy the prerequisite regardless of min_grade.
+    3. If min_grade is specified (e.g., 'C', 'B'), the student's earned letter grade is checked
+       against the required threshold using GRADE_POINTS. A pass below the required grade
+       (e.g., earned 'D' with GP 1.00 when 'C' with GP 2.00 is required) does NOT satisfy the rule.
+    4. If min_grade is None, empty, or 'ANY', any passing grade satisfies the requirement.
+    
+    Returns:
+        (is_satisfied: bool, failure_reason: Optional[str])
+    """
+    clean_code = prereq_code.replace(" ", "").upper()
+    
+    # 1. Course must be completed / passed
+    if clean_code not in passed_courses:
+        return False, clean_code
+
+    student_record = passed_courses[clean_code]
+    student_grade = student_record.grade.upper()
+
+    # 2. Neutral passing grades (HL, PC, EX) always satisfy prerequisites
+    if student_grade in NEUTRAL_PASSING_GRADES:
+        return True, None
+
+    # 3. If min_grade is specified, evaluate grade point threshold
+    if min_grade and min_grade.strip().upper() not in {"", "NONE", "ANY"}:
+        required_min_grade = min_grade.strip().upper()
+        min_required_gp = GRADE_POINTS.get(required_min_grade, 2.00)  # Default to 'C' (2.00) if unmapped
+        
+        # Student earned grade point
+        student_gp = student_record.grade_point if student_record.grade_point > 0.0 else GRADE_POINTS.get(student_grade, 0.00)
+        
+        if student_gp < min_required_gp:
+            return False, f"{clean_code} (Earned grade {student_grade} < Required min grade {required_min_grade})"
+
+    # 4. Default: Any passing grade satisfies prerequisite
+    return True, None
 
 
 class PrerequisiteGraphResolver:
@@ -89,22 +137,54 @@ class PrerequisiteGraphResolver:
 
             # Prerequisite Evaluation
             prereq_type = prereq_config.get("type", "AND").upper()
-            prereq_courses: List[str] = prereq_config.get("courses", [])
+            prereq_courses: List[Any] = prereq_config.get("courses", [])
+            global_min_grade: Optional[str] = prereq_config.get("min_grade")
             min_credits_required: int = prereq_config.get("min_credits", 0)
             
             missing: List[str] = []
-            
-            if prereq_type == "AND":
-                for prereq in prereq_courses:
-                    clean_prereq = prereq.replace(" ", "").upper()
-                    if clean_prereq not in passed_courses:
-                        missing.append(clean_prereq)
-            elif prereq_type == "OR" and prereq_courses:
-                has_any = any(p.replace(" ", "").upper() in passed_courses for p in prereq_courses)
-                if not has_any:
-                    missing.extend([p.replace(" ", "").upper() for p in prereq_courses])
 
-            # Check minimum credit hours threshold if specified
+            def _parse_prereq_item(item: Any) -> tuple[str, Optional[str]]:
+                if isinstance(item, dict):
+                    c_code = (item.get("course_code") or item.get("code") or "").replace(" ", "").upper()
+                    m_grade = item.get("min_grade") or global_min_grade
+                    return c_code, m_grade
+                elif isinstance(item, str):
+                    return item.replace(" ", "").upper(), global_min_grade
+                return str(item).replace(" ", "").upper(), global_min_grade
+
+            # 1. AND Logic: ALL prerequisite courses must meet minimum grade requirement
+            if prereq_type == "AND":
+                for prereq_item in prereq_courses:
+                    clean_prereq, effective_min_grade = _parse_prereq_item(prereq_item)
+                    satisfied, failure_reason = check_course_prerequisite_satisfied(
+                        prereq_code=clean_prereq,
+                        passed_courses=passed_courses,
+                        min_grade=effective_min_grade
+                    )
+                    if not satisfied and failure_reason:
+                        missing.append(failure_reason)
+
+            # 2. OR Logic: AT LEAST ONE prerequisite course must meet minimum grade requirement
+            elif prereq_type == "OR" and prereq_courses:
+                or_satisfied = False
+                or_reasons = []
+                for prereq_item in prereq_courses:
+                    clean_prereq, effective_min_grade = _parse_prereq_item(prereq_item)
+                    satisfied, failure_reason = check_course_prerequisite_satisfied(
+                        prereq_code=clean_prereq,
+                        passed_courses=passed_courses,
+                        min_grade=effective_min_grade
+                    )
+                    if satisfied:
+                        or_satisfied = True
+                        break
+                    elif failure_reason:
+                        or_reasons.append(failure_reason)
+                
+                if not or_satisfied:
+                    missing.extend(or_reasons)
+
+            # 3. Minimum credit hours threshold gate
             if min_credits_required > 0 and total_credits_earned < min_credits_required:
                 missing.append(f"Requires {min_credits_required} Credits Earned")
 

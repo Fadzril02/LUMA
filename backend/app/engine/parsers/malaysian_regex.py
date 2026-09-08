@@ -61,7 +61,7 @@ GRADE_POINTS = {
     "TL": 0.00,  # Tidak Lulus (Fail)
 }
 
-PASSING_GRADES = {"A+", "A", "A-", "B+", "B", "B-", "C+", "C", "HL", "PC", "EX"}
+PASSING_GRADES = {"A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D+", "D", "HL", "PC", "EX"}
 NEUTRAL_PASSING_GRADES = {"HL", "PC", "EX"}
 
 

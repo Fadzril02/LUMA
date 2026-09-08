@@ -1,6 +1,5 @@
 """
-[PROJECT_NAME] Audit Schemas
-Company: [COMPANY_NAME]
+Smart Academic Assessment System - Audit & Ingestion Schemas
 """
 
 from typing import List, Optional, Dict, Any
@@ -19,6 +18,15 @@ class StorageAuditRequest(BaseModel):
     matric_number: Optional[str] = Field(None, description="Student matric number if known upfront")
     curriculum_year: Optional[str] = Field("2023/2024", description="Curriculum intake year")
     program_code: Optional[str] = Field("SECJ", description="Program code, e.g. SECJ")
+
+
+class ExtractPDFRequest(BaseModel):
+    file_path: str = Field(..., description="Path in Supabase storage bucket, e.g. 'slips/matric_timestamp.pdf'")
+
+
+class ExtractPDFResponse(BaseModel):
+    success: bool
+    data: Dict[str, Any]
 
 
 class ParsedLineItem(BaseModel):
@@ -81,3 +89,53 @@ class DegreeAuditResponse(BaseModel):
     summary: AuditSummary
     records: List[CourseAuditResult]
     unparsed_lines: List[str] = []
+
+
+class ExtractedCourseItem(BaseModel):
+    course_code: str
+    course_name: Optional[str] = "Course"
+    grade: str
+    credit_hour: Optional[int] = 3
+    credits: Optional[int] = None
+    status: Optional[str] = "Pass"
+    session_semester: Optional[str] = None
+
+
+class FinalizeApprovalRequest(BaseModel):
+    document_id: str = Field(..., description="UUID of document in uploaded_documents table")
+    matric_number: str = Field(..., description="Student matric number")
+    student_name: Optional[str] = None
+    advisor_id: Optional[str] = "STAFF-LIYANA"
+    university_id: Optional[str] = ""
+    curriculum_year: Optional[str] = "2023/2024"
+    program_code: Optional[str] = "SECJ"
+    academic_session: Optional[str] = "2024/2025"
+    semester: Optional[Any] = 1
+    courses: List[ExtractedCourseItem] = []
+
+
+class FinalizeApprovalResponse(BaseModel):
+    success: bool
+    audit_id: str
+    document_id: str
+    matric_number: str
+    student_name: str
+    summary: AuditSummary
+    records_saved_count: int
+    processing_status: str = "Approved"
+    records: List[CourseAuditResult]
+
+
+class PurgeDocumentRequest(BaseModel):
+    document_id: Optional[str] = Field(None, description="UUID of target uploaded document")
+    matric_no: Optional[str] = Field(None, description="Student matric number")
+    admin_staff_id: Optional[str] = Field("ADMIN", description="Staff ID of administrator triggering the purge")
+
+
+class PurgeDocumentResponse(BaseModel):
+    success: bool
+    message: str
+    document_id: str
+    purged_file_path: Optional[str] = None
+    storage_deleted: bool = False
+    processing_status: str

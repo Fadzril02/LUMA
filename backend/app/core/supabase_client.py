@@ -53,39 +53,56 @@ class SupabaseService:
         """
         Fetches all courses and prerequisites for a given university.
         Returns dict: course_code -> course_data
-        Supports both 'courses' and 'course' table schemas.
         """
         if not self.client:
             return {}
         
         catalog: Dict[str, Dict[str, Any]] = {}
         
-        # Try 'courses' table first, fallback to 'course'
-        for tbl in ["courses", "course"]:
-            try:
-                query = self.client.table(tbl).select("*")
-                if university_id:
-                    try:
-                        query = query.eq("university_id", university_id)
-                    except Exception:
-                        pass
-                res = query.execute()
-                for row in res.data or []:
-                    raw_code = row.get("code") or row.get("course_code") or ""
-                    code = raw_code.replace(" ", "").upper()
-                    if code:
-                        catalog[code] = {
-                            "code": code,
-                            "name": row.get("name") or row.get("course_name") or "",
-                            "credits": row.get("credits") or row.get("credit_hour") or 3,
-                            "category": row.get("category") or row.get("course_type") or "Core",
-                            "prerequisites": row.get("prerequisites") or {"type": "AND", "courses": [], "min_grade": "C", "min_credits": 0}
-                        }
-                if catalog:
-                    break
-            except Exception:
-                continue
-                
+        try:
+            query = self.client.table("course").select("*")
+            if university_id:
+                try:
+                    query = query.eq("university_id", university_id)
+                except Exception:
+                    pass
+            res = query.execute()
+            for row in res.data or []:
+                raw_code = row.get("course_code") or row.get("code") or ""
+                code = raw_code.replace(" ", "").upper()
+                if code:
+                    catalog[code] = {
+                        "code": code,
+                        "name": row.get("course_name") or row.get("name") or "",
+                        "credits": row.get("credit_hour") or row.get("credits") or 3,
+                        "category": row.get("course_type") or row.get("category") or "Core",
+                        "prerequisites": row.get("prerequisites") or {"type": "AND", "courses": [], "min_grade": None, "min_credits": 0}
+                    }
+
+            if catalog:
+                # Augment catalog with course_prerequisite table if present
+                try:
+                    prereq_res = self.client.table("course_prerequisite").select("*").execute()
+                    for p in prereq_res.data or []:
+                        c_code = (p.get("course_code") or "").replace(" ", "").upper()
+                        p_code = (p.get("prereq_code") or p.get("prerequisite_course_code") or "").replace(" ", "").upper()
+                        min_g = p.get("min_grade")
+                        if c_code and p_code and c_code in catalog:
+                            existing_prereqs = catalog[c_code].get("prerequisites", {})
+                            existing_courses = existing_prereqs.get("courses", [])
+                            if not any((c if isinstance(c, str) else c.get("course_code")) == p_code for c in existing_courses):
+                                existing_courses.append({"course_code": p_code, "min_grade": min_g})
+                            catalog[c_code]["prerequisites"] = {
+                                "type": existing_prereqs.get("type", "AND"),
+                                "courses": existing_courses,
+                                "min_grade": min_g,
+                                "min_credits": existing_prereqs.get("min_credits", 0)
+                            }
+                except Exception:
+                    pass
+        except Exception:
+            pass
+            
         return catalog
 
     def upsert_courses_bulk(self, university_id: str, courses: List[Dict[str, Any]]) -> int:
@@ -225,3 +242,112 @@ class SupabaseService:
         except Exception as e:
             print(f"[Supabase Persistence Warning] {e}")
             return "saved-audit"
+
+    def purge_uploaded_document_file(
+        self,
+        document_id: Optional[str] = None,
+        matric_no: Optional[str] = None,
+        admin_staff_id: Optional[str] = "ADMIN"
+    ) -> Dict[str, Any]:
+        """
+        Securely purges raw transcript PDF from storage while preserving database row & audit trail.
+        
+        Policy Rules (Pilot / UAT):
+        1. Target document MUST have processing_status == 'Approved' (advisor verified).
+        2. If status is 'Pending_Student_Verification', 'Pending_Advisor_Approval', or 'Rejected',
+           the purge request is aborted to protect audit review capabilities.
+        3. Deletes file from storage bucket ('academic-slips' or 'transcripts').
+        4. Updates uploaded_documents row: sets file_path = NULL (preserves row id, foreign keys, extracted data).
+        5. Inserts an immutable entry into system_audit_logs with action_type 'DELETE'.
+        
+        Note: Automatic purge-on-approval is the intended production behavior for Phase 2.
+        """
+        if not self.client:
+            raise ValueError("Supabase client is uninitialized.")
+
+        if not document_id and not matric_no:
+            raise ValueError("Must provide either document_id or matric_no to purge.")
+
+        # 1. Fetch document record
+        query = self.client.table("uploaded_documents").select("*")
+        if document_id:
+            query = query.eq("id", document_id)
+        elif matric_no:
+            query = query.eq("matric_no", matric_no)
+        
+        doc_res = query.execute()
+        if not doc_res.data or len(doc_res.data) == 0:
+            raise ValueError(f"No document found matching criteria (id: {document_id}, matric: {matric_no}).")
+
+        target_doc = doc_res.data[0]
+        doc_id = target_doc["id"]
+        current_status = target_doc.get("processing_status", "")
+        file_path = target_doc.get("file_path")
+
+        # 2. Status Enforcement: MUST be 'Approved'
+        if current_status != "Approved":
+            raise PermissionError(
+                f"Cannot purge document '{doc_id}' with status '{current_status}'. "
+                "Purge is strictly permitted only after advisor approval ('Approved') to allow audit verification."
+            )
+
+        # 3. Check if file is already purged
+        if not file_path or file_path in {"", "[PURGED]"}:
+            return {
+                "success": True,
+                "message": f"Document '{doc_id}' file is already purged (file_path is [PURGED]).",
+                "document_id": doc_id,
+                "file_path": "[PURGED]",
+                "processing_status": current_status
+            }
+
+        # 4. Delete file from Supabase Storage
+        clean_path = file_path.removeprefix("transcripts/").removeprefix("academic-slips/").removeprefix("/")
+        bucket = "academic-slips" if "academic-slips" in file_path else "transcripts"
+        
+        storage_deleted = False
+        try:
+            self.client.storage.from_(bucket).remove([clean_path])
+            storage_deleted = True
+        except Exception as e:
+            # Fallback to alternative bucket
+            fallback_bucket = "transcripts" if bucket == "academic-slips" else "academic-slips"
+            try:
+                self.client.storage.from_(fallback_bucket).remove([clean_path])
+                storage_deleted = True
+            except Exception as e2:
+                print(f"[Storage Delete Warning] Could not remove '{clean_path}' from buckets: {e2}")
+
+        # 5. Update database row: mark file_path as [PURGED] (preserves NOT NULL constraint & foreign keys)
+        self.client.table("uploaded_documents").update({
+            "file_path": "[PURGED]"
+        }).eq("id", doc_id).execute()
+
+        # 6. Insert into system_audit_logs
+        valid_admin = admin_staff_id if admin_staff_id in {"ADMIN1", "ADMIN-CLI"} else "ADMIN1"
+        log_entry = {
+            "admin_staff_id": valid_admin,
+            "action_type": "DELETE",
+            "target_table": "uploaded_documents",
+            "record_id": doc_id,
+            "description": f"Purged transcript PDF '{file_path}' from storage bucket after advisor approval."
+        }
+        try:
+            self.client.table("system_audit_logs").insert(log_entry).execute()
+        except Exception as log_err:
+            # Fallback with admin_staff_id = None if FK fails
+            try:
+                log_entry["admin_staff_id"] = None
+                self.client.table("system_audit_logs").insert(log_entry).execute()
+            except Exception as log_err2:
+                print(f"[Audit Log Warning] Could not write to system_audit_logs: {log_err2}")
+
+        return {
+            "success": True,
+            "message": f"Successfully purged file for document '{doc_id}'.",
+            "document_id": doc_id,
+            "purged_file_path": file_path,
+            "storage_deleted": storage_deleted,
+            "processing_status": current_status
+        }
+

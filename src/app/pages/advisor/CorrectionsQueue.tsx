@@ -2,19 +2,12 @@ import React, { useState, useEffect } from "react";
 import { Check, XCircle, Clock, CheckCircle2, FileText, Calendar, Eye, X } from "lucide-react";
 import { Card, CardContent, Button, Badge } from "../../components/ui";
 import { db } from "../../../lib/supabase";
+import { api } from "../../../lib/api";
 
 interface CorrectionsQueueProps {
   queue: any[];
   roster: any[];
 }
-
-const gradePoints: Record<string, number> = {
-  'A+': 4.00, 'A': 4.00, 'A-': 3.67,
-  'B+': 3.33, 'B': 3.00, 'B-': 2.67,
-  'C+': 2.33, 'C': 2.00, 'C-': 1.67,
-  'D+': 1.33, 'D': 1.00, 'D-': 0.67,
-  'E': 0.00, 'F': 0.00
-};
 
 export function CorrectionsQueue({ queue, roster }: CorrectionsQueueProps) {
   const [liveQueue, setLiveQueue] = useState<any[]>(queue);
@@ -48,37 +41,25 @@ export function CorrectionsQueue({ queue, roster }: CorrectionsQueueProps) {
     
     try {
       const studentData = activeAuditDoc.extracted_data;
+      const matchingStudent = roster.find((s) => s.id === activeAuditDoc.matric_no);
       
-      const dbRows = studentData.courses.map((course: any) => {
-        let pValue: number | null = null;
-        if (gradePoints[course.grade] !== undefined) {
-          pValue = gradePoints[course.grade];
-        }
-        
-        // Correct session-semester formatting
-        const sessionSem = `${studentData.academic_session || "2024/2025"}-${studentData.semester || 1}`;
-
-        return {
-          matric_no: activeAuditDoc.matric_no,
-          course_code: course.course_code,
-          status: course.status || "Pass",
-          grade: course.grade,
-          point_value: pValue,
-          session_semester: sessionSem 
-        };
+      // Route through FastAPI Zero-Waste engine for DAG verification & persistence into academic_records
+      await api.finalizeApproval({
+        document_id: activeAuditDoc.id,
+        matric_number: activeAuditDoc.matric_no,
+        student_name: matchingStudent ? matchingStudent.name : studentData.student_name,
+        academic_session: studentData.academic_session || "2024/2025",
+        semester: studentData.semester || 1,
+        courses: studentData.courses || []
       });
 
-      const { error: insErr } = await db.from("results").insert(dbRows);
-      if (insErr) throw insErr;
-
-      await db.from("uploaded_documents").update({ processing_status: "Approved" }).eq("id", activeAuditDoc.id);
-      
       setLiveQueue(prev => prev.map(item => item.id === activeAuditDoc.id ? { ...item, processing_status: "Approved" } : item));
       setActiveAuditDoc(null);
 
-    } catch (err) {
+    } catch (err: any) {
       console.error("Save failed:", err);
-      alert("Failed to commit verified records.");
+      const errMsg = err?.response?.data?.detail || err?.message || "Failed to commit verified records.";
+      alert(`Approval Failed: ${errMsg}`);
     } finally {
       setIsSaving(false);
     }

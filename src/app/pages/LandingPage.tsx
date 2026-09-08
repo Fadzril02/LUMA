@@ -8,7 +8,7 @@ import { useAuth } from "../../context/AuthContext";
 
 export function LandingPage() {
   const navigate = useNavigate();
-  const { loading } = useAuth();
+  const { signInWithEmail } = useAuth();
   
   const [role, setRole] = useState<"student" | "advisor" | "admin">("student");
   const [utmId, setUtmId] = useState("");
@@ -26,37 +26,28 @@ export function LandingPage() {
     setProcessing(true);
 
     const inputCredentials = utmId.trim().toLowerCase();
-    const isValidEmailFormat = inputCredentials.includes("@") && inputCredentials.endsWith(".my");
+    const isValidEmailFormat = inputCredentials.includes("@");
 
-    // 🎓 Apply your custom institutional domain formatting rules dynamically
+    // Apply institutional domain formatting rules
     let finalAuthEmail = "";
-    
     if (role === "student") {
-      finalAuthEmail = isValidEmailFormat ? inputCredentials : `${inputCredentials}@graduate.utm.my`;
-    } else if (role === "advisor") {
-      finalAuthEmail = isValidEmailFormat ? inputCredentials : `${inputCredentials}@utm.my`;
+      finalAuthEmail = isValidEmailFormat ? inputCredentials : `${inputCredentials}@student.utm.my`;
     } else {
       finalAuthEmail = isValidEmailFormat ? inputCredentials : `${inputCredentials}@utm.my`;
     }
 
     try {
-      const { data, error } = await db.auth.signInWithPassword({
-        email: finalAuthEmail, 
-        password: password,
-      });
+      const { error, role: loggedInRole } = await signInWithEmail(finalAuthEmail, password);
 
       if (error) throw error;
       
-      // ✨ The Smart Override: Ignore the button if we recognize the specific user
-      if (finalAuthEmail.includes("fadzril")) {
-        navigate("/student/dashboard");
-      } else if (finalAuthEmail.includes("liyana")) {
-        navigate("/advisor/dashboard");
+      const effectiveRole = loggedInRole || role;
+      if (effectiveRole === "student") {
+        navigate("/student");
+      } else if (effectiveRole === "advisor") {
+        navigate("/advisor");
       } else {
-        // Fallback to whatever button they clicked
-        if (role === "student") navigate("/student/dashboard");
-        else if (role === "advisor") navigate("/advisor/dashboard");
-        else navigate("/admin/dashboard");
+        navigate("/admin");
       }
       
     } catch (err: any) {

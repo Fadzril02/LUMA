@@ -8,6 +8,7 @@ import {
 import { Button, Input } from "../../components/ui";
 import { useAuth } from "../../../context/AuthContext";
 import { db } from "../../../lib/supabase";
+import { api } from "../../../lib/api";
 
 import { StudentDashboardView } from "./StudentDashboardView";
 import { AcademicHistoryView } from "./AcademicHistoryView";
@@ -36,7 +37,10 @@ export function StudentPortal() {
   const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!profile?.matric_no) return;
+    if (!profile?.matric_no) {
+      setLoadingData(false);
+      return;
+    }
 
     const fetchDashboardData = async () => {
       setLoadingData(true);
@@ -126,14 +130,7 @@ export function StudentPortal() {
       setUploadProgress(60);
       setUploadStatusMsg("Analyzing Academic Data via AI...");
 
-      const response = await fetch("http://localhost:8000/api/extract", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ file_path: filePath }),
-      });
-
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.detail || "Extraction failed.");
+      const result = await api.extractTranscript(filePath);
 
       setUploadProgress(100);
       setUploadStatusMsg("Extraction Complete! Review required.");

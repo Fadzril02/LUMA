@@ -28,6 +28,27 @@ export interface StorageAuditPayload {
   program_code?: string;
 }
 
+export interface FinalizeApprovalPayload {
+  document_id: string;
+  matric_number: string;
+  student_name?: string;
+  advisor_id?: string;
+  university_id?: string;
+  curriculum_year?: string;
+  program_code?: string;
+  academic_session?: string;
+  semester?: string | number;
+  courses: Array<{
+    course_code: string;
+    course_name?: string;
+    grade: string;
+    credit_hour?: number;
+    credits?: number;
+    status?: string;
+    session_semester?: string;
+  }>;
+}
+
 export const api = {
   // Health check
   getHealth: async () => {
@@ -63,9 +84,22 @@ export const api = {
     return res.data;
   },
 
+  // Extract PDF from storage path
+  extractTranscript: async (filePath: string) => {
+    const res = await apiClient.post('/api/v1/audit/extract', { file_path: filePath });
+    return res.data;
+  },
+
+  // Finalize approval through Zero-Waste FastAPI engine
+  finalizeApproval: async (payload: FinalizeApprovalPayload) => {
+    const res = await apiClient.post('/api/v1/audit/finalize-approval', payload);
+    return res.data;
+  },
+
   // Process PDF directly from Supabase Storage path
   processStorageAudit: async (payload: StorageAuditPayload) => {
     const res = await apiClient.post('/api/v1/audit/process-storage', payload);
     return res.data;
   },
 };
+

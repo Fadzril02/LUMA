@@ -86,6 +86,49 @@ def test_prerequisite_graph_resolver():
     assert summary.cgpa > 3.0
 
 
+def test_min_grade_prerequisite_enforcement():
+    """
+    Verifies that a student passing a prerequisite with a grade below min_grade
+    (e.g., 'D' when 'C' is required) fails the prerequisite check.
+    """
+    catalog = {
+        "SECJ1013": {"prerequisites": {"type": "AND", "courses": []}},
+        "SECJ1023": {"prerequisites": {"type": "AND", "courses": ["SECJ1013"], "min_grade": "C"}},
+        "SECJ2013": {"prerequisites": {"type": "AND", "courses": ["SECJ1023"], "min_grade": "B"}}
+    }
+
+    # Case 1: Student passed SECJ1013 with 'D' (GP: 1.00) -> Below required 'C' (GP: 2.00)
+    records_sub_grade = [
+        ParsedLineItem(course_code="SECJ1013", course_name="Prog I", credits=3, grade="D", grade_point=1.00, semester="Sem 1", status="Passed"),
+        ParsedLineItem(course_code="SECJ1023", course_name="Prog II", credits=3, grade="B", grade_point=3.00, semester="Sem 2", status="Passed"),
+    ]
+    results1, summary1 = PrerequisiteGraphResolver.audit_student_records(records_sub_grade, catalog)
+    secj1023_fail = [r for r in results1 if r.course_code == "SECJ1023"][0]
+    assert secj1023_fail.prerequisite_met is False
+    assert secj1023_fail.traffic_light == "RED"
+    assert any("Required min grade C" in m for m in secj1023_fail.missing_prerequisites)
+
+    # Case 2: Student passed SECJ1013 with 'C' (GP: 2.00) -> Meets min_grade 'C'
+    records_met_grade = [
+        ParsedLineItem(course_code="SECJ1013", course_name="Prog I", credits=3, grade="C", grade_point=2.00, semester="Sem 1", status="Passed"),
+        ParsedLineItem(course_code="SECJ1023", course_name="Prog II", credits=3, grade="B", grade_point=3.00, semester="Sem 2", status="Passed"),
+    ]
+    results2, summary2 = PrerequisiteGraphResolver.audit_student_records(records_met_grade, catalog)
+    secj1023_ok = [r for r in results2 if r.course_code == "SECJ1023"][0]
+    assert secj1023_ok.prerequisite_met is True
+    assert secj1023_ok.traffic_light == "GREEN"
+
+    # Case 3: Credit Exemption 'HL' (Neutral grade) always satisfies prerequisite regardless of min_grade
+    records_exemption = [
+        ParsedLineItem(course_code="SECJ1013", course_name="Prog I", credits=3, grade="HL", grade_point=0.00, semester="Sem 1", status="Exempted"),
+        ParsedLineItem(course_code="SECJ1023", course_name="Prog II", credits=3, grade="B", grade_point=3.00, semester="Sem 2", status="Passed"),
+    ]
+    results3, summary3 = PrerequisiteGraphResolver.audit_student_records(records_exemption, catalog)
+    secj1023_ex = [r for r in results3 if r.course_code == "SECJ1023"][0]
+    assert secj1023_ex.prerequisite_met is True
+    assert secj1023_ex.traffic_light == "GREEN"
+
+
 def test_or_prerequisite_and_exemption():
     catalog = {
         "SECV2223": {"prerequisites": {"type": "OR", "courses": ["SECJ1013", "SECD2523"]}}
