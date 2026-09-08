@@ -2,6 +2,7 @@ import { createBrowserRouter } from "react-router";
 import { LandingPage } from "./pages/LandingPage";
 import { Showcase } from "./pages/Showcase";
 import { StudentPortal } from "./pages/student/StudentPortal";
+import { StudentAuth } from "../pages/auth/StudentAuth";
 import { AdvisorPortal } from "./pages/advisor/AdvisorPortal";
 import { AdvisorDashboard } from "./pages/advisor/AdvisorDashboard";
 import { StudentsList } from "./pages/advisor/StudentsList";
@@ -21,6 +22,14 @@ export const router = createBrowserRouter([
   {
     path: "/student",
     Component: StudentPortal,
+  },
+  {
+    path: "/student/auth",
+    Component: StudentAuth,
+  },
+  {
+    path: "/student/register",
+    Component: StudentAuth,
   },
   {
     path: "/advisor",

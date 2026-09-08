@@ -40,6 +40,16 @@ export interface AdvisorProfile extends BaseProfile {
 
 export type Profile = StudentProfile | AdvisorProfile | null;
 
+export interface StudentRegistrationData {
+  matricNo: string;
+  fullName: string;
+  password: string;
+  advisorId: string;
+  program?: string;
+  syllabusType?: string;
+  email?: string;
+}
+
 export interface AuthContextType {
   user: User | null;
   session: Session | null;
@@ -51,14 +61,7 @@ export interface AuthContextType {
   loading: boolean; // Backwards-compatible alias for isLoading
   signInWithEmail: (emailOrMatric: string, passwordOrSessionCode: string) => Promise<{ error: Error | null; role?: UserRole }>;
   signInStudent: (matricNo: string, sessionCode: string) => Promise<{ error: Error | null }>;
-  signUpStudent: (data: {
-    matricNo: string;
-    sessionCode: string;
-    fullName: string;
-    advisorStaffId?: string;
-    curriculumYear?: string;
-    programCode?: string;
-  }) => Promise<{ error: Error | null }>;
+  signUpStudent: (data: StudentRegistrationData) => Promise<{ error: Error | null }>;
   signUpAdvisor: (data: {
     email: string;
     password: string;
@@ -229,24 +232,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { error: result.error };
   };
 
-  const signUpStudent = async (data: {
-    matricNo: string;
-    sessionCode: string;
-    fullName: string;
-    advisorStaffId?: string;
-    curriculumYear?: string;
-    programCode?: string;
-  }) => {
+  const signUpStudent = async (data: StudentRegistrationData) => {
     setIsLoading(true);
     const matricNo = data.matricNo.trim().toUpperCase();
-    const studentEmail = toStudentEmail(matricNo);
-    const advisorStaffId = data.advisorStaffId || 'STAFF-LIYANA';
-    const curriculumYear = data.curriculumYear || '2023/2024';
-    const programCode = data.programCode || 'SECJ';
+    const finalEmail = data.email?.trim() ? data.email.trim().toLowerCase() : toStudentEmail(matricNo);
+    const advisorStaffId = (data.advisorId || '').trim().toUpperCase() || 'STAFF-LIYANA';
+    const curriculumYear = (data.syllabusType || '2023/2024').trim();
+    const programCode = (data.program || 'SECJ').trim().toUpperCase();
 
     const { data: authData, error: authError } = await supabase.auth.signUp({
-      email: studentEmail,
-      password: data.sessionCode,
+      email: finalEmail,
+      password: data.password,
       options: {
         data: {
           role: 'student',
@@ -262,7 +258,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { error: authError };
     }
 
-    // Upsert student record in database table
+    // Upsert student record in database table using exact schema column names
     try {
       await supabase.from('students').upsert({
         matric_no: matricNo,
@@ -270,6 +266,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         program: programCode,
         syllabus_type: curriculumYear,
         advisor_staff_id: advisorStaffId,
+        institutional_email: finalEmail,
       }, { onConflict: 'matric_no' });
     } catch (dbErr) {
       console.warn('Student DB upsert note:', dbErr);

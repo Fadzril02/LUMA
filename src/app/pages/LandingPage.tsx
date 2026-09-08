@@ -178,10 +178,20 @@ export function LandingPage() {
                 </Button>
               </form>
 
-              <div className="mt-6 text-center border-t border-gray-100 pt-5">
+              <div className="mt-6 text-center border-t border-gray-100 pt-5 space-y-2">
+                {role === "student" && (
+                  <div>
+                    <Link
+                      to="/student/register"
+                      className="text-xs font-semibold text-[#990033] hover:underline"
+                    >
+                      New Student? Create an Account & Link Advisor →
+                    </Link>
+                  </div>
+                )}
                 <Link
                   to="/showcase"
-                  className="text-sm font-medium text-gray-500 hover:text-[#990033] underline transition-colors cursor-pointer"
+                  className="text-xs font-medium text-gray-500 hover:text-[#990033] transition-colors cursor-pointer block"
                 >
                   View Feature Showcase
                 </Link>
