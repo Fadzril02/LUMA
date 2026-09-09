@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { AdvisorLogin } from '../pages/auth/AdvisorLogin';
+import { LandingPage } from './pages/LandingPage';
 import { AdvisorDashboard } from '../pages/advisor/AdvisorDashboard';
 import { CohortSetup } from '../pages/advisor/CohortSetup';
 import { Loader2 } from 'lucide-react';
@@ -44,6 +45,9 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
+        {/* Landing Page */}
+        <Route path="/landing" element={<LandingPage />} />
+
         {/* Public Login Route */}
         <Route
           path="/login"
