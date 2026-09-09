@@ -5,8 +5,24 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 30000,
+  // 75 s — covers Render free-tier cold start (up to 60 s) plus actual request time
+  timeout: 75000,
 });
+
+// Surface a clear message when the backend is cold-starting or unreachable
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+      error.message =
+        'The server took too long to respond. It may be starting up — please wait 30 seconds and try again.';
+    } else if (!error.response) {
+      error.message =
+        'Cannot reach the backend server. Check your network or try again shortly.';
+    }
+    return Promise.reject(error);
+  }
+);
 
 // Automatically attach Supabase JWT token to outgoing API requests
 apiClient.interceptors.request.use(async (config) => {

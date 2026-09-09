@@ -34,9 +34,13 @@ class Settings(BaseSettings):
         "http://localhost:5173",
         "http://localhost:3000",
         "http://localhost:4173",
-        "https://*.pages.dev",
-        "https://*.netlify.app",
+        # Production deployments
+        "https://luma-two-theta.vercel.app",
+        "https://luma-xswf.onrender.com",
+        # Preview/branch deployments
         "https://*.vercel.app",
+        "https://*.netlify.app",
+        "https://*.pages.dev",
     ]
 
     @model_validator(mode="after")
