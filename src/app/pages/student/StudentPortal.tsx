@@ -54,19 +54,28 @@ export function StudentPortal() {
 
         if (pendingDoc) setIsLockedOut(true);
 
-        const { data: resultsData } = await db
-          .from("results")
-          .select("*, course(*)")
-          .eq("matric_no", profile.matric_no);
+        // Priority 2 fix: query academic_records (correct live table)
+        // RLS enforces auth.uid() ownership via students.user_id;
+        // the .eq() here is a belt-and-suspenders performance filter,
+        // NOT the security boundary — that is RLS.
+        const { data: resultsData, error: resultsError } = await db
+          .from("academic_records")
+          .select("*")
+          .eq("matric_no", profile.matric_no)
+          .order("semester", { ascending: true });
+
+        if (resultsError) {
+          console.error("academic_records fetch error:", resultsError);
+        }
 
         const historyMapped = (resultsData || []).map((row: any) => ({
           code: row.course_code,
-          name: row.course?.course_name || "Unknown Module",
-          credits: row.course?.credit_hour || 0,
+          name: row.course_name || "Unknown Module",
+          credits: row.credits || 0,
           grade: row.grade || "N/A",
           status: row.status,
-          pointValue: row.point_value || 0,
-          session_semester: row.session_semester
+          pointValue: row.grade_point || 0,
+          session_semester: row.semester
         }));
         
         setCourseHistory(historyMapped);
@@ -75,10 +84,13 @@ export function StudentPortal() {
         let gradedCredits = 0;
         let totalEarnedCredits = 0;
 
+        // academic_records uses 'Pass'/'Fail'/'Exempted'/'In-Progress'
+        // (live CHECK constraint values discovered from schema audit)
         historyMapped.forEach((item) => {
-          if (item.status === "Pass") {
+          const passed = item.status === "Pass" || item.status === "Passed";
+          if (passed) {
             totalEarnedCredits += item.credits;
-            if (item.grade !== "HL" && item.grade !== "N/A") {
+            if (item.grade !== "HL" && item.grade !== "N/A" && item.pointValue > 0) {
               totalPoints += item.pointValue * item.credits;
               gradedCredits += item.credits;
             }

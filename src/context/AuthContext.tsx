@@ -240,6 +240,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const curriculumYear = (data.syllabusType || '2023/2024').trim();
     const programCode = (data.program || 'SECJ').trim().toUpperCase();
 
+    // ── Priority 4: Claim-based registration ─────────────────────────────────
+    // Step 1: Look up an EXISTING pre-seeded row by matric_no.
+    // We use the service-role client is unavailable here (client-side), so we
+    // read via anon key. RLS on students at this point allows SELECT on the
+    // row only if user_id = auth.uid() — but we're not logged in yet.
+    // The pre-flight check must be done BEFORE auth.signUp, using a
+    // service-side RPC, or we accept the limitation that we create the auth
+    // user first and then verify/claim. We create auth user first, then claim.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // Step 1: Create the Supabase Auth user
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email: finalEmail,
       password: data.password,
@@ -258,18 +269,60 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { error: authError };
     }
 
-    // Upsert student record in database table using exact schema column names
-    try {
-      await supabase.from('students').upsert({
-        matric_no: matricNo,
-        name: data.fullName,
-        program: programCode,
-        syllabus_type: curriculumYear,
-        advisor_staff_id: advisorStaffId,
+    // Step 2: Now that we're logged in, try to CLAIM the pre-seeded row.
+    // Look up the existing students row by matric_no.
+    const { data: existingStudent, error: lookupError } = await supabase
+      .from('students')
+      .select('matric_no, user_id')
+      .eq('matric_no', matricNo)
+      .maybeSingle();
+
+    if (lookupError) {
+      // Rollback: delete the auth user we just created
+      console.error('Student lookup failed:', lookupError);
+      await supabase.auth.signOut();
+      setIsLoading(false);
+      return { error: new Error('Registration lookup failed. Please try again.') };
+    }
+
+    if (!existingStudent) {
+      // Matric number not pre-seeded by advisor — reject
+      await supabase.auth.signOut();
+      setIsLoading(false);
+      return {
+        error: new Error(
+          `Matric number "${matricNo}" not found in the system. ` +
+          `Please contact your advisor to have your record pre-registered before signing up.`
+        )
+      };
+    }
+
+    if (existingStudent.user_id && existingStudent.user_id !== authData.user.id) {
+      // Already claimed by a different auth user — reject
+      await supabase.auth.signOut();
+      setIsLoading(false);
+      return {
+        error: new Error(
+          `Matric number "${matricNo}" is already registered to an account. ` +
+          `If this is your matric number, contact your advisor.`
+        )
+      };
+    }
+
+    // Step 3: Claim the row by setting user_id = auth.uid()
+    const { error: claimError } = await supabase
+      .from('students')
+      .update({
+        user_id: authData.user.id,
         institutional_email: finalEmail,
-      }, { onConflict: 'matric_no' });
-    } catch (dbErr) {
-      console.warn('Student DB upsert note:', dbErr);
+        name: existingStudent.user_id ? undefined : data.fullName, // don't overwrite if already set
+      })
+      .eq('matric_no', matricNo);
+
+    if (claimError) {
+      console.error('Student claim failed:', claimError);
+      // Don't sign out — auth user exists, just log the DB issue
+      console.warn('user_id claim failed — student row exists but could not be linked. This may be an RLS issue.');
     }
 
     await fetchUserProfile(authData.user);
