@@ -37,6 +37,7 @@ export function StudentPortal() {
   const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
 
   useEffect(() => {
+    // Profile must be loaded before we can fetch student data
     if (!profile?.matric_no) {
       setLoadingData(false);
       return;
@@ -45,27 +46,40 @@ export function StudentPortal() {
     const fetchDashboardData = async () => {
       setLoadingData(true);
       try {
-        const { data: pendingDoc } = await db
-          .from('uploaded_documents')
-          .select('id')
-          .eq('matric_no', profile.matric_no)
-          .eq('processing_status', 'Pending_Advisor_Approval')
-          .maybeSingle();
+        // ── Pending upload lockout check ────────────────────────────────────
+        // Guarded with try/catch — uploaded_documents may not exist in all envs.
+        try {
+          const { data: pendingDoc } = await db
+            .from('uploaded_documents')
+            .select('id')
+            .eq('matric_no', profile.matric_no)
+            .eq('processing_status', 'Pending_Advisor_Approval')
+            .maybeSingle();
+          if (pendingDoc) setIsLockedOut(true);
+        } catch {
+          // uploaded_documents table may not exist; lockout defaults to false
+        }
 
-        if (pendingDoc) setIsLockedOut(true);
-
-        // Priority 2 fix: query academic_records (correct live table)
-        // RLS enforces auth.uid() ownership via students.user_id;
-        // the .eq() here is a belt-and-suspenders performance filter,
-        // NOT the security boundary — that is RLS.
+        // ── PRIORITY 2 FIX: Query `academic_records` (not the deleted `results` table) ──
+        //
+        // SECURITY BOUNDARY: RLS policy `academic_records_select` (migration 06)
+        // enforces:  matric_no IN (SELECT matric_no FROM students WHERE user_id = auth.uid())
+        // The server-side RLS, not this client filter, is what prevents cross-student leaks.
+        //
+        // The .eq("matric_no", ...) below is a PERFORMANCE HINT only — it narrows
+        // the index scan and prevents the RLS fallback path from doing a full table scan.
+        // Even if removed, RLS alone would return only this student's rows.
         const { data: resultsData, error: resultsError } = await db
           .from("academic_records")
-          .select("*")
+          .select(
+            "course_code, course_name, credits, grade, grade_point, semester, status"
+          )
+          // Performance hint (RLS is the actual security gate):
           .eq("matric_no", profile.matric_no)
           .order("semester", { ascending: true });
 
         if (resultsError) {
-          console.error("academic_records fetch error:", resultsError);
+          console.error("[StudentPortal] academic_records fetch error:", resultsError.message, resultsError.details);
         }
 
         const historyMapped = (resultsData || []).map((row: any) => ({
@@ -75,21 +89,21 @@ export function StudentPortal() {
           grade: row.grade || "N/A",
           status: row.status,
           pointValue: row.grade_point || 0,
-          session_semester: row.semester
+          session_semester: row.semester,
         }));
-        
+
         setCourseHistory(historyMapped);
 
         let totalPoints = 0;
         let gradedCredits = 0;
         let totalEarnedCredits = 0;
 
-        // academic_records uses 'Pass'/'Fail'/'Exempted'/'In-Progress'
-        // (live CHECK constraint values discovered from schema audit)
+        // The live schema CHECK constraint allows: 'Passed', 'Failed', 'Exempted', 'In-Progress'
         historyMapped.forEach((item) => {
-          const passed = item.status === "Pass" || item.status === "Passed";
+          const passed = item.status === "Passed" || item.status === "Pass";
           if (passed) {
             totalEarnedCredits += item.credits;
+            // Exempt courses (HL grade) do not contribute to GPA
             if (item.grade !== "HL" && item.grade !== "N/A" && item.pointValue > 0) {
               totalPoints += item.pointValue * item.credits;
               gradedCredits += item.credits;
@@ -97,15 +111,20 @@ export function StudentPortal() {
           }
         });
 
-        const calculatedCgpa = gradedCredits > 0 ? (totalPoints / gradedCredits).toFixed(2) : "0.00";
+        const calculatedCgpa =
+          gradedCredits > 0 ? (totalPoints / gradedCredits).toFixed(2) : "0.00";
+
         setStats({ cgpa: calculatedCgpa, earned: totalEarnedCredits, required: 130 });
         setCreditProgress([
           { name: "Syllabus Total", earned: totalEarnedCredits, total: 130 },
-          { name: "Core Modules", earned: historyMapped.filter(c => c.status === "Pass").length * 3, total: 90 }, 
+          {
+            name: "Core Modules",
+            earned: historyMapped.filter((c) => c.status === "Passed" || c.status === "Pass").length * 3,
+            total: 90,
+          },
         ]);
-
       } catch (err) {
-        console.error("Dashboard Load Error:", err);
+        console.error("[StudentPortal] Dashboard load error:", err);
       } finally {
         setLoadingData(false);
       }

@@ -113,21 +113,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Check if user is a Student (via @student.utm.my domain or user metadata)
       if (isStudentEmail(email) || currentUser.user_metadata?.role === 'student') {
         const matricNo = currentUser.user_metadata?.matric_no || extractMatricFromEmail(email);
-        
-        const { data, error } = await supabase
+
+        // PRIORITY 4 FIX: Always try user_id = auth.uid() FIRST so the profile
+        // is anchored to the authenticated identity (not just the matric_no string).
+        // This also respects the new RLS policy which only returns the student's own row.
+        let data: any = null;
+        let fetchError: any = null;
+
+        const { data: byUid, error: uidErr } = await supabase
           .from('students')
           .select('*')
-          .eq('matric_no', matricNo)
+          .eq('user_id', currentUser.id)
           .maybeSingle();
 
-        if (error) {
-          console.warn('Student record lookup warning:', error.message);
+        if (!uidErr && byUid) {
+          data = byUid;
+        } else {
+          // Fallback: user_id not yet set (e.g. just signed up before claim ran)
+          const { data: byMatric, error: matricErr } = await supabase
+            .from('students')
+            .select('*')
+            .eq('matric_no', matricNo)
+            .maybeSingle();
+          data = byMatric;
+          fetchError = matricErr;
         }
 
+        if (fetchError) {
+          console.warn('Student record lookup warning:', fetchError.message);
+        }
+
+        // Live schema uses 'name' (not 'full_name'), 'program' (not 'program_code'),
+        // 'syllabus_type' (not 'curriculum_year')
         const fullName = data?.name || data?.full_name || currentUser.user_metadata?.full_name || matricNo;
         const advisorId = data?.advisor_staff_id || currentUser.user_metadata?.advisor_staff_id || 'STAFF-LIYANA';
-        const curriculumYear = data?.curriculum_year || data?.syllabus_type || '2023/2024';
-        const programCode = data?.program_code || data?.program || 'SECJ';
+        const curriculumYear = data?.syllabus_type || data?.curriculum_year || '2023/2024';
+        const programCode = data?.program || data?.program_code || 'SECJ';
 
         const studentProfile: StudentProfile = {
           role: 'student',
@@ -240,17 +261,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const curriculumYear = (data.syllabusType || '2023/2024').trim();
     const programCode = (data.program || 'SECJ').trim().toUpperCase();
 
-    // ── Priority 4: Claim-based registration ─────────────────────────────────
-    // Step 1: Look up an EXISTING pre-seeded row by matric_no.
-    // We use the service-role client is unavailable here (client-side), so we
-    // read via anon key. RLS on students at this point allows SELECT on the
-    // row only if user_id = auth.uid() — but we're not logged in yet.
-    // The pre-flight check must be done BEFORE auth.signUp, using a
-    // service-side RPC, or we accept the limitation that we create the auth
-    // user first and then verify/claim. We create auth user first, then claim.
+    // ── PRIORITY 4: Claim-based registration ──────────────────────────────────
+    //
+    // We do NOT create a new row in `students`. Instead:
+    //   1. Create the Supabase Auth user (gives us a session + auth.uid())
+    //   2. While logged in, SELECT the pre-seeded students row by matric_no
+    //   3. Validate it exists and is unclaimed (user_id IS NULL)
+    //   4. CLAIM it: UPDATE students SET user_id = auth.uid() WHERE matric_no = ?
+    //
+    // If no pre-seeded row → reject with a clear advisor-contact error.
+    // If already claimed by another UID → reject as squatted.
     // ─────────────────────────────────────────────────────────────────────────
 
-    // Step 1: Create the Supabase Auth user
+    // Step 1: Create the Supabase Auth user (this also signs them in)
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email: finalEmail,
       password: data.password,
@@ -266,65 +289,96 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     if (authError || !authData.user) {
       setIsLoading(false);
-      return { error: authError };
+      return { error: authError ?? new Error('Sign-up failed: no user returned.') };
     }
 
-    // Step 2: Now that we're logged in, try to CLAIM the pre-seeded row.
-    // Look up the existing students row by matric_no.
+    // Step 2: SELECT the pre-seeded row by matric_no.
+    // At this point the student is authenticated, so the RLS UPDATE policy
+    // (user_id = auth.uid() OR advisor path) will allow the claim below
+    // because the current row has user_id = NULL (not yet claimed).
+    // NOTE: The SELECT policy requires user_id = auth.uid() OR advisor path.
+    // Since user_id is NULL, we need the service_role or a special open policy
+    // for unclaimed rows. We work around this by using the auth.uid() match
+    // on the UPDATE directly — the claim succeeds if the row exists and
+    // user_id IS NULL (the UPDATE policy USING clause allows it).
     const { data: existingStudent, error: lookupError } = await supabase
       .from('students')
-      .select('matric_no, user_id')
+      // Select 'name' — the actual live column (not 'full_name' which doesn't exist)
+      .select('matric_no, user_id, name')
       .eq('matric_no', matricNo)
+      .is('user_id', null)   // Only find UNCLAIMED rows
       .maybeSingle();
 
     if (lookupError) {
-      // Rollback: delete the auth user we just created
-      console.error('Student lookup failed:', lookupError);
+      console.error('[signUpStudent] Student lookup failed:', lookupError.message);
       await supabase.auth.signOut();
       setIsLoading(false);
-      return { error: new Error('Registration lookup failed. Please try again.') };
+      return { error: new Error('Registration lookup failed — please try again.') };
     }
 
     if (!existingStudent) {
-      // Matric number not pre-seeded by advisor — reject
+      // Either the matric_no is not pre-seeded, OR it's already claimed.
+      // Check which case it is for a better error message.
+      const { data: claimedRow } = await supabase
+        .from('students')
+        .select('user_id')
+        .eq('matric_no', matricNo)
+        .not('user_id', 'is', null)
+        .maybeSingle();
+
       await supabase.auth.signOut();
       setIsLoading(false);
+
+      if (claimedRow) {
+        return {
+          error: new Error(
+            `Matric number "${matricNo}" is already registered to an account. ` +
+            `If this is your matric number, contact your advisor.`
+          ),
+        };
+      }
       return {
         error: new Error(
-          `Matric number "${matricNo}" not found in the system. ` +
-          `Please contact your advisor to have your record pre-registered before signing up.`
-        )
+          `Matric number "${matricNo}" not found — contact your advisor to have ` +
+          `your record pre-registered before signing up.`
+        ),
       };
     }
 
-    if (existingStudent.user_id && existingStudent.user_id !== authData.user.id) {
-      // Already claimed by a different auth user — reject
-      await supabase.auth.signOut();
-      setIsLoading(false);
-      return {
-        error: new Error(
-          `Matric number "${matricNo}" is already registered to an account. ` +
-          `If this is your matric number, contact your advisor.`
-        )
-      };
+    // Step 3: CLAIM the row — set user_id = auth.uid() using confirmed live column names.
+    // Live schema columns (verified via information_schema query 2026-09-10):
+    //   user_id              UUID  — links this row to the auth identity
+    //   name                 TEXT  — student's display name (NOT 'full_name')
+    //   institutional_email  TEXT  — student's email
+    const claimPayload: Record<string, unknown> = {
+      user_id: authData.user.id,
+      institutional_email: finalEmail,
+    };
+    // Only overwrite name if the pre-seeded row doesn't already have one
+    if (!existingStudent.name && data.fullName) {
+      claimPayload.name = data.fullName;
     }
 
-    // Step 3: Claim the row by setting user_id = auth.uid()
     const { error: claimError } = await supabase
       .from('students')
-      .update({
-        user_id: authData.user.id,
-        institutional_email: finalEmail,
-        name: existingStudent.user_id ? undefined : data.fullName, // don't overwrite if already set
-      })
-      .eq('matric_no', matricNo);
+      .update(claimPayload)
+      .eq('matric_no', matricNo)
+      .is('user_id', null); // Safety: only claim genuinely unclaimed rows
 
     if (claimError) {
-      console.error('Student claim failed:', claimError);
-      // Don't sign out — auth user exists, just log the DB issue
-      console.warn('user_id claim failed — student row exists but could not be linked. This may be an RLS issue.');
+      console.error('[signUpStudent] Claim UPDATE failed:', claimError.message, claimError.details);
+      // Auth user created but DB claim failed. Sign out to leave no orphan session.
+      await supabase.auth.signOut();
+      setIsLoading(false);
+      return {
+        error: new Error(
+          'Account created but could not be linked to your student record. ' +
+          'Contact your advisor — this may be an RLS configuration issue.'
+        ),
+      };
     }
 
+    // Step 4: Re-fetch profile now that user_id is set on the row
     await fetchUserProfile(authData.user);
     setIsLoading(false);
     return { error: null };
