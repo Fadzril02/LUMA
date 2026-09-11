@@ -164,14 +164,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         setProfile(studentProfile);
       } else {
-        // User is an Advisor
-        const staffId = currentUser.user_metadata?.staff_id || currentUser.email?.split('@')[0].toUpperCase() || 'STAFF-LIYANA';
-        
-        const { data, error } = await supabase
-          .from('advisors')
-          .select('*')
-          .or(`id.eq.${currentUser.id},institutional_email.eq.${currentUser.email},staff_id.eq.${staffId}`)
-          .maybeSingle();
+        // User is an Advisor — query by institutional_email (primary identity link)
+        // NOTE: advisors table has NO 'id' UUID column — staff_id is the PK
+        const staffId = currentUser.user_metadata?.staff_id || '';
+        const email = currentUser.email || '';
+
+        let query = supabase.from('advisors').select('*');
+
+        if (email) {
+          query = query.eq('institutional_email', email);
+        } else if (staffId) {
+          query = query.eq('staff_id', staffId);
+        }
+
+        const { data, error } = await query.maybeSingle();
 
         if (error) {
           console.warn('Advisor record lookup warning:', error.message);
@@ -182,7 +188,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           role: 'advisor',
           staff_id: data?.staff_id || staffId,
           full_name: fullName,
-          email: data?.institutional_email || data?.email || currentUser.email || '',
+          email: data?.institutional_email || currentUser.email || '',
           department: data?.department || 'Computer Science',
           university_id: data?.university_id,
           tier: data?.tier || 'freemium',
@@ -410,16 +416,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { error: authError };
     }
 
-    // Insert/Upsert Advisor Profile in database table
-    try {
-      await supabase.from('advisors').upsert({
-        staff_id: data.staffId,
-        name: data.fullName,
-        institutional_email: data.email,
-        department: data.department || 'Computer Science',
-      }, { onConflict: 'staff_id' });
-    } catch (dbErr) {
-      console.warn('Advisor DB upsert note:', dbErr);
+    // Insert/Upsert Advisor Profile in advisors table
+    // NOTE: The advisors table RLS has no insert policy for self-registration.
+    // We use service_role bypass is not available here, so we attempt the upsert
+    // and explicitly return the error if it fails (not swallowed silently).
+    const { error: dbError } = await supabase.from('advisors').upsert({
+      staff_id: data.staffId,
+      name: data.fullName,
+      institutional_email: data.email.trim().toLowerCase(),
+      department: data.department || 'Computer Science',
+    }, { onConflict: 'staff_id' });
+
+    if (dbError) {
+      console.error('[signUpAdvisor] DB upsert failed:', dbError.message);
+      // Auth user was created but DB row failed — sign out to avoid orphan session
+      await supabase.auth.signOut();
+      setIsLoading(false);
+      return {
+        error: new Error(
+          `Account created but profile could not be saved: ${dbError.message}. ` +
+          `Please contact your administrator.`
+        ),
+      };
     }
 
     await fetchUserProfile(authData.user);
