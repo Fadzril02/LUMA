@@ -313,6 +313,7 @@ export function LandingPage() {
                   <Input
                     id="loginPassword"
                     type={showLoginPassword ? "text" : "password"}
+                    autoComplete="current-password"
                     value={loginPassword}
                     onChange={(e) => setLoginPassword(e.target.value)}
                     placeholder="••••••••"
@@ -441,6 +442,7 @@ export function LandingPage() {
                       <Input
                         id="studentPassword"
                         type={showStudentPassword ? "text" : "password"}
+                        autoComplete="new-password"
                         value={studentPassword}
                         onChange={(e) => setStudentPassword(e.target.value)}
                         placeholder="••••••••"
@@ -536,6 +538,7 @@ export function LandingPage() {
                       <Input
                         id="advisorPassword"
                         type={showAdvisorPassword ? "text" : "password"}
+                        autoComplete="new-password"
                         value={advisorPassword}
                         onChange={(e) => setAdvisorPassword(e.target.value)}
                         placeholder="••••••••"
