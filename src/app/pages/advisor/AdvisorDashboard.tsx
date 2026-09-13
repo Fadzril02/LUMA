@@ -18,7 +18,6 @@ import {
   BookOpen
 } from "lucide-react";
 import { toast } from "sonner";
-import { Card, CardContent, CardHeader, CardTitle, Badge } from "../../components/ui";
 import { db } from "../../../lib/supabase"; 
 import { useAuth } from "../../../context/AuthContext";
 
@@ -133,7 +132,7 @@ export function AdvisorDashboard() {
 
   if (isLoading) {
     return (
-      <div className="flex flex-col items-center justify-center p-24 text-slate-500">
+      <div className="flex flex-col items-center justify-center p-24 text-slate-500 bg-white rounded-xl border border-slate-200 shadow-sm">
         <Loader2 className="animate-spin text-blue-600 w-8 h-8 mb-3" />
         <span className="text-xs font-mono uppercase tracking-wider">Syncing Cohort Diagnostics...</span>
       </div>
@@ -142,45 +141,62 @@ export function AdvisorDashboard() {
 
   // Calculate Metrics
   const totalStudents = roster.length;
-  const atRiskStudents = roster.filter((s) => ["At-Risk", "Probation"].includes(s.academic_status));
+  const atRiskStudents = roster.filter((s) => ["At-Risk", "Probation"].includes(s.academic_status) || Number(s.cgpa || 0) < 2.50);
   const pendingAudits = queue.filter((q) => q.status === "Pending").length;
   const totalCgpa = roster.reduce((sum, s) => sum + (Number(s.cgpa) || 0), 0);
   const averageCgpa = totalStudents > 0 ? totalCgpa / totalStudents : 0;
 
+  // Prioritize At-Risk students at the top of the roster table
+  const sortedRoster = [...roster].sort((a, b) => {
+    const aAtRisk = ["At-Risk", "Probation"].includes(a.academic_status) || Number(a.cgpa || 0) < 2.50 ? 1 : 0;
+    const bAtRisk = ["At-Risk", "Probation"].includes(b.academic_status) || Number(b.cgpa || 0) < 2.50 ? 1 : 0;
+    return bAtRisk - aAtRisk;
+  });
+
   return (
     <div className="space-y-6">
-      {/* 1. HERO WIDGET: LECTURER SESSION CODE */}
-      <div className="bg-gradient-to-r from-slate-900 via-slate-950 to-slate-900 border border-slate-800 rounded-xl p-6 shadow-sm relative overflow-hidden text-white">
-        <div className="absolute top-0 right-0 -mt-8 -mr-8 w-48 h-48 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
+      {/* 0. DASHBOARD TITLE */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <div>
+          <h2 className="text-2xl font-semibold tracking-tight text-slate-900">
+            Cohort Diagnostics Hub
+          </h2>
+          <p className="text-sm text-slate-600 leading-relaxed">
+            Monitor advisee academic health, intervention thresholds, and syllabus curriculum mappings.
+          </p>
+        </div>
+      </div>
 
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="space-y-1.5 max-w-xl">
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 text-xs font-mono border border-blue-500/30">
+      {/* 1. HERO WIDGET: LECTURER SESSION CODE */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+          <div className="space-y-1.5 max-w-2xl">
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-blue-50 text-blue-700 text-xs font-mono border border-blue-200">
               <span>Registration Key</span>
             </div>
-            <h2 className="text-xl font-bold tracking-tight text-white">
+            <h3 className="text-xl font-semibold tracking-tight text-slate-900">
               Lecturer Session Code
-            </h2>
-            <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
+            </h3>
+            <p className="text-sm text-slate-600 leading-relaxed">
               Distribute this code to your incoming students. Advisees must provide this identifier in the{" "}
-              <span className="text-slate-200 font-mono">Lecturer Session Code</span> field during sign-up to automatically connect to your cohort roster.
+              <span className="text-slate-900 font-mono font-medium">Lecturer Session Code</span> field during sign-up to automatically connect to your cohort roster.
             </p>
           </div>
 
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
-            <div className="bg-slate-950/80 border border-slate-700/80 px-4 py-2.5 rounded-lg flex items-center justify-between sm:justify-center space-x-3 shadow-inner">
-              <span className="text-xs font-mono text-slate-400 uppercase tracking-wider">Staff ID:</span>
-              <span className="font-mono font-bold text-base text-blue-400 tracking-wider">
+            <div className="bg-slate-50 border border-slate-200 px-4 py-2.5 rounded-lg flex items-center justify-between sm:justify-center space-x-3">
+              <span className="text-xs font-mono text-slate-500 uppercase tracking-wider">Staff ID:</span>
+              <span className="font-mono font-bold text-base text-slate-900 tracking-wider">
                 {advisorStaffId}
               </span>
             </div>
 
             <button
               onClick={handleCopySessionCode}
-              className={`inline-flex items-center justify-center space-x-2 px-4 py-2.5 rounded-lg text-xs font-semibold tracking-tight transition-all cursor-pointer ${
+              className={`inline-flex items-center justify-center space-x-2 px-4 py-2.5 rounded-lg text-xs font-semibold tracking-tight transition-colors cursor-pointer shadow-xs ${
                 copied
-                  ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/20"
-                  : "bg-blue-600 hover:bg-blue-500 text-white shadow-md shadow-blue-600/20"
+                  ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                  : "bg-blue-600 hover:bg-blue-500 text-white"
               }`}
             >
               {copied ? (
@@ -200,7 +216,7 @@ export function AdvisorDashboard() {
       </div>
 
       {/* 2. POLISHED METRICS GRID */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         <MetricCard
           title="Total Advisees"
           value={totalStudents}
@@ -232,60 +248,60 @@ export function AdvisorDashboard() {
           description="CGPA below 2.50 threshold"
           indicator={
             atRiskStudents.length > 0
-              ? "bg-amber-50 text-amber-700 border-amber-200"
+              ? "bg-rose-50 text-rose-700 border-rose-200"
               : "bg-slate-50 text-slate-700 border-slate-200"
           }
-          iconColor={atRiskStudents.length > 0 ? "text-amber-600" : "text-slate-400"}
+          iconColor={atRiskStudents.length > 0 ? "text-rose-600" : "text-slate-400"}
         />
       </div>
 
       {/* 3. FUNCTIONAL ACTION PANELS: CURRICULUM MANAGEMENT */}
-      <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-4">
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 space-y-6">
         <div>
-          <h3 className="text-base font-bold text-slate-900 tracking-tight flex items-center gap-2">
-            <BookOpen className="w-4 h-4 text-blue-600" />
+          <h3 className="text-lg font-semibold text-slate-900 tracking-tight flex items-center gap-2">
+            <BookOpen className="w-5 h-5 text-blue-600" />
             <span>Curriculum Management &amp; Tools</span>
           </h3>
-          <p className="text-xs text-slate-500 mt-0.5">
+          <p className="text-sm text-slate-600 leading-relaxed mt-1">
             Operational resources for syllabus structuring, matrix uploads, and external advising petitions.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {/* Action 1: Download Template */}
-          <div className="border border-slate-200 rounded-lg p-5 flex flex-col justify-between hover:border-slate-300 transition-colors bg-slate-50/50">
+          <div className="bg-slate-50/60 border border-slate-200 rounded-xl p-6 flex flex-col justify-between hover:border-slate-300 transition-colors">
             <div className="space-y-2">
-              <div className="w-8 h-8 rounded-md bg-blue-100 text-blue-700 flex items-center justify-center">
+              <div className="w-9 h-9 rounded-lg bg-white border border-slate-200 text-blue-600 flex items-center justify-center shadow-xs">
                 <FileSpreadsheet className="w-4 h-4" />
               </div>
               <h4 className="text-sm font-semibold text-slate-900">Download Template</h4>
-              <p className="text-xs text-slate-500 leading-relaxed">
+              <p className="text-sm text-slate-600 leading-relaxed">
                 Standard CSV/Excel course structure matrix template with pre-formatted columns for credits and prerequisites.
               </p>
             </div>
             <button
               onClick={handleDownloadTemplate}
-              className="mt-4 w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-md bg-white border border-slate-300 text-xs font-semibold text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition-colors"
+              className="mt-6 w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-white border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-colors shadow-xs"
             >
-              <Download className="w-3.5 h-3.5" />
+              <Download className="w-3.5 h-3.5 text-slate-500" />
               <span>Download CSV Template</span>
             </button>
           </div>
 
           {/* Action 2: Upload Course Structure */}
-          <div className="border border-slate-200 rounded-lg p-5 flex flex-col justify-between hover:border-slate-300 transition-colors bg-slate-50/50">
+          <div className="bg-slate-50/60 border border-slate-200 rounded-xl p-6 flex flex-col justify-between hover:border-slate-300 transition-colors">
             <div className="space-y-2">
-              <div className="w-8 h-8 rounded-md bg-indigo-100 text-indigo-700 flex items-center justify-center">
+              <div className="w-9 h-9 rounded-lg bg-white border border-slate-200 text-indigo-600 flex items-center justify-center shadow-xs">
                 <Upload className="w-4 h-4" />
               </div>
               <h4 className="text-sm font-semibold text-slate-900">Upload Course Structure</h4>
-              <p className="text-xs text-slate-500 leading-relaxed">
+              <p className="text-sm text-slate-600 leading-relaxed">
                 Import and ingest an updated curriculum syllabus matrix to sync prerequisite rules with the degree audit engine.
               </p>
             </div>
             <button
               onClick={() => setIsUploadModalOpen(true)}
-              className="mt-4 w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-md bg-blue-600 text-xs font-semibold text-white hover:bg-blue-700 shadow-sm transition-colors"
+              className="mt-6 w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 text-xs font-semibold text-white hover:bg-blue-500 transition-colors shadow-xs"
             >
               <FileUp className="w-3.5 h-3.5" />
               <span>Upload Syllabus Matrix</span>
@@ -293,13 +309,13 @@ export function AdvisorDashboard() {
           </div>
 
           {/* Action 3: Google Form Integration */}
-          <div className="border border-slate-200 rounded-lg p-5 flex flex-col justify-between hover:border-slate-300 transition-colors bg-slate-50/50">
+          <div className="bg-slate-50/60 border border-slate-200 rounded-xl p-6 flex flex-col justify-between hover:border-slate-300 transition-colors">
             <div className="space-y-2">
-              <div className="w-8 h-8 rounded-md bg-emerald-100 text-emerald-700 flex items-center justify-center">
+              <div className="w-9 h-9 rounded-lg bg-white border border-slate-200 text-emerald-600 flex items-center justify-center shadow-xs">
                 <ExternalLink className="w-4 h-4" />
               </div>
               <h4 className="text-sm font-semibold text-slate-900">Google Form Integration</h4>
-              <p className="text-xs text-slate-500 leading-relaxed">
+              <p className="text-sm text-slate-600 leading-relaxed">
                 Direct students to the institutional Academic Appeal and Discrepancy Petition Google Form for supplementary data intake.
               </p>
             </div>
@@ -307,7 +323,7 @@ export function AdvisorDashboard() {
               href="https://forms.gle/utm-academic-petition"
               target="_blank"
               rel="noopener noreferrer"
-              className="mt-4 w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-md bg-white border border-slate-300 text-xs font-semibold text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition-colors"
+              className="mt-6 w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-white border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-colors shadow-xs"
             >
               <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
               <span>Open Petition Form</span>
@@ -316,87 +332,122 @@ export function AdvisorDashboard() {
         </div>
       </div>
 
-      {/* 4. URGENT ACADEMIC INTERVENTION PANEL */}
-      <Card className="border border-slate-200 shadow-sm bg-white overflow-hidden">
-        <CardHeader className="bg-slate-50/80 border-b border-slate-200 px-6 py-4">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-amber-600" />
-              <span>Urgent Academic Intervention</span>
-            </CardTitle>
-            <span
-              className={`text-xs font-mono font-semibold px-2.5 py-0.5 rounded-full border ${
-                atRiskStudents.length > 0
-                  ? "bg-amber-100 text-amber-900 border-amber-300"
-                  : "bg-emerald-100 text-emerald-800 border-emerald-300"
-              }`}
-            >
-              {atRiskStudents.length} Flagged
-            </span>
-          </div>
-        </CardHeader>
-        <CardContent className="p-0 max-h-[360px] overflow-y-auto divide-y divide-slate-100">
-          {atRiskStudents.length === 0 ? (
-            <div className="p-10 text-center space-y-2">
-              <CheckCircle2 className="w-8 h-8 text-emerald-600 mx-auto" />
-              <h4 className="text-sm font-semibold text-slate-800">All Advisees in Good Standing</h4>
-              <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                No students currently meet the at-risk criteria (CGPA &lt; 2.50). Trajectory evaluations are performing within expected limits.
-              </p>
+      {/* 4. ADVISEE ROSTER & URGENT ACADEMIC INTERVENTION TABLE */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div className="p-6 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center space-x-2">
+              <AlertTriangle className="w-5 h-5 text-amber-600" />
+              <h3 className="text-lg font-semibold tracking-tight text-slate-900">
+                Academic Intervention &amp; Advisee Roster
+              </h3>
             </div>
-          ) : (
-            atRiskStudents.map((s) => (
-              <div
-                key={s.matric_no}
-                className="p-4 sm:px-6 flex items-center justify-between hover:bg-slate-50/80 transition-colors"
-              >
-                <div className="space-y-0.5">
-                  <h4 className="text-sm font-semibold text-slate-900">{s.name}</h4>
-                  <div className="flex items-center space-x-2 text-xs text-slate-500">
-                    <span className="font-mono bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
-                      {s.matric_no}
-                    </span>
-                    <span>•</span>
-                    <span>{s.program || "SECJ"}</span>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-sm font-bold text-rose-600 font-mono">
-                    CGPA {Number(s.cgpa || 0).toFixed(2)}
-                  </div>
-                  <span className="text-[11px] font-medium text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
-                    {s.academic_status || "At-Risk"}
-                  </span>
-                </div>
-              </div>
-            ))
-          )}
-        </CardContent>
-      </Card>
+            <p className="text-sm text-slate-600 leading-relaxed">
+              Real-time monitoring of enrolled cohort students, CGPA progression, and intervention alerts.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-mono text-slate-500 bg-slate-50 px-2.5 py-1 rounded-md border border-slate-200">
+              Total Advisees: {totalStudents}
+            </span>
+            {atRiskStudents.length > 0 ? (
+              <span className="text-xs font-medium px-2.5 py-1 rounded-md bg-rose-50 text-rose-700 border border-rose-200">
+                {atRiskStudents.length} At-Risk
+              </span>
+            ) : (
+              <span className="text-xs font-medium px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">
+                All Good Standing
+              </span>
+            )}
+          </div>
+        </div>
+
+        {totalStudents === 0 ? (
+          /* 5. PREMIUM EMPTY STATE */
+          <div className="flex flex-col items-center justify-center p-12 text-center">
+            <Users className="w-12 h-12 text-slate-300 mb-3" />
+            <h4 className="text-lg font-medium text-slate-900">No advisees enrolled yet</h4>
+            <p className="text-sm text-slate-500 max-w-sm mt-1 leading-relaxed">
+              Provide your Lecturer Session Code to your cohort to begin tracking their progress.
+            </p>
+          </div>
+        ) : (
+          /* 4. THE ADVISEE TABLE (HOVER STATES & GEOMETRY) */
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="text-xs font-semibold text-slate-500 uppercase tracking-wider bg-slate-50/50 border-b border-slate-200">
+                  <th className="py-3 px-6">Student Name</th>
+                  <th className="py-3 px-6">Matric No</th>
+                  <th className="py-3 px-6">Program</th>
+                  <th className="py-3 px-6">Cumulative GPA</th>
+                  <th className="py-3 px-6">Academic Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {sortedRoster.map((student) => {
+                  const isAtRisk = ["At-Risk", "Probation"].includes(student.academic_status) || Number(student.cgpa || 0) < 2.50;
+                  return (
+                    <tr
+                      key={student.matric_no}
+                      className="hover:bg-slate-50 transition-colors duration-200 ease-in-out cursor-default"
+                    >
+                      <td className="py-4 px-6 text-sm font-semibold text-slate-900">
+                        {student.name || "Student"}
+                      </td>
+                      <td className="py-4 px-6 text-sm font-mono text-slate-600">
+                        {student.matric_no}
+                      </td>
+                      <td className="py-4 px-6 text-sm text-slate-600">
+                        {student.program || "SECJ"}
+                      </td>
+                      <td className="py-4 px-6 text-sm font-mono font-bold text-slate-900">
+                        {Number(student.cgpa || 0).toFixed(2)}
+                      </td>
+                      <td className="py-4 px-6 text-sm">
+                        {isAtRisk ? (
+                          <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-rose-50 text-rose-700 border border-rose-200">
+                            {student.academic_status || "At-Risk"}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            {student.academic_status || "Good Standing"}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
       {/* 5. UPLOAD COURSE STRUCTURE MODAL */}
       {isUploadModalOpen && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-xl shadow-xl w-full max-w-lg overflow-hidden animate-in fade-in-50 zoom-in-95 duration-150">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50">
+        <div className="fixed inset-0 bg-slate-950/50 backdrop-blur-xs z-50 flex items-center justify-center p-6">
+          <div className="bg-white border border-slate-200 rounded-xl shadow-sm w-full max-w-lg overflow-hidden animate-in fade-in-50 zoom-in-95 duration-150">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50/50">
               <div className="flex items-center space-x-2">
                 <FileUp className="w-5 h-5 text-blue-600" />
-                <h3 className="text-sm font-bold text-slate-900">Upload Course Structure Matrix</h3>
+                <h3 className="text-sm font-semibold text-slate-900">Upload Course Structure Matrix</h3>
               </div>
               <div className="flex items-center space-x-2">
-                <Badge variant="outline" className="bg-amber-50 text-amber-800 border-amber-300 text-[10px] font-mono">
+                <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-300 text-[10px] font-mono">
                   UAT Sandbox
-                </Badge>
+                </span>
                 <button
                   onClick={() => setIsUploadModalOpen(false)}
-                  className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition-colors"
+                  className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
             </div>
 
-            <form onSubmit={handleUploadSubmit} className="p-6 space-y-4">
+            <form onSubmit={handleUploadSubmit} className="p-6 space-y-6">
               <div className="bg-amber-50/70 border border-amber-200/90 rounded-lg p-3 text-xs text-amber-900 flex items-start space-x-2.5">
                 <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
                 <div className="space-y-0.5">
@@ -407,11 +458,11 @@ export function AdvisorDashboard() {
                 </div>
               </div>
 
-              <p className="text-xs text-slate-500 leading-relaxed">
+              <p className="text-sm text-slate-600 leading-relaxed">
                 Select a completed curriculum matrix file (.csv or .xlsx). The system will automatically validate course codes, credit hour assignments, and prerequisite rule logic.
               </p>
 
-              <div className="border-2 border-dashed border-slate-300 hover:border-blue-400 rounded-lg p-6 text-center bg-slate-50/50 transition-colors">
+              <div className="border-2 border-dashed border-slate-200 hover:border-blue-400 rounded-xl p-6 text-center bg-slate-50/50 transition-colors">
                 <input
                   type="file"
                   id="curriculum-upload-input"
@@ -434,7 +485,7 @@ export function AdvisorDashboard() {
               </div>
 
               {uploadStatus === "uploading" && (
-                <div className="flex items-center space-x-2 p-3 rounded-md bg-blue-50 text-blue-700 text-xs border border-blue-200">
+                <div className="flex items-center space-x-2 p-3 rounded-lg bg-blue-50 text-blue-700 text-xs border border-blue-200">
                   <Loader2 className="w-4 h-4 animate-spin" />
                   <span>{uploadMessage}</span>
                 </div>
@@ -445,9 +496,9 @@ export function AdvisorDashboard() {
                   <div className="flex items-center space-x-2 font-semibold text-amber-900">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
                     <span>CSV Structure Validated</span>
-                    <Badge variant="outline" className="bg-amber-200/80 border-amber-400 text-amber-900 text-[10px] font-mono ml-auto">
+                    <span className="ml-auto inline-flex items-center px-2 py-0.5 rounded-md bg-amber-200/80 border border-amber-400 text-amber-900 text-[10px] font-mono">
                       UAT Sandbox Mode
-                    </Badge>
+                    </span>
                   </div>
                   <p className="text-[11px] text-amber-850 leading-relaxed font-medium">
                     UAT Sandbox Mode: CSV structure validated locally. Database saving disabled for this pilot.
@@ -459,14 +510,14 @@ export function AdvisorDashboard() {
                 <button
                   type="button"
                   onClick={() => setIsUploadModalOpen(false)}
-                  className="px-4 py-2 rounded-md border border-slate-300 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+                  className="px-4 py-2.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={!selectedFile || uploadStatus === "uploading"}
-                  className="px-4 py-2 rounded-md bg-blue-600 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm transition-colors"
+                  className="px-4 py-2.5 rounded-lg bg-blue-600 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed shadow-xs transition-colors"
                 >
                   Confirm &amp; Ingest
                 </button>
@@ -498,21 +549,23 @@ function MetricCard({
   iconColor
 }: MetricCardProps) {
   return (
-    <Card className="border border-slate-200 shadow-sm bg-white hover:border-slate-300 transition-all">
-      <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-        <CardTitle className="text-xs font-semibold text-slate-500 uppercase tracking-wider font-mono">
+    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col justify-between hover:border-slate-300 transition-colors">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-medium text-slate-500 uppercase tracking-wider">
           {title}
-        </CardTitle>
-        <div className={`p-1.5 rounded-md border ${indicator}`}>
+        </span>
+        <div className={`p-2 rounded-lg border ${indicator}`}>
           <Icon className={`w-4 h-4 ${iconColor}`} />
         </div>
-      </CardHeader>
-      <CardContent>
-        <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+      </div>
+      <div className="mt-4">
+        <div className="text-3xl font-bold text-slate-900">
           {value}
         </div>
-        <p className="text-xs text-slate-500 mt-1">{description}</p>
-      </CardContent>
-    </Card>
+        <p className="text-sm text-slate-600 leading-relaxed mt-1">
+          {description}
+        </p>
+      </div>
+    </div>
   );
 }
