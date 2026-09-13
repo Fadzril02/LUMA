@@ -7,6 +7,42 @@ export default {
     theme: {
       extend: {
         colors: {
+          // Centralized LUMA Design System Colors
+          base: "var(--bg-base)",
+          surface: "var(--bg-surface)",
+          "surface-elevated": "var(--bg-surface-elevated)",
+          "sidebar-bg": "var(--bg-sidebar)",
+          "border-subtle": "var(--border-subtle)",
+          "border-strong": "var(--border-strong)",
+          "border-dark": "var(--border-dark)",
+          "text-primary": "var(--text-primary)",
+          "text-secondary": "var(--text-secondary)",
+          "text-muted": "var(--text-muted)",
+          "text-inverse": "var(--text-inverse)",
+          "accent-blue": {
+            DEFAULT: "var(--accent-blue)",
+            hover: "var(--accent-blue-hover)",
+            subtle: "var(--accent-blue-subtle)",
+            border: "var(--accent-blue-border)",
+          },
+          "accent-indigo": {
+            DEFAULT: "var(--accent-indigo)",
+            subtle: "var(--accent-indigo-subtle)",
+          },
+          "status-success": {
+            DEFAULT: "var(--status-success)",
+            bg: "var(--status-success-bg)",
+          },
+          "status-warning": {
+            DEFAULT: "var(--status-warning)",
+            bg: "var(--status-warning-bg)",
+          },
+          "status-danger": {
+            DEFAULT: "var(--status-danger)",
+            bg: "var(--status-danger-bg)",
+          },
+
+          // Existing UI component bridge tokens
           border: "var(--border)",
           input: "var(--input)",
           ring: "var(--ring)",

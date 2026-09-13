@@ -32,6 +32,31 @@
   /* UTM Branding Colors */
   --utm-maroon: #990033;
   --utm-gold: #FFCC00;
+
+  /* LUMA Centralized Enterprise Theme Variables */
+  --bg-base: #f8fafc;
+  --bg-surface: #ffffff;
+  --bg-surface-elevated: #f1f5f9;
+  --bg-sidebar: #020617;
+  --border-subtle: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --border-dark: #1e293b;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+  --text-inverse: #ffffff;
+  --accent-blue: #2563eb;
+  --accent-blue-hover: #1d4ed8;
+  --accent-blue-subtle: #eff6ff;
+  --accent-blue-border: #bfdbfe;
+  --accent-indigo: #4f46e5;
+  --accent-indigo-subtle: #eef2ff;
+  --status-success: #059669;
+  --status-success-bg: #ecfdf5;
+  --status-warning: #d97706;
+  --status-warning-bg: #fffbeb;
+  --status-danger: #e11d48;
+  --status-danger-bg: #fff1f2;
 }
 
 @layer base {
