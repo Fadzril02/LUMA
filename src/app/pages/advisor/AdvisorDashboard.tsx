@@ -2,18 +2,26 @@ import React, { useState, useEffect } from "react";
 import { Users, AlertTriangle, ClipboardCheck, Percent, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, Badge } from "../../components/ui";
 import { db } from "../../../lib/supabase"; 
+import { useAuth } from "../../../context/AuthContext";
 
 export function AdvisorDashboard() {
+  const { profile, user } = useAuth();
   const [roster, setRoster] = useState<any[]>([]);
   const [queue, setQueue] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  const advisorStaffId = (profile as any)?.staff_id || user?.user_metadata?.staff_id;
+
   useEffect(() => {
     const fetchData = async () => {
       setIsLoading(true);
+      let query = db.from('students').select('*');
+      if (advisorStaffId) {
+        query = query.eq('advisor_staff_id', advisorStaffId);
+      }
       // Fetch both datasets simultaneously
       const [studentsRes, queueRes] = await Promise.all([
-        db.from('students').select('*').eq('advisor_staff_id', 'STAFF-LIYANA'),
+        query,
         db.from('correction_requests').select('*')
       ]);
 
@@ -22,7 +30,7 @@ export function AdvisorDashboard() {
       setIsLoading(false);
     };
     fetchData();
-  }, []);
+  }, [advisorStaffId]);
 
   if (isLoading) return <div className="flex justify-center p-20"><Loader2 className="animate-spin text-[#990033] w-8 h-8" /></div>;
 

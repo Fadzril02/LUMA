@@ -2,12 +2,14 @@ import React, { useState, useEffect } from "react";
 import { Search, Filter, AlertTriangle, CheckCircle2, ChevronRight, GraduationCap, Loader2, AlertOctagon } from "lucide-react";
 import { Card, Input, Button } from "../../components/ui";
 import { db } from "../../../lib/supabase"; // 🔌 SUPABASE IMPORT
+import { useAuth } from "../../../context/AuthContext";
 
 // 🔌 IMPORT YOUR STUDENT deep-dive view
 import { StudentView } from "./StudentView";
 
 // Notice we removed the props! This component now fetches its own data.
 export function StudentsList() {
+  const { profile, user } = useAuth();
   const [roster, setRoster] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [dbError, setDbError] = useState<string | null>(null);
@@ -15,23 +17,20 @@ export function StudentsList() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("All"); // 'All', 'At-Risk', 'Safe'
   
-  // 👈 Track who Madam Liyana clicked on
+  // Track who advisor clicked on
   const [selectedStudent, setSelectedStudent] = useState<any | null>(null);
 
+  const currentAdvisorId = (profile as any)?.staff_id || user?.user_metadata?.staff_id;
 
 useEffect(() => {
   const fetchStudents = async () => {
     try {
-      // 1. Get the current advisor's ID (e.g., 'STAFF-LIYANA')
-      // You can get this from your AuthContext or simply filter by the hardcoded ID 
-      // to match your DB column 'advisor_staff_id'
-      const currentAdvisorId = 'STAFF-LIYANA'; 
+      let query = db.from('students').select('*').order('name', { ascending: true });
+      if (currentAdvisorId) {
+        query = query.eq('advisor_staff_id', currentAdvisorId);
+      }
 
-      const { data, error } = await db
-        .from('students')
-        .select('*')
-        .eq('advisor_staff_id', currentAdvisorId) // 👈 THE MAGIC FILTER
-        .order('name', { ascending: true }); 
+      const { data, error } = await query; 
 
       if (error) {
         setDbError(error.message);
