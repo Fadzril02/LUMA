@@ -194,12 +194,18 @@ class SupabaseService:
 
         try:
             # 1. Clear previous records for this student to ensure idempotency
-            self.client.table("academic_records").delete().eq("student_id", student_id).execute()
+            try:
+                self.client.table("academic_records").delete().eq("matric_no", student_id).execute()
+            except Exception:
+                try:
+                    self.client.table("academic_records").delete().eq("student_id", student_id).execute()
+                except Exception:
+                    pass
 
-            # 2. Insert new academic records
+            # 2. Insert new academic records (support both matric_no and student_id schemas)
             records_to_insert = [
                 {
-                    "student_id": student_id,
+                    "matric_no": student_id,
                     "course_code": r.course_code,
                     "course_name": r.course_name,
                     "credits": r.credits,
@@ -215,14 +221,26 @@ class SupabaseService:
                 for r in records
             ]
             if records_to_insert:
-                self.client.table("academic_records").insert(records_to_insert).execute()
+                try:
+                    self.client.table("academic_records").insert(records_to_insert).execute()
+                except Exception as ins_err:
+                    # Fallback with student_id column if matric_no fails
+                    fallback_records = [
+                        {**{k: v for k, v in rec.items() if k != "matric_no"}, "student_id": student_id}
+                        for rec in records_to_insert
+                    ]
+                    self.client.table("academic_records").insert(fallback_records).execute()
 
             # 3. Update student CGPA & Credits
-            self.client.table("students").update({
+            update_data = {
                 "cgpa": summary.cgpa,
                 "total_credits_earned": summary.total_credits_earned,
                 "academic_status": "Good Standing" if summary.overall_traffic_light != "RED" else "At-Risk"
-            }).eq("id", student_id).execute()
+            }
+            try:
+                self.client.table("students").update(update_data).eq("matric_no", student_id).execute()
+            except Exception:
+                self.client.table("students").update(update_data).eq("id", student_id).execute()
 
             # 4. Insert degree_audits snapshot
             audit_record = {
