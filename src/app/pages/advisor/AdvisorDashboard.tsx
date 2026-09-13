@@ -155,18 +155,6 @@ export function AdvisorDashboard() {
 
   return (
     <div className="space-y-6">
-      {/* 0. DASHBOARD TITLE */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-        <div>
-          <h2 className="text-2xl font-semibold tracking-tight text-gray-900">
-            Cohort Diagnostics Hub
-          </h2>
-          <p className="text-sm text-gray-600 leading-relaxed">
-            Monitor advisee academic health, intervention thresholds, and syllabus curriculum mappings.
-          </p>
-        </div>
-      </div>
-
       {/* 1. HERO WIDGET: LECTURER SESSION CODE */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">

@@ -33,7 +33,6 @@ export function AdvisorLayout({
   const advisorName = (profile as any)?.name || (profile as any)?.full_name || user?.user_metadata?.full_name || "Faculty Advisor";
   const advisorEmail = (profile as any)?.institutional_email || (profile as any)?.email || user?.email || "";
   const advisorStaffId = (profile as any)?.staff_id || user?.user_metadata?.staff_id || "STAFF-LIYANA";
-  const advisorDepartment = (profile as any)?.department || "Software Engineering";
 
   const getInitials = (name: string) => {
     const parts = name.trim().split(" ");
@@ -117,15 +116,6 @@ export function AdvisorLayout({
           </div>
         </div>
 
-        {/* Institutional Affiliation Pill */}
-        <div className="px-6 py-3 bg-gray-50/80 border-b border-gray-200">
-          <div className="flex items-center space-x-2 text-xs text-gray-600">
-            <span className="w-2 h-2 rounded-full bg-emerald-600" />
-            <span className="truncate font-medium text-gray-900">UTM Faculty of Computing</span>
-          </div>
-          <p className="text-[11px] text-gray-500 mt-0.5 font-mono">{advisorDepartment}</p>
-        </div>
-
         {/* Navigation Sections */}
         <div className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           <div className="px-3 pb-2 text-[10px] font-semibold text-gray-400 uppercase tracking-wider font-mono">
@@ -206,18 +196,18 @@ export function AdvisorLayout({
             </button>
             <div>
               <div className="flex items-center space-x-2 text-xs text-gray-500">
-                <span>Faculty Portal</span>
+                <span>Advisor Portal</span>
                 <ChevronRight className="w-3.5 h-3.5 text-gray-400" />
-                <span className="font-medium text-gray-700 capitalize">
-                  {activeTab === "dashboard" && "Diagnostics Hub"}
+                <span className="font-medium text-gray-700">
+                  {activeTab === "dashboard" && "Dashboard"}
                   {activeTab === "students" && "Advisees"}
                   {activeTab === "queue" && "Queue"}
                 </span>
               </div>
               <h1 className="text-lg font-bold text-gray-900 tracking-tight">
-                {activeTab === "dashboard" && "Academic Cohort Diagnostics"}
-                {activeTab === "students" && "Advisee Performance Roster"}
-                {activeTab === "queue" && "Discrepancy Resolution & Verification"}
+                {activeTab === "dashboard" && "Dashboard Overview"}
+                {activeTab === "students" && "Advisee Roster"}
+                {activeTab === "queue" && "Corrections Queue"}
               </h1>
             </div>
           </div>
