@@ -45,7 +45,7 @@ export function AdvisorLayout({
   const navItems = [
     {
       id: "dashboard",
-      label: "Cohort Diagnostics",
+      label: "Dashboard",
       description: "Overview & metrics",
       icon: LayoutDashboard,
       badge: undefined
@@ -205,7 +205,7 @@ export function AdvisorLayout({
                 </span>
               </div>
               <h1 className="text-lg font-bold text-gray-900 tracking-tight">
-                {activeTab === "dashboard" && "Dashboard Overview"}
+                {activeTab === "dashboard" && "Dashboard"}
                 {activeTab === "students" && "Advisee Roster"}
                 {activeTab === "queue" && "Corrections Queue"}
               </h1>

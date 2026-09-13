@@ -1,9 +1,16 @@
 import React, { useState } from "react";
 import { useNavigate, Link } from "react-router";
 import { Button, Input, Label } from "../components/ui";
-import { ShieldCheck, GraduationCap, Users, Eye, EyeOff, CheckCircle2 } from "lucide-react";
+import { 
+  ShieldCheck, 
+  GraduationCap, 
+  Users, 
+  Eye, 
+  EyeOff, 
+  CheckCircle2,
+  ArrowRight
+} from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
-import { supabase } from "../../lib/supabase";
 import { toast } from "sonner";
 
 export function LandingPage() {
@@ -12,6 +19,9 @@ export function LandingPage() {
 
   // Navigation / View State: 'login' | 'register'
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
+
+  // Login Role Context: 'student' | 'advisor'
+  const [loginRole, setLoginRole] = useState<"student" | "advisor">("student");
 
   // Registration Role State: 'student' | 'advisor'
   const [registrationRole, setRegistrationRole] = useState<"student" | "advisor">("student");
@@ -52,8 +62,8 @@ export function LandingPage() {
 
     const cleanEmail = loginEmail.trim().toLowerCase();
     if (!cleanEmail) {
-      toast.error("Please enter your email address.");
-      setErrorMessage("Please enter your email address.");
+      toast.error("Please enter your email address or ID.");
+      setErrorMessage("Please enter your email address or ID.");
       return;
     }
     if (!loginPassword) {
@@ -79,7 +89,7 @@ export function LandingPage() {
         navigate("/admin");
       }
     } catch (err: any) {
-      let friendlyError = "Invalid credentials. Please verify your email and password.";
+      let friendlyError = "Invalid credentials. Please verify your credentials.";
       const rawMsg = (err.message || "").toLowerCase();
       if (rawMsg.includes("invalid login credentials") || rawMsg.includes("invalid grant")) {
         friendlyError = "Invalid email or password. Please verify your credentials.";
@@ -137,21 +147,7 @@ export function LandingPage() {
       setProcessing(true);
 
       try {
-        // Pre-flight check: Verify that the Advisor Staff ID actually exists in the database
-        const { data: advisorCheck, error: advErr } = await supabase
-          .from("advisors")
-          .select("staff_id, name")
-          .eq("staff_id", sanitizedSessionCode)
-          .maybeSingle();
-
-        if (advErr || !advisorCheck) {
-          const invMsg = "Invalid Session Code. Please verify with your lecturer.";
-          toast.error(invMsg);
-          setErrorMessage(invMsg);
-          setProcessing(false);
-          return;
-        }
-
+        // Direct registration: Let Supabase Auth and backend handle validation and claims
         const { error } = await signUpStudent({
           matricNo: sanitizedMatric,
           fullName: sanitizedFullName,
@@ -173,7 +169,7 @@ export function LandingPage() {
         let friendlyError = err.message || "Student registration failed. Please verify your details.";
         if (friendlyError.includes("already registered")) {
           friendlyError = `Matric number "${sanitizedMatric}" is already registered. If this is you, please sign in.`;
-        } else if (friendlyError.includes("pre-registered")) {
+        } else if (friendlyError.includes("pre-registered") || friendlyError.includes("not found")) {
           friendlyError = `Matric number "${sanitizedMatric}" not found in institutional roster. Contact your advisor to initialize your record.`;
         }
         toast.error(friendlyError);
@@ -238,75 +234,70 @@ export function LandingPage() {
   };
 
   return (
-    <div className="min-h-screen w-full bg-slate-100 flex flex-col lg:flex-row font-sans text-slate-900 antialiased">
-      {/* Left Branding Section */}
-      <div className="w-full lg:w-[50%] xl:w-[52%] bg-slate-950 text-white p-8 sm:p-12 lg:p-16 flex flex-col justify-between relative overflow-hidden border-b lg:border-b-0 lg:border-r border-slate-800">
-        {/* Subtle Ambient Decorative Gradients */}
-        <div className="absolute -top-32 -left-32 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute -bottom-32 -right-32 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none" />
+    <div className="min-h-screen bg-[#F9FAFB] text-gray-900 font-sans flex flex-col justify-between antialiased selection:bg-blue-900 selection:text-white">
+      {/* Top Institutional Header */}
+      <header className="w-full bg-white border-b border-gray-200 sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 rounded-lg bg-blue-900 flex items-center justify-center text-white shadow-sm">
+              <GraduationCap className="w-5 h-5" />
+            </div>
+            <div className="flex items-baseline space-x-2">
+              <span className="font-extrabold text-xl text-blue-900 tracking-tight">LUMA</span>
+              <span className="hidden sm:inline-block text-xs font-medium text-gray-500 border-l border-gray-200 pl-2">
+                Academic Advising Platform
+              </span>
+            </div>
+          </div>
 
-        {/* Top Institutional Badge */}
-        <div className="relative z-10">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md border border-slate-800 bg-slate-900/80 text-xs font-medium text-slate-300 tracking-tight">
-            <ShieldCheck className="w-4 h-4 text-blue-400" />
-            <span>Institutional Academic Intelligence Platform</span>
+          <div className="flex items-center space-x-4">
+            <div className="hidden sm:inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gray-50 border border-gray-200 text-xs font-medium text-gray-700">
+              <span className="w-2 h-2 rounded-full bg-emerald-600" />
+              <span>System Operational</span>
+            </div>
+            <Link
+              to="/showcase"
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-900 hover:text-blue-800 px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-colors"
+            >
+              <span>Architecture</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
           </div>
         </div>
+      </header>
 
-        {/* Main Branding Content */}
-        <div className="relative z-10 my-12 lg:my-0 max-w-xl">
-          <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight text-white mb-3">
-            LUMA
+      {/* Main Content Viewport */}
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-10 sm:py-14 flex flex-col items-center">
+        {/* Authoritative Hero Section */}
+        <div className="text-center max-w-3xl mx-auto mb-10 sm:mb-12">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 border border-blue-100 text-xs font-medium text-blue-900 mb-4 shadow-xs">
+            <ShieldCheck className="w-3.5 h-3.5 text-blue-900" />
+            <span>Institutional Degree Audit &amp; Academic Intelligence Infrastructure</span>
+          </div>
+
+          <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-blue-900">
+            LUMA Academic Advising
           </h1>
-          <h2 className="text-xl sm:text-2xl font-semibold tracking-tight text-slate-200 mb-6">
-            Academic Advising &amp; Degree Audit System
-          </h2>
-          <p className="text-sm sm:text-base text-slate-400 leading-relaxed tracking-tight mb-8">
-            An enterprise-grade academic evaluation infrastructure engineered to streamline degree trajectory audits, prerequisite validation, and secure advisor-student collaboration across accredited curricula.
+
+          <p className="text-lg text-gray-600 mt-4 max-w-2xl mx-auto leading-relaxed">
+            Streamlining curriculum tracking and prerequisite validation for university faculty and students.
           </p>
-
-          {/* Value Propositions */}
-          <div className="space-y-3.5 pt-4 border-t border-slate-800/80">
-            <div className="flex items-center gap-3 text-xs sm:text-sm text-slate-300">
-              <CheckCircle2 className="w-4 h-4 text-blue-400 shrink-0" />
-              <span>Automated prerequisite graph verification and graduation clearance</span>
-            </div>
-            <div className="flex items-center gap-3 text-xs sm:text-sm text-slate-300">
-              <CheckCircle2 className="w-4 h-4 text-blue-400 shrink-0" />
-              <span>Real-time academic advising cohorts and grade progress audits</span>
-            </div>
-            <div className="flex items-center gap-3 text-xs sm:text-sm text-slate-300">
-              <CheckCircle2 className="w-4 h-4 text-blue-400 shrink-0" />
-              <span>Role-governed institutional access for students and faculty advisors</span>
-            </div>
-          </div>
         </div>
 
-        {/* Bottom System Meta */}
-        <div className="relative z-10 pt-6 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400 font-mono">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
-            <span className="tracking-tight">System Operational</span>
-          </div>
-          <span className="text-slate-500">Curriculum Syllabus 2024/2025</span>
-        </div>
-      </div>
-
-      {/* Right Auth Section */}
-      <div className="w-full lg:w-[50%] xl:w-[48%] bg-slate-50 flex items-center justify-center p-6 sm:p-10 lg:p-12">
-        <div className="w-full max-w-md bg-white border border-slate-200 shadow-sm rounded-xl p-6 sm:p-8">
-          {/* Top Auth Mode Tabs */}
-          <div className="grid grid-cols-2 p-1 bg-slate-100 rounded-lg mb-6 border border-slate-200/80">
+        {/* Pristine Auth Card */}
+        <div className="w-full max-w-md bg-white rounded-xl shadow-sm border border-gray-200 p-6 sm:p-8">
+          {/* Main Auth Mode Segmented Control */}
+          <div className="grid grid-cols-2 p-1 bg-gray-100 rounded-lg mb-6 border border-gray-200/80">
             <button
               type="button"
               onClick={() => {
                 setAuthMode("login");
                 resetFormFeedback();
               }}
-              className={`py-2 text-xs font-semibold rounded-md transition-all tracking-tight cursor-pointer ${
+              className={`py-2 text-xs font-semibold rounded-md transition-all cursor-pointer ${
                 authMode === "login"
-                  ? "bg-white text-slate-900 shadow-sm"
-                  : "text-slate-500 hover:text-slate-900"
+                  ? "bg-white text-blue-900 shadow-sm"
+                  : "text-gray-600 hover:text-gray-900"
               }`}
             >
               Sign In
@@ -317,10 +308,10 @@ export function LandingPage() {
                 setAuthMode("register");
                 resetFormFeedback();
               }}
-              className={`py-2 text-xs font-semibold rounded-md transition-all tracking-tight cursor-pointer ${
+              className={`py-2 text-xs font-semibold rounded-md transition-all cursor-pointer ${
                 authMode === "register"
-                  ? "bg-white text-slate-900 shadow-sm"
-                  : "text-slate-500 hover:text-slate-900"
+                  ? "bg-white text-blue-900 shadow-sm"
+                  : "text-gray-600 hover:text-gray-900"
               }`}
             >
               Create Account
@@ -328,14 +319,14 @@ export function LandingPage() {
           </div>
 
           {/* Form Header */}
-          <div className="mb-6">
-            <h3 className="text-xl font-bold tracking-tight text-slate-900">
-              {authMode === "login" ? "Sign In" : "Register Account"}
-            </h3>
-            <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+          <div className="mb-5">
+            <h2 className="text-xl font-bold tracking-tight text-gray-900">
+              {authMode === "login" ? "Sign In to Portal" : "Create Institutional Account"}
+            </h2>
+            <p className="text-xs text-gray-500 mt-1">
               {authMode === "login"
-                ? "Enter your academic credentials to access your portal."
-                : "Select your institutional role and enter your details to register."}
+                ? "Enter your academic credentials to access your advising dashboard."
+                : "Select your role and complete details to initialize your credentials."}
             </p>
           </div>
 
@@ -356,23 +347,63 @@ export function LandingPage() {
           {authMode === "login" ? (
             /* ================= LOGIN FORM ================= */
             <form onSubmit={handleLogin} className="space-y-4">
+              {/* Role Toggle for Login */}
               <div className="space-y-1.5">
-                <Label htmlFor="loginEmail" className="text-xs font-semibold text-slate-700">
-                  Email Address
+                <Label className="text-xs font-semibold text-gray-700">
+                  Portal Role
+                </Label>
+                <div className="grid grid-cols-2 p-1 bg-gray-100 rounded-lg">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLoginRole("student");
+                      resetFormFeedback();
+                    }}
+                    className={`h-9 px-3 text-xs rounded-md transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                      loginRole === "student"
+                        ? "bg-white text-blue-900 font-semibold shadow-sm"
+                        : "text-gray-600 hover:text-gray-900 font-medium"
+                    }`}
+                  >
+                    <GraduationCap className="w-4 h-4" />
+                    <span>Student</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLoginRole("advisor");
+                      resetFormFeedback();
+                    }}
+                    className={`h-9 px-3 text-xs rounded-md transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                      loginRole === "advisor"
+                        ? "bg-white text-blue-900 font-semibold shadow-sm"
+                        : "text-gray-600 hover:text-gray-900 font-medium"
+                    }`}
+                  >
+                    <Users className="w-4 h-4" />
+                    <span>Advisor</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="loginEmail" className="text-xs font-semibold text-gray-700">
+                  {loginRole === "student" ? "Institutional Email or Matric Number" : "Institutional Email or Staff ID"}
                 </Label>
                 <Input
                   id="loginEmail"
                   type="text"
                   value={loginEmail}
                   onChange={(e) => setLoginEmail(e.target.value)}
-                  placeholder="name@university.edu or student ID"
+                  placeholder={loginRole === "student" ? "e.g. alex@student.utm.my or A24CS0001" : "e.g. liyana@utm.my or STAFF-LIYANA"}
                   required
-                  className="h-10 text-sm border-slate-200 focus:border-slate-400 focus:ring-slate-900"
+                  className="bg-gray-50 border-gray-200 focus:ring-2 focus:ring-blue-900 focus:border-transparent text-gray-900 h-10 text-sm"
                 />
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="loginPassword" className="text-xs font-semibold text-slate-700">
+                <Label htmlFor="loginPassword" className="text-xs font-semibold text-gray-700">
                   Password
                 </Label>
                 <div className="relative flex items-center">
@@ -384,12 +415,12 @@ export function LandingPage() {
                     onChange={(e) => setLoginPassword(e.target.value)}
                     placeholder="••••••••"
                     required
-                    className="h-10 text-sm pr-10 border-slate-200 focus:border-slate-400 focus:ring-slate-900"
+                    className="bg-gray-50 border-gray-200 focus:ring-2 focus:ring-blue-900 focus:border-transparent text-gray-900 h-10 text-sm pr-10"
                   />
                   <button
                     type="button"
                     onClick={() => setShowLoginPassword(!showLoginPassword)}
-                    className="absolute right-3 text-slate-400 hover:text-slate-600 focus:outline-none cursor-pointer"
+                    className="absolute right-3 text-gray-400 hover:text-gray-600 focus:outline-none cursor-pointer"
                     aria-label={showLoginPassword ? "Hide password" : "Show password"}
                   >
                     {showLoginPassword ? (
@@ -404,7 +435,7 @@ export function LandingPage() {
               <Button
                 type="submit"
                 disabled={processing}
-                className="w-full h-10 mt-2 bg-slate-900 hover:bg-slate-800 text-white text-sm font-medium tracking-tight rounded-lg shadow-sm transition-colors cursor-pointer"
+                className="w-full h-10 mt-2 bg-blue-900 hover:bg-blue-800 text-white font-medium rounded-lg shadow-sm transition-colors cursor-pointer text-sm"
               >
                 {processing ? "Signing In..." : "Sign In"}
               </Button>
@@ -412,26 +443,26 @@ export function LandingPage() {
           ) : (
             /* ================= REGISTRATION FORM ================= */
             <form onSubmit={handleRegistration} className="space-y-4">
-              {/* Role Toggle */}
+              {/* Role Toggle for Registration */}
               <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-slate-700">
+                <Label className="text-xs font-semibold text-gray-700">
                   Select Role
                 </Label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 p-1 bg-gray-100 rounded-lg">
                   <button
                     type="button"
                     onClick={() => {
                       setRegistrationRole("student");
                       resetFormFeedback();
                     }}
-                    className={`h-10 px-3 text-xs font-semibold rounded-lg border transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                    className={`h-9 px-3 text-xs rounded-md transition-all cursor-pointer flex items-center justify-center gap-2 ${
                       registrationRole === "student"
-                        ? "bg-slate-900 text-white border-slate-900 shadow-sm"
-                        : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+                        ? "bg-white text-blue-900 font-semibold shadow-sm"
+                        : "text-gray-600 hover:text-gray-900 font-medium"
                     }`}
                   >
                     <GraduationCap className="w-4 h-4" />
-                    <span>I am a Student</span>
+                    <span>Student</span>
                   </button>
 
                   <button
@@ -440,14 +471,14 @@ export function LandingPage() {
                       setRegistrationRole("advisor");
                       resetFormFeedback();
                     }}
-                    className={`h-10 px-3 text-xs font-semibold rounded-lg border transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                    className={`h-9 px-3 text-xs rounded-md transition-all cursor-pointer flex items-center justify-center gap-2 ${
                       registrationRole === "advisor"
-                        ? "bg-slate-900 text-white border-slate-900 shadow-sm"
-                        : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+                        ? "bg-white text-blue-900 font-semibold shadow-sm"
+                        : "text-gray-600 hover:text-gray-900 font-medium"
                     }`}
                   >
                     <Users className="w-4 h-4" />
-                    <span>I am an Advisor</span>
+                    <span>Advisor</span>
                   </button>
                 </div>
               </div>
@@ -456,7 +487,7 @@ export function LandingPage() {
               {registrationRole === "student" ? (
                 <>
                   <div className="space-y-1.5">
-                    <Label htmlFor="studentFullName" className="text-xs font-semibold text-slate-700">
+                    <Label htmlFor="studentFullName" className="text-xs font-semibold text-gray-700">
                       Full Name
                     </Label>
                     <Input
@@ -466,12 +497,12 @@ export function LandingPage() {
                       onChange={(e) => setStudentFullName(e.target.value)}
                       placeholder="e.g. Alex Tan"
                       required
-                      className="h-10 text-sm border-slate-200 focus:border-slate-400 focus:ring-slate-900"
+                      className="bg-gray-50 border-gray-200 focus:ring-2 focus:ring-blue-900 focus:border-transparent text-gray-900 h-10 text-sm"
                     />
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label htmlFor="studentEmail" className="text-xs font-semibold text-slate-700">
+                    <Label htmlFor="studentEmail" className="text-xs font-semibold text-gray-700">
                       Email Address
                     </Label>
                     <Input
@@ -481,12 +512,12 @@ export function LandingPage() {
                       onChange={(e) => setStudentEmail(e.target.value)}
                       placeholder="e.g. alex@student.utm.my"
                       required
-                      className="h-10 text-sm border-slate-200 focus:border-slate-400 focus:ring-slate-900"
+                      className="bg-gray-50 border-gray-200 focus:ring-2 focus:ring-blue-900 focus:border-transparent text-gray-900 h-10 text-sm"
                     />
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label htmlFor="studentMatric" className="text-xs font-semibold text-slate-700">
+                    <Label htmlFor="studentMatric" className="text-xs font-semibold text-gray-700">
                       Matric Number
                     </Label>
                     <Input
@@ -494,14 +525,14 @@ export function LandingPage() {
                       type="text"
                       value={studentMatric}
                       onChange={(e) => setStudentMatric(e.target.value.toUpperCase())}
-                      placeholder="e.g. A21EC0001"
+                      placeholder="e.g. A24CS0001"
                       required
-                      className="h-10 text-sm uppercase font-mono border-slate-200 focus:border-slate-400 focus:ring-slate-900"
+                      className="bg-gray-50 border-gray-200 focus:ring-2 focus:ring-blue-900 focus:border-transparent text-gray-900 h-10 text-sm uppercase font-mono"
                     />
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label htmlFor="studentPassword" className="text-xs font-semibold text-slate-700">
+                    <Label htmlFor="studentPassword" className="text-xs font-semibold text-gray-700">
                       Password
                     </Label>
                     <div className="relative flex items-center">
@@ -513,12 +544,12 @@ export function LandingPage() {
                         onChange={(e) => setStudentPassword(e.target.value)}
                         placeholder="••••••••"
                         required
-                        className="h-10 text-sm pr-10 border-slate-200 focus:border-slate-400 focus:ring-slate-900"
+                        className="bg-gray-50 border-gray-200 focus:ring-2 focus:ring-blue-900 focus:border-transparent text-gray-900 h-10 text-sm pr-10"
                       />
                       <button
                         type="button"
                         onClick={() => setShowStudentPassword(!showStudentPassword)}
-                        className="absolute right-3 text-slate-400 hover:text-slate-600 focus:outline-none cursor-pointer"
+                        className="absolute right-3 text-gray-400 hover:text-gray-600 focus:outline-none cursor-pointer"
                         aria-label={showStudentPassword ? "Hide password" : "Show password"}
                       >
                         {showStudentPassword ? (
@@ -531,7 +562,7 @@ export function LandingPage() {
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label htmlFor="studentSessionCode" className="text-xs font-semibold text-slate-700">
+                    <Label htmlFor="studentSessionCode" className="text-xs font-semibold text-gray-700">
                       Lecturer Session Code
                     </Label>
                     <Input
@@ -541,10 +572,10 @@ export function LandingPage() {
                       onChange={(e) => setStudentSessionCode(e.target.value.toUpperCase())}
                       placeholder="e.g. STAFF-LIYANA"
                       required
-                      className="h-10 text-sm uppercase font-mono border-slate-200 focus:border-slate-400 focus:ring-slate-900"
+                      className="bg-gray-50 border-gray-200 focus:ring-2 focus:ring-blue-900 focus:border-transparent text-gray-900 h-10 text-sm uppercase font-mono"
                     />
-                    <p className="text-[11px] text-slate-500 leading-normal">
-                      Provided by your advisor
+                    <p className="text-[11px] text-gray-500">
+                      Session Code provided by your academic advisor
                     </p>
                   </div>
                 </>
@@ -552,7 +583,7 @@ export function LandingPage() {
                 /* Advisor Registration Fields */
                 <>
                   <div className="space-y-1.5">
-                    <Label htmlFor="advisorFullName" className="text-xs font-semibold text-slate-700">
+                    <Label htmlFor="advisorFullName" className="text-xs font-semibold text-gray-700">
                       Full Name
                     </Label>
                     <Input
@@ -562,12 +593,12 @@ export function LandingPage() {
                       onChange={(e) => setAdvisorFullName(e.target.value)}
                       placeholder="e.g. Dr. Jane Doe"
                       required
-                      className="h-10 text-sm border-slate-200 focus:border-slate-400 focus:ring-slate-900"
+                      className="bg-gray-50 border-gray-200 focus:ring-2 focus:ring-blue-900 focus:border-transparent text-gray-900 h-10 text-sm"
                     />
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label htmlFor="advisorEmail" className="text-xs font-semibold text-slate-700">
+                    <Label htmlFor="advisorEmail" className="text-xs font-semibold text-gray-700">
                       Email Address
                     </Label>
                     <Input
@@ -577,12 +608,12 @@ export function LandingPage() {
                       onChange={(e) => setAdvisorEmail(e.target.value)}
                       placeholder="e.g. jane@utm.my"
                       required
-                      className="h-10 text-sm border-slate-200 focus:border-slate-400 focus:ring-slate-900"
+                      className="bg-gray-50 border-gray-200 focus:ring-2 focus:ring-blue-900 focus:border-transparent text-gray-900 h-10 text-sm"
                     />
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label htmlFor="advisorStaffId" className="text-xs font-semibold text-slate-700">
+                    <Label htmlFor="advisorStaffId" className="text-xs font-semibold text-gray-700">
                       Staff ID
                     </Label>
                     <Input
@@ -592,12 +623,12 @@ export function LandingPage() {
                       onChange={(e) => setAdvisorStaffId(e.target.value.toUpperCase())}
                       placeholder="e.g. STAFF-001"
                       required
-                      className="h-10 text-sm uppercase font-mono border-slate-200 focus:border-slate-400 focus:ring-slate-900"
+                      className="bg-gray-50 border-gray-200 focus:ring-2 focus:ring-blue-900 focus:border-transparent text-gray-900 h-10 text-sm uppercase font-mono"
                     />
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label htmlFor="advisorPassword" className="text-xs font-semibold text-slate-700">
+                    <Label htmlFor="advisorPassword" className="text-xs font-semibold text-gray-700">
                       Password
                     </Label>
                     <div className="relative flex items-center">
@@ -609,12 +640,12 @@ export function LandingPage() {
                         onChange={(e) => setAdvisorPassword(e.target.value)}
                         placeholder="••••••••"
                         required
-                        className="h-10 text-sm pr-10 border-slate-200 focus:border-slate-400 focus:ring-slate-900"
+                        className="bg-gray-50 border-gray-200 focus:ring-2 focus:ring-blue-900 focus:border-transparent text-gray-900 h-10 text-sm pr-10"
                       />
                       <button
                         type="button"
                         onClick={() => setShowAdvisorPassword(!showAdvisorPassword)}
-                        className="absolute right-3 text-slate-400 hover:text-slate-600 focus:outline-none cursor-pointer"
+                        className="absolute right-3 text-gray-400 hover:text-gray-600 focus:outline-none cursor-pointer"
                         aria-label={showAdvisorPassword ? "Hide password" : "Show password"}
                       >
                         {showAdvisorPassword ? (
@@ -631,7 +662,7 @@ export function LandingPage() {
               <Button
                 type="submit"
                 disabled={processing}
-                className="w-full h-10 mt-2 bg-slate-900 hover:bg-slate-800 text-white text-sm font-medium tracking-tight rounded-lg shadow-sm transition-colors cursor-pointer"
+                className="w-full h-10 mt-2 bg-blue-900 hover:bg-blue-800 text-white font-medium rounded-lg shadow-sm transition-colors cursor-pointer text-sm"
               >
                 {processing
                   ? "Creating Account..."
@@ -642,30 +673,76 @@ export function LandingPage() {
             </form>
           )}
 
-          {/* Bottom Links */}
-          <div className="mt-6 pt-5 border-t border-slate-100 flex flex-col items-center gap-2">
+          {/* Bottom Switch Links */}
+          <div className="mt-6 pt-5 border-t border-gray-100 flex flex-col items-center gap-2">
             <button
               type="button"
               onClick={() => {
                 setAuthMode(authMode === "login" ? "register" : "login");
                 resetFormFeedback();
               }}
-              className="text-xs text-slate-600 hover:text-slate-900 font-medium transition-colors cursor-pointer"
+              className="text-xs text-gray-600 hover:text-blue-900 font-medium transition-colors cursor-pointer"
             >
               {authMode === "login"
                 ? "Don't have an account? Create one"
                 : "Already registered? Sign in"}
             </button>
-
-            <Link
-              to="/showcase"
-              className="text-xs text-slate-400 hover:text-slate-700 transition-colors"
-            >
-              System Architecture &amp; Showcase
-            </Link>
           </div>
         </div>
-      </div>
+
+        {/* Institutional Pillars / Value Propositions */}
+        <div className="max-w-4xl w-full mx-auto mt-14 grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+            <div className="w-9 h-9 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-900 mb-3">
+              <CheckCircle2 className="w-5 h-5" />
+            </div>
+            <h3 className="text-sm font-bold text-gray-900 mb-1">Prerequisite Verification</h3>
+            <p className="text-xs text-gray-600 leading-relaxed">
+              Automated directed acyclic graph validation ensuring accurate course sequence progression and graduation eligibility.
+            </p>
+          </div>
+
+          <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+            <div className="w-9 h-9 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-900 mb-3">
+              <Users className="w-5 h-5" />
+            </div>
+            <h3 className="text-sm font-bold text-gray-900 mb-1">Advisor Roster Diagnostics</h3>
+            <p className="text-xs text-gray-600 leading-relaxed">
+              Real-time cohort monitoring with GPA distribution metrics, credit accumulation flags, and standing alerts.
+            </p>
+          </div>
+
+          <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+            <div className="w-9 h-9 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-900 mb-3">
+              <ShieldCheck className="w-5 h-5" />
+            </div>
+            <h3 className="text-sm font-bold text-gray-900 mb-1">Institutional Integrity</h3>
+            <p className="text-xs text-gray-600 leading-relaxed">
+              Role-governed audit trails and cryptographic session verification aligned with university curriculum standards.
+            </p>
+          </div>
+        </div>
+      </main>
+
+      {/* Institutional Minimal Footer */}
+      <footer className="border-t border-gray-200 bg-white py-6">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-gray-500">
+          <div className="flex items-center space-x-2">
+            <GraduationCap className="w-4 h-4 text-blue-900" />
+            <span className="font-semibold text-gray-800">LUMA Academic Advising Platform</span>
+            <span className="text-gray-300">|</span>
+            <span>Curriculum Syllabus 2024/2025</span>
+          </div>
+
+          <div className="flex items-center space-x-4">
+            <Link to="/showcase" className="text-blue-900 hover:underline font-medium">
+              Architecture &amp; Showcase
+            </Link>
+            <span className="text-gray-300">•</span>
+            <span>Universiti Teknologi Malaysia</span>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }
