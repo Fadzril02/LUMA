@@ -5,6 +5,7 @@ import { LandingPage } from './pages/LandingPage';
 import { StudentPortal } from './pages/student/StudentPortal';
 import { AdvisorPortal } from './pages/advisor/AdvisorPortal';
 import { Loader2 } from 'lucide-react';
+import { Toaster } from './components/ui/sonner';
 
 // ── Loading spinner ──────────────────────────────────────────────────────────
 function LoadingScreen() {
@@ -39,7 +40,9 @@ export default function App() {
   if (isLoading) return <LoadingScreen />;
 
   return (
-    <BrowserRouter>
+    <>
+      <Toaster />
+      <BrowserRouter>
       <Routes>
         {/* ── Root / Login ────────────────────────────────────────────── */}
         {/* Both / and /login show LandingPage when unauthenticated.      */}
@@ -101,5 +104,6 @@ export default function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
+    </>
   );
 }

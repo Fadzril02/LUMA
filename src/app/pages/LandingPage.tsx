@@ -3,6 +3,8 @@ import { useNavigate, Link } from "react-router";
 import { Button, Input, Label } from "../components/ui";
 import { ShieldCheck, GraduationCap, Users, Eye, EyeOff, CheckCircle2 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
+import { supabase } from "../../lib/supabase";
+import { toast } from "sonner";
 
 export function LandingPage() {
   const navigate = useNavigate();
@@ -48,12 +50,14 @@ export function LandingPage() {
     e.preventDefault();
     resetFormFeedback();
 
-    const cleanEmail = loginEmail.trim();
+    const cleanEmail = loginEmail.trim().toLowerCase();
     if (!cleanEmail) {
+      toast.error("Please enter your email address.");
       setErrorMessage("Please enter your email address.");
       return;
     }
     if (!loginPassword) {
+      toast.error("Please enter your password.");
       setErrorMessage("Please enter your password.");
       return;
     }
@@ -65,6 +69,8 @@ export function LandingPage() {
 
       if (error) throw error;
 
+      toast.success("Welcome back! Signing into your portal...");
+
       if (loggedInRole === "student") {
         navigate("/student");
       } else if (loggedInRole === "advisor") {
@@ -73,7 +79,20 @@ export function LandingPage() {
         navigate("/admin");
       }
     } catch (err: any) {
-      setErrorMessage(err.message || "Invalid credentials. Please verify your email and password.");
+      let friendlyError = "Invalid credentials. Please verify your email and password.";
+      const rawMsg = (err.message || "").toLowerCase();
+      if (rawMsg.includes("invalid login credentials") || rawMsg.includes("invalid grant")) {
+        friendlyError = "Invalid email or password. Please verify your credentials.";
+      } else if (rawMsg.includes("network") || rawMsg.includes("failed to fetch")) {
+        friendlyError = "Network error: Unable to connect to authentication services. Please retry.";
+      } else if (rawMsg.includes("email not confirmed")) {
+        friendlyError = "Your email has not been confirmed yet. Please check your inbox.";
+      } else if (err.message) {
+        friendlyError = err.message;
+      }
+
+      toast.error(friendlyError);
+      setErrorMessage(friendlyError);
     } finally {
       setProcessing(false);
     }
@@ -84,23 +103,33 @@ export function LandingPage() {
     resetFormFeedback();
 
     if (registrationRole === "student") {
-      if (!studentFullName.trim()) {
+      const sanitizedFullName = studentFullName.trim();
+      const sanitizedEmail = studentEmail.trim().toLowerCase();
+      const sanitizedMatric = studentMatric.trim().toUpperCase();
+      const sanitizedSessionCode = studentSessionCode.trim().toUpperCase();
+
+      if (!sanitizedFullName) {
+        toast.error("Please enter your full name.");
         setErrorMessage("Please enter your full name.");
         return;
       }
-      if (!studentEmail.trim()) {
+      if (!sanitizedEmail) {
+        toast.error("Please enter your email address.");
         setErrorMessage("Please enter your email address.");
         return;
       }
-      if (!studentMatric.trim()) {
+      if (!sanitizedMatric) {
+        toast.error("Please enter your matric number.");
         setErrorMessage("Please enter your matric number.");
         return;
       }
       if (!studentPassword || studentPassword.length < 6) {
+        toast.error("Password must be at least 6 characters.");
         setErrorMessage("Password must be at least 6 characters.");
         return;
       }
-      if (!studentSessionCode.trim()) {
+      if (!sanitizedSessionCode) {
+        toast.error("Please enter your lecturer session code.");
         setErrorMessage("Please enter your lecturer session code.");
         return;
       }
@@ -108,41 +137,72 @@ export function LandingPage() {
       setProcessing(true);
 
       try {
+        // Pre-flight check: Verify that the Advisor Staff ID actually exists in the database
+        const { data: advisorCheck, error: advErr } = await supabase
+          .from("advisors")
+          .select("staff_id, name")
+          .eq("staff_id", sanitizedSessionCode)
+          .maybeSingle();
+
+        if (advErr || !advisorCheck) {
+          const invMsg = "Invalid Session Code. Please verify with your lecturer.";
+          toast.error(invMsg);
+          setErrorMessage(invMsg);
+          setProcessing(false);
+          return;
+        }
+
         const { error } = await signUpStudent({
-          matricNo: studentMatric.trim().toUpperCase(),
-          fullName: studentFullName.trim(),
-          email: studentEmail.trim().toLowerCase(),
+          matricNo: sanitizedMatric,
+          fullName: sanitizedFullName,
+          email: sanitizedEmail,
           password: studentPassword,
-          advisorId: studentSessionCode.trim().toUpperCase(),
+          advisorId: sanitizedSessionCode,
           program: "SECJ",
           syllabusType: "2024/2025",
         });
 
         if (error) throw error;
 
+        toast.success("Account created successfully! Redirecting to Student Portal...");
         setSuccessMessage("Account created successfully. Redirecting to Student Portal...");
         setTimeout(() => {
           navigate("/student");
         }, 900);
       } catch (err: any) {
-        setErrorMessage(err.message || "Student registration failed. Please verify your details and try again.");
+        let friendlyError = err.message || "Student registration failed. Please verify your details.";
+        if (friendlyError.includes("already registered")) {
+          friendlyError = `Matric number "${sanitizedMatric}" is already registered. If this is you, please sign in.`;
+        } else if (friendlyError.includes("pre-registered")) {
+          friendlyError = `Matric number "${sanitizedMatric}" not found in institutional roster. Contact your advisor to initialize your record.`;
+        }
+        toast.error(friendlyError);
+        setErrorMessage(friendlyError);
       } finally {
         setProcessing(false);
       }
     } else {
-      if (!advisorFullName.trim()) {
+      const sanitizedFullName = advisorFullName.trim();
+      const sanitizedEmail = advisorEmail.trim().toLowerCase();
+      const sanitizedStaffId = advisorStaffId.trim().toUpperCase();
+
+      if (!sanitizedFullName) {
+        toast.error("Please enter your full name.");
         setErrorMessage("Please enter your full name.");
         return;
       }
-      if (!advisorEmail.trim()) {
+      if (!sanitizedEmail) {
+        toast.error("Please enter your email address.");
         setErrorMessage("Please enter your email address.");
         return;
       }
-      if (!advisorStaffId.trim()) {
+      if (!sanitizedStaffId) {
+        toast.error("Please enter your staff ID.");
         setErrorMessage("Please enter your staff ID.");
         return;
       }
       if (!advisorPassword || advisorPassword.length < 6) {
+        toast.error("Password must be at least 6 characters.");
         setErrorMessage("Password must be at least 6 characters.");
         return;
       }
@@ -151,20 +211,26 @@ export function LandingPage() {
 
       try {
         const { error } = await signUpAdvisor({
-          fullName: advisorFullName.trim(),
-          email: advisorEmail.trim().toLowerCase(),
-          staffId: advisorStaffId.trim().toUpperCase(),
+          fullName: sanitizedFullName,
+          email: sanitizedEmail,
+          staffId: sanitizedStaffId,
           password: advisorPassword,
         });
 
         if (error) throw error;
 
+        toast.success("Advisor account created successfully! Redirecting to Advisor Portal...");
         setSuccessMessage("Account created successfully. Redirecting to Advisor Portal...");
         setTimeout(() => {
           navigate("/advisor");
         }, 900);
       } catch (err: any) {
-        setErrorMessage(err.message || "Advisor registration failed. Please verify your details and try again.");
+        let friendlyError = err.message || "Advisor registration failed. Please verify your details.";
+        if (friendlyError.includes("already registered")) {
+          friendlyError = "An account with this email or staff ID already exists. Please sign in.";
+        }
+        toast.error(friendlyError);
+        setErrorMessage(friendlyError);
       } finally {
         setProcessing(false);
       }

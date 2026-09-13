@@ -263,9 +263,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true);
     const matricNo = data.matricNo.trim().toUpperCase();
     const finalEmail = data.email?.trim() ? data.email.trim().toLowerCase() : toStudentEmail(matricNo);
-    const advisorStaffId = (data.advisorId || '').trim().toUpperCase() || 'STAFF-LIYANA';
+    const advisorStaffId = (data.advisorId || '').trim().toUpperCase();
     const curriculumYear = (data.syllabusType || '2023/2024').trim();
     const programCode = (data.program || 'SECJ').trim().toUpperCase();
+
+    // ── Pre-flight check: Verify Lecturer Session Code (Advisor Staff ID) ─────
+    if (!advisorStaffId) {
+      setIsLoading(false);
+      return { error: new Error('Please provide your Lecturer Session Code.') };
+    }
+
+    const { data: advisorRow, error: advisorErr } = await supabase
+      .from('advisors')
+      .select('staff_id, name, department')
+      .eq('staff_id', advisorStaffId)
+      .maybeSingle();
+
+    if (advisorErr || !advisorRow) {
+      setIsLoading(false);
+      return {
+        error: new Error(
+          `Invalid Session Code "${advisorStaffId}". Please verify with your lecturer.`
+        ),
+      };
+    }
 
     // ── PRIORITY 4: Claim-based registration ──────────────────────────────────
     //

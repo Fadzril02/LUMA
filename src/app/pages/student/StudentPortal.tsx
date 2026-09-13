@@ -3,8 +3,10 @@ import { useNavigate } from "react-router";
 import { motion, AnimatePresence } from "motion/react";
 import { 
   GraduationCap, Upload, FileText, LogOut, Menu, X, 
-  FileUp, BarChart, CheckCircle, Target, Edit3, AlertTriangle, Clock
+  FileUp, BarChart, CheckCircle, Target, Edit3, AlertTriangle, Clock,
+  Loader2, CheckCircle2, ShieldAlert
 } from "lucide-react";
+import { toast } from "sonner";
 import { Button, Input } from "../../components/ui";
 import { useAuth } from "../../../context/AuthContext";
 import { db } from "../../../lib/supabase";
@@ -24,6 +26,8 @@ export function StudentPortal() {
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [isVerificationModalOpen, setIsVerificationModalOpen] = useState(false);
   const [isLockedOut, setIsLockedOut] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   
   const [courseHistory, setCourseHistory] = useState<any[]>([]);
   const [creditProgress, setCreditProgress] = useState<any[]>([]);
@@ -35,6 +39,19 @@ export function StudentPortal() {
   const [stagedData, setStagedData] = useState<any>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
+
+  // Prevent tab close or navigation during active cold-start transcript extraction
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isProcessing) {
+        e.preventDefault();
+        e.returnValue = "Document processing is underway. Leaving now may cause duplicate or corrupt uploads.";
+        return e.returnValue;
+      }
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [isProcessing]);
 
   useEffect(() => {
     // Profile must be loaded before we can fetch student data
@@ -133,24 +150,51 @@ export function StudentPortal() {
     fetchDashboardData();
   }, [profile]);
 
-  const handleRealStorageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (isProcessing) return;
     const file = e.target.files?.[0];
-    if (!file || !profile?.matric_no) return;
+    if (file) {
+      if (!file.name.toLowerCase().endsWith(".pdf")) {
+        toast.error("Please upload an official PDF academic slip (.pdf only).");
+        return;
+      }
+      setSelectedFile(file);
+      setUploadStatusMsg("");
+      setUploadProgress(0);
+    }
+  };
 
-    setUploadProgress(20);
+  const handleUploadTranscript = async () => {
+    if (isProcessing) return;
+    if (!selectedFile) {
+      toast.error("Please select a transcript PDF file first.");
+      return;
+    }
+    if (!profile?.matric_no) {
+      toast.error("Student profile not found. Please log in again.");
+      return;
+    }
+
+    // UI Lockdown: Set isProcessing immediately on click
+    setIsProcessing(true);
+    setUploadProgress(15);
     setUploadStatusMsg("Uploading to secure vault...");
 
     try {
-      const extension = file.name.split(".").pop();
+      const extension = selectedFile.name.split(".").pop() || "pdf";
       const fileName = `${profile.matric_no}_${Date.now()}.${extension}`;
       const filePath = `slips/${fileName}`;
 
-      const { error: uploadErr } = await db.storage.from("academic-slips").upload(filePath, file);
+      setUploadProgress(35);
+      const { error: uploadErr } = await db.storage.from("academic-slips").upload(filePath, selectedFile);
       if (uploadErr) throw uploadErr;
+
+      setUploadProgress(50);
+      setUploadStatusMsg("Registering audit document entry...");
 
       const { data: docData, error: docErr } = await db.from("uploaded_documents").insert([{
         matric_no: profile.matric_no,
-        file_name: file.name,
+        file_name: selectedFile.name,
         file_path: filePath,
         processing_status: 'Pending_Student_Verification'
       }]).select().single();
@@ -158,24 +202,53 @@ export function StudentPortal() {
       if (docErr) throw docErr;
       setActiveDocumentId(docData.id);
 
-      setUploadProgress(60);
-      setUploadStatusMsg("Analyzing Academic Data via AI...");
+      setUploadProgress(70);
+      setUploadStatusMsg("Analyzing Academic Data via AI (May take up to 60s)...");
 
-      const result = await api.extractTranscript(filePath);
+      // Idempotency Safeguard: 75-second timeout limit against cold-start hangs
+      const timeoutSafeguard = new Promise((_, reject) =>
+        setTimeout(
+          () =>
+            reject(
+              new Error(
+                "Document extraction timed out after 75 seconds. The server cold-start took too long. Please retry."
+              )
+            ),
+          75000
+        )
+      );
+
+      const result = (await Promise.race([
+        api.extractTranscript(filePath),
+        timeoutSafeguard
+      ])) as any;
 
       setUploadProgress(100);
       setUploadStatusMsg("Extraction Complete! Review required.");
+      toast.success("Transcript parsed successfully! Review extracted courses.");
 
       setTimeout(() => {
         setStagedData(result.data);
         setIsUploadModalOpen(false);
+        setSelectedFile(null);
         setUploadProgress(0);
         setIsVerificationModalOpen(true);
-      }, 800);
+      }, 700);
 
     } catch (err: any) {
-      console.error(err);
-      setUploadStatusMsg(`Error: ${err.message}`);
+      console.error("[StudentPortal] upload error:", err);
+      let friendlyError = "Failed to process document. Please try again.";
+      if (err.message?.includes("timed out") || err.message?.includes("75 seconds")) {
+        friendlyError = "Upload timeout (75s limit reached). Backend cold-start took too long. Please retry in a moment.";
+      } else if (err.response?.data?.detail) {
+        friendlyError = `Extraction failed: ${err.response.data.detail}`;
+      } else if (err.message) {
+        friendlyError = err.message;
+      }
+      toast.error(friendlyError);
+      setUploadStatusMsg(`Error: ${friendlyError}`);
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -205,9 +278,9 @@ export function StudentPortal() {
 
       setIsVerificationModalOpen(false);
       setIsLockedOut(true);
-      alert("Slip verified and sent to your Advisor for official approval!");
+      toast.success("Slip verified and sent to your Advisor for official approval!");
     } catch (err: any) {
-      alert("Failed to submit ticket.");
+      toast.error("Failed to submit ticket. Please try again.");
       console.error(err);
     } finally {
       setIsSaving(false);
@@ -258,7 +331,11 @@ export function StudentPortal() {
                 Under Advisor Review
               </div>
             ) : (
-              <Button onClick={() => setIsUploadModalOpen(true)} className="bg-[#990033] hover:bg-[#80002A] text-white">
+              <Button 
+                onClick={() => setIsUploadModalOpen(true)} 
+                disabled={isProcessing}
+                className="bg-[#990033] hover:bg-[#80002A] text-white disabled:opacity-50"
+              >
                 <Upload className="w-4 h-4 mr-2" />Upload Slip
               </Button>
             )}
@@ -279,29 +356,134 @@ export function StudentPortal() {
 
       <AnimatePresence>
         {isUploadModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
-                <h3 className="text-lg font-semibold text-gray-900">Upload Slip</h3>
-                <button onClick={() => setIsUploadModalOpen(false)}><X className="w-5 h-5 text-gray-500" /></button>
-              </div>
-              <div className="p-6 space-y-6">
-                <div className="border-2 border-dashed rounded-xl p-8 text-center bg-gray-50 hover:border-[#990033] hover:bg-red-50/10 transition-all relative">
-                  <FileUp className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <input type="file" className="hidden" id="file-uploader" accept=".pdf" onChange={handleRealStorageUpload} />
-                  <Button className="bg-gray-900 text-white" onClick={() => document.getElementById("file-uploader")?.click()}>Browse Files</Button>
+          <div 
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+            onClick={() => {
+              if (!isProcessing) setIsUploadModalOpen(false);
+            }}
+          >
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }} 
+              animate={{ opacity: 1, scale: 1 }} 
+              exit={{ opacity: 0, scale: 0.95 }} 
+              className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-slate-50/50">
+                <div className="flex items-center space-x-2">
+                  <FileUp className="w-5 h-5 text-[#990033]" />
+                  <h3 className="text-base font-semibold text-gray-900">Upload Academic Slip</h3>
                 </div>
-                {uploadProgress > 0 && (
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-xs font-mono font-bold">
-                      <span className="text-gray-600">{uploadStatusMsg}</span>
-                      <span className="text-[#990033]">{uploadProgress}%</span>
+                <button 
+                  disabled={isProcessing}
+                  onClick={() => setIsUploadModalOpen(false)}
+                  className="p-1 rounded-md text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-5">
+                {/* Cold-start idempotency alert banner */}
+                <div className="bg-amber-50/70 border border-amber-200/80 rounded-lg p-3 text-xs text-amber-800 flex items-start space-x-2">
+                  <Clock className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <p className="leading-relaxed">
+                    <strong className="font-semibold text-amber-900">Cold Start Notice:</strong> Extraction service spins down when idle. First document upload may take 30–60s. Please keep this tab open.
+                  </p>
+                </div>
+
+                <div className={`border-2 border-dashed rounded-xl p-6 text-center transition-all relative ${
+                  isProcessing 
+                    ? "border-gray-200 bg-gray-50/50 cursor-not-allowed" 
+                    : selectedFile 
+                      ? "border-emerald-300 bg-emerald-50/20" 
+                      : "border-gray-300 bg-gray-50 hover:border-[#990033] hover:bg-red-50/10"
+                }`}>
+                  <FileUp className={`w-10 h-10 mx-auto mb-3 ${isProcessing ? "text-gray-300" : selectedFile ? "text-emerald-600" : "text-gray-400"}`} />
+                  
+                  <input 
+                    type="file" 
+                    className="hidden" 
+                    id="file-uploader" 
+                    accept=".pdf" 
+                    disabled={isProcessing}
+                    onChange={handleFileSelect} 
+                  />
+
+                  {selectedFile ? (
+                    <div className="space-y-1">
+                      <p className="text-sm font-semibold text-gray-900 truncate max-w-xs mx-auto">
+                        {selectedFile.name}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {(selectedFile.size / 1024).toFixed(1)} KB • PDF Document
+                      </p>
+                      {!isProcessing && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedFile(null);
+                            const input = document.getElementById("file-uploader") as HTMLInputElement | null;
+                            if (input) input.value = "";
+                          }}
+                          className="text-xs text-red-600 hover:underline pt-1 inline-block"
+                        >
+                          Choose different file
+                        </button>
+                      )}
                     </div>
-                    <div className="w-full bg-gray-100 h-1.5 rounded-full overflow-hidden">
-                      <div className="bg-[#990033] h-full transition-all" style={{ width: `${uploadProgress}%` }} />
+                  ) : (
+                    <div className="space-y-2">
+                      <p className="text-xs text-gray-600">Select your official UTM academic slip PDF</p>
+                      <Button 
+                        type="button"
+                        disabled={isProcessing}
+                        className="bg-gray-900 hover:bg-black text-white text-xs py-1.5 px-4" 
+                        onClick={() => document.getElementById("file-uploader")?.click()}
+                      >
+                        Browse PDF Files
+                      </Button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Progress Indicator */}
+                {uploadProgress > 0 && (
+                  <div className="space-y-2 pt-1">
+                    <div className="flex justify-between text-xs font-mono font-bold">
+                      <span className="text-gray-600 truncate mr-2">{uploadStatusMsg}</span>
+                      <span className="text-[#990033] flex-shrink-0">{uploadProgress}%</span>
+                    </div>
+                    <div className="w-full bg-gray-100 h-2 rounded-full overflow-hidden">
+                      <div 
+                        className="bg-[#990033] h-full transition-all duration-500" 
+                        style={{ width: `${uploadProgress}%` }} 
+                      />
                     </div>
                   </div>
                 )}
+
+                {/* Submit Action Button with Mutability & Cold-Start Spinner */}
+                <div className="pt-2">
+                  <Button
+                    type="button"
+                    disabled={!selectedFile || isProcessing}
+                    onClick={handleUploadTranscript}
+                    className="w-full bg-[#990033] hover:bg-[#80002A] text-white py-2.5 font-medium disabled:opacity-60 disabled:cursor-not-allowed shadow-sm transition-all text-sm"
+                  >
+                    {isProcessing ? (
+                      <span className="flex items-center justify-center">
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Processing Document (May take up to 60s)...
+                      </span>
+                    ) : (
+                      <span className="flex items-center justify-center">
+                        <Upload className="w-4 h-4 mr-2" />
+                        Upload Transcript
+                      </span>
+                    )}
+                  </Button>
+                </div>
               </div>
             </motion.div>
           </div>

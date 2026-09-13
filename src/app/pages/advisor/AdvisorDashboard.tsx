@@ -17,6 +17,7 @@ import {
   AlertCircle,
   BookOpen
 } from "lucide-react";
+import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle, Badge } from "../../components/ui";
 import { db } from "../../../lib/supabase"; 
 import { useAuth } from "../../../context/AuthContext";
@@ -115,16 +116,19 @@ export function AdvisorDashboard() {
     setUploadStatus("uploading");
     setUploadMessage("Parsing and validating curriculum structure matrix...");
 
-    // Simulate matrix parsing and validation delay
+    // Simulate matrix parsing and local schema validation
     setTimeout(() => {
       setUploadStatus("success");
-      setUploadMessage(`Successfully parsed ${selectedFile.name}. 48 courses and prerequisites verified.`);
+      setUploadMessage(`UAT Sandbox Mode: CSV structure validated locally (${selectedFile.name}). Database saving disabled for this pilot.`);
+      toast.info("UAT Sandbox Mode: CSV structure validated locally. Database saving disabled for this pilot.", {
+        duration: 6000
+      });
       setTimeout(() => {
         setIsUploadModalOpen(false);
         setSelectedFile(null);
         setUploadStatus("idle");
-      }, 2000);
-    }, 1500);
+      }, 3500);
+    }, 1200);
   };
 
   if (isLoading) {
@@ -379,15 +383,30 @@ export function AdvisorDashboard() {
                 <FileUp className="w-5 h-5 text-blue-600" />
                 <h3 className="text-sm font-bold text-slate-900">Upload Course Structure Matrix</h3>
               </div>
-              <button
-                onClick={() => setIsUploadModalOpen(false)}
-                className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
+              <div className="flex items-center space-x-2">
+                <Badge variant="outline" className="bg-amber-50 text-amber-800 border-amber-300 text-[10px] font-mono">
+                  UAT Sandbox
+                </Badge>
+                <button
+                  onClick={() => setIsUploadModalOpen(false)}
+                  className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
             <form onSubmit={handleUploadSubmit} className="p-6 space-y-4">
+              <div className="bg-amber-50/70 border border-amber-200/90 rounded-lg p-3 text-xs text-amber-900 flex items-start space-x-2.5">
+                <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <span className="font-semibold text-amber-950">UAT Pilot Sandbox Notice</span>
+                  <p className="text-[11px] text-amber-800 leading-relaxed">
+                    Uploaded curriculum files are evaluated locally for matrix structure and prerequisites. Database saving is disabled during this pilot phase.
+                  </p>
+                </div>
+              </div>
+
               <p className="text-xs text-slate-500 leading-relaxed">
                 Select a completed curriculum matrix file (.csv or .xlsx). The system will automatically validate course codes, credit hour assignments, and prerequisite rule logic.
               </p>
@@ -422,9 +441,17 @@ export function AdvisorDashboard() {
               )}
 
               {uploadStatus === "success" && (
-                <div className="flex items-center space-x-2 p-3 rounded-md bg-emerald-50 text-emerald-700 text-xs border border-emerald-200">
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>{uploadMessage}</span>
+                <div className="space-y-2 p-3.5 rounded-lg bg-amber-50/90 border border-amber-300 text-amber-900 text-xs">
+                  <div className="flex items-center space-x-2 font-semibold text-amber-900">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                    <span>CSV Structure Validated</span>
+                    <Badge variant="outline" className="bg-amber-200/80 border-amber-400 text-amber-900 text-[10px] font-mono ml-auto">
+                      UAT Sandbox Mode
+                    </Badge>
+                  </div>
+                  <p className="text-[11px] text-amber-850 leading-relaxed font-medium">
+                    UAT Sandbox Mode: CSV structure validated locally. Database saving disabled for this pilot.
+                  </p>
                 </div>
               )}
 
