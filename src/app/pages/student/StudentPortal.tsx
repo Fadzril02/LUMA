@@ -288,31 +288,43 @@ export function StudentPortal() {
   };
 
   const NavItem = ({ id, icon: Icon, label }: { id: string; icon: any; label: string }) => (
-    <button onClick={() => { setActiveTab(id); setIsMobileMenuOpen(false); }} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${activeTab === id ? "bg-[#990033] text-white shadow-md" : "text-gray-600 hover:bg-gray-100"}`}>
+    <button 
+      onClick={() => { setActiveTab(id); setIsMobileMenuOpen(false); }} 
+      className={`w-full flex items-center space-x-3 px-4 py-2.5 rounded-lg transition-colors tracking-tight ${
+        activeTab === id 
+          ? "bg-blue-900 text-white shadow-sm font-semibold" 
+          : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+      }`}
+    >
       <Icon className="w-5 h-5" />
-      <span className="font-medium">{label}</span>
+      <span className="text-sm font-medium">{label}</span>
     </button>
   );
 
-  if (loadingData) return <div className="flex h-screen w-screen items-center justify-center bg-[#F8F9FA] text-[#990033] font-mono tracking-widest">LOADING SECURE PORTAL...</div>;
+  if (loadingData) return <div className="flex h-screen w-screen items-center justify-center bg-gray-50 text-blue-900 font-mono tracking-widest text-xs uppercase">LOADING SECURE PORTAL...</div>;
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] flex">
+    <div className="min-h-screen bg-[#F9FAFB] flex font-sans text-gray-900 antialiased">
       <aside className={`fixed lg:static inset-y-0 left-0 z-50 w-64 bg-white border-r border-gray-200 transform transition-transform duration-200 ease-in-out flex flex-col ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}>
-        <div className="p-6 border-b border-gray-100 flex items-center space-x-2">
-          <GraduationCap className="w-8 h-8 text-[#990033]" />
-          <span className="font-bold text-base text-[#990033] leading-tight">SE Smart AA<br/><span className="text-xs text-gray-400 font-normal">Student Portal</span></span>
+        <div className="p-6 border-b border-gray-200 flex items-center space-x-3">
+          <div className="w-9 h-9 rounded-lg bg-blue-900 flex items-center justify-center text-white shadow-sm">
+            <GraduationCap className="w-5 h-5" />
+          </div>
+          <div>
+            <span className="font-extrabold text-base text-blue-900 tracking-tight leading-none block">LUMA</span>
+            <span className="text-xs text-gray-400 font-normal">Student Portal</span>
+          </div>
         </div>
-        <nav className="flex-1 p-4 space-y-1">
+        <nav className="flex-1 p-3 space-y-1">
           <NavItem id="dashboard" icon={BarChart} label="Dashboard Snapshot" />
           <NavItem id="history" icon={FileText} label="Academic Timeline" />
           <NavItem id="audit" icon={CheckCircle} label="Degree Audit" />
           <NavItem id="whatif" icon={Target} label="Grade Predictor" />
         </nav>
-        <div className="p-4 border-t border-gray-100">
-          <button onClick={logout} className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-gray-600 hover:bg-red-50 hover:text-red-600 transition-colors">
-            <LogOut className="w-5 h-5" />
-            <span className="font-medium">Logout</span>
+        <div className="p-4 border-t border-gray-200 bg-gray-50/50">
+          <button onClick={logout} className="w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-lg text-xs font-medium text-gray-600 hover:bg-red-50 hover:text-red-700 transition-colors">
+            <LogOut className="w-4 h-4" />
+            <span>Sign Out</span>
           </button>
         </div>
       </aside>
@@ -334,7 +346,7 @@ export function StudentPortal() {
               <Button 
                 onClick={() => setIsUploadModalOpen(true)} 
                 disabled={isProcessing}
-                className="bg-[#990033] hover:bg-[#80002A] text-white disabled:opacity-50"
+                className="bg-blue-900 hover:bg-blue-800 text-white shadow-sm disabled:opacity-50"
               >
                 <Upload className="w-4 h-4 mr-2" />Upload Slip
               </Button>
@@ -369,9 +381,9 @@ export function StudentPortal() {
               className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-slate-50/50">
+              <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
                 <div className="flex items-center space-x-2">
-                  <FileUp className="w-5 h-5 text-[#990033]" />
+                  <FileUp className="w-5 h-5 text-blue-900" />
                   <h3 className="text-base font-semibold text-gray-900">Upload Academic Slip</h3>
                 </div>
                 <button 
@@ -397,7 +409,7 @@ export function StudentPortal() {
                     ? "border-gray-200 bg-gray-50/50 cursor-not-allowed" 
                     : selectedFile 
                       ? "border-emerald-300 bg-emerald-50/20" 
-                      : "border-gray-300 bg-gray-50 hover:border-[#990033] hover:bg-red-50/10"
+                      : "border-gray-300 bg-gray-50 hover:border-blue-300 hover:bg-blue-50/10"
                 }`}>
                   <FileUp className={`w-10 h-10 mx-auto mb-3 ${isProcessing ? "text-gray-300" : selectedFile ? "text-emerald-600" : "text-gray-400"}`} />
                   
@@ -438,7 +450,7 @@ export function StudentPortal() {
                       <Button 
                         type="button"
                         disabled={isProcessing}
-                        className="bg-gray-900 hover:bg-black text-white text-xs py-1.5 px-4" 
+                        className="bg-blue-900 hover:bg-blue-800 text-white text-xs py-2 px-4 shadow-sm" 
                         onClick={() => document.getElementById("file-uploader")?.click()}
                       >
                         Browse PDF Files
@@ -452,11 +464,11 @@ export function StudentPortal() {
                   <div className="space-y-2 pt-1">
                     <div className="flex justify-between text-xs font-mono font-bold">
                       <span className="text-gray-600 truncate mr-2">{uploadStatusMsg}</span>
-                      <span className="text-[#990033] flex-shrink-0">{uploadProgress}%</span>
+                      <span className="text-blue-900 flex-shrink-0">{uploadProgress}%</span>
                     </div>
                     <div className="w-full bg-gray-100 h-2 rounded-full overflow-hidden">
                       <div 
-                        className="bg-[#990033] h-full transition-all duration-500" 
+                        className="bg-blue-900 h-full transition-all duration-500" 
                         style={{ width: `${uploadProgress}%` }} 
                       />
                     </div>
@@ -469,7 +481,7 @@ export function StudentPortal() {
                     type="button"
                     disabled={!selectedFile || isProcessing}
                     onClick={handleUploadTranscript}
-                    className="w-full bg-[#990033] hover:bg-[#80002A] text-white py-2.5 font-medium disabled:opacity-60 disabled:cursor-not-allowed shadow-sm transition-all text-sm"
+                    className="w-full bg-blue-900 hover:bg-blue-800 text-white py-2.5 font-medium disabled:opacity-60 disabled:cursor-not-allowed shadow-sm transition-all text-sm"
                   >
                     {isProcessing ? (
                       <span className="flex items-center justify-center">
@@ -492,15 +504,15 @@ export function StudentPortal() {
         {isVerificationModalOpen && stagedData && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
-              <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-slate-50">
+              <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
                 <div className="flex items-center space-x-2">
                   <Edit3 className="w-5 h-5 text-amber-600" />
                   <h3 className="text-lg font-bold text-gray-900">Verify AI Extraction</h3>
                 </div>
               </div>
               <div className="p-6 overflow-y-auto flex-1">
-                <div className="bg-blue-50 border border-blue-200 text-blue-800 text-sm p-4 rounded-lg mb-6 flex items-start">
-                  <AlertTriangle className="w-5 h-5 mr-3 flex-shrink-0 mt-0.5 text-blue-600" />
+                <div className="bg-blue-50 border border-blue-200 text-blue-900 text-sm p-4 rounded-lg mb-6 flex items-start">
+                  <AlertTriangle className="w-5 h-5 mr-3 flex-shrink-0 mt-0.5 text-blue-700" />
                   <p>Check the AI's work. Fix any errors below before submitting to your advisor.</p>
                 </div>
                 <div className="border border-gray-200 rounded-lg overflow-hidden">
@@ -525,7 +537,7 @@ export function StudentPortal() {
                 </div>
               </div>
               <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 flex justify-end space-x-3">
-                <Button onClick={handleConfirmAndSave} disabled={isSaving} className="bg-[#990033] hover:bg-[#80002A] text-white">
+                <Button onClick={handleConfirmAndSave} disabled={isSaving} className="bg-blue-900 hover:bg-blue-800 text-white shadow-sm">
                   {isSaving ? "Submitting..." : <><CheckCircle className="w-4 h-4 mr-2"/> Submit to Advisor</>}
                 </Button>
               </div>

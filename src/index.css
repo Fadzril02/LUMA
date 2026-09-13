@@ -6,64 +6,64 @@
 
 :root {
   --font-size: 16px;
-  --background: #ffffff;
-  --foreground: oklch(0.145 0 0);
-  --card: #ffffff;
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: #030213;
-  --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.95 0.0058 264.53);
-  --secondary-foreground: #030213;
-  --muted: #ececf0;
-  --muted-foreground: #717182;
-  --accent: #e9ebef;
-  --accent-foreground: #030213;
-  --destructive: #d4183d;
-  --destructive-foreground: #ffffff;
-  --border: rgba(0, 0, 0, 0.1);
+  --background: #F9FAFB;
+  --foreground: #111827;
+  --card: #FFFFFF;
+  --card-foreground: #111827;
+  --popover: #FFFFFF;
+  --popover-foreground: #111827;
+  --primary: #1E3A8A;
+  --primary-foreground: #FFFFFF;
+  --secondary: #F3F4F6;
+  --secondary-foreground: #111827;
+  --muted: #F3F4F6;
+  --muted-foreground: #6B7280;
+  --accent: #EFF6FF;
+  --accent-foreground: #1E3A8A;
+  --destructive: #DC2626;
+  --destructive-foreground: #FFFFFF;
+  --border: #E5E7EB;
   --input: transparent;
-  --input-background: #f3f3f5;
-  --switch-background: #cbced4;
-  --ring: oklch(0.708 0 0);
+  --input-background: #F9FAFB;
+  --switch-background: #D1D5DB;
+  --ring: #1E3A8A;
   --radius: 0.625rem;
   
-  /* UTM Branding Colors */
+  /* UTM Institutional Branding */
   --utm-maroon: #990033;
   --utm-gold: #FFCC00;
 
-  /* LUMA Centralized Enterprise Theme Variables */
-  --bg-base: #f8fafc;
-  --bg-surface: #ffffff;
-  --bg-surface-elevated: #f1f5f9;
-  --bg-sidebar: #020617;
-  --border-subtle: #e2e8f0;
-  --border-strong: #cbd5e1;
-  --border-dark: #1e293b;
-  --text-primary: #0f172a;
-  --text-secondary: #475569;
-  --text-muted: #64748b;
-  --text-inverse: #ffffff;
-  --accent-blue: #2563eb;
-  --accent-blue-hover: #1d4ed8;
-  --accent-blue-subtle: #eff6ff;
-  --accent-blue-border: #bfdbfe;
-  --accent-indigo: #4f46e5;
-  --accent-indigo-subtle: #eef2ff;
+  /* LUMA Academic Minimalist Design System Theme Variables */
+  --bg-base: #F9FAFB;
+  --bg-surface: #FFFFFF;
+  --bg-surface-elevated: #F3F4F6;
+  --bg-sidebar: #FFFFFF;
+  --border-subtle: #E5E7EB;
+  --border-strong: #D1D5DB;
+  --border-dark: #374151;
+  --text-primary: #111827;
+  --text-secondary: #4B5563;
+  --text-muted: #6B7280;
+  --text-inverse: #FFFFFF;
+  --accent-blue: #1E3A8A;
+  --accent-blue-hover: #1E40AF;
+  --accent-blue-subtle: #EFF6FF;
+  --accent-blue-border: #BFDBFE;
+  --accent-indigo: #1E3A8A;
+  --accent-indigo-subtle: #EFF6FF;
   --status-success: #059669;
-  --status-success-bg: #ecfdf5;
-  --status-warning: #d97706;
-  --status-warning-bg: #fffbeb;
-  --status-danger: #e11d48;
-  --status-danger-bg: #fff1f2;
+  --status-success-bg: #ECFDF5;
+  --status-warning: #D97706;
+  --status-warning-bg: #FFFBEB;
+  --status-danger: #DC2626;
+  --status-danger-bg: #FEF2F2;
 }
 
 @layer base {
-    * {
-      @apply border-border;
-    }
-    body {
-      @apply bg-background text-foreground;
-    }
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
 }
