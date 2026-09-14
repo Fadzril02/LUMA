@@ -41,13 +41,14 @@ export function CorrectionsQueue({ queue, roster }: CorrectionsQueueProps) {
     
     try {
       const studentData = activeAuditDoc.extracted_data;
-      const matchingStudent = roster.find((s) => s.id === activeAuditDoc.matric_no);
+      const matchingStudent = roster.find((s) => s.id === activeAuditDoc.matric_no || s.matric_no === activeAuditDoc.matric_no);
       
       // Route through FastAPI Zero-Waste engine for DAG verification & persistence into academic_records
       await api.finalizeApproval({
         document_id: activeAuditDoc.id,
         matric_number: activeAuditDoc.matric_no,
         student_name: matchingStudent ? matchingStudent.name : studentData.student_name,
+        advisor_id: matchingStudent?.advisor_staff_id,
         academic_session: studentData.academic_session || "2024/2025",
         semester: studentData.semester || 1,
         courses: studentData.courses || []

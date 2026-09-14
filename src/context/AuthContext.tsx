@@ -44,7 +44,8 @@ export interface StudentRegistrationData {
   matricNo: string;
   fullName: string;
   password: string;
-  advisorId: string;
+  registrationCode: string;
+  advisorId?: string; // backwards compatibility alias
   program: string;
   syllabusType: string;
   email?: string;
@@ -142,100 +143,78 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser(null);
           setSession(null);
           setProfile(null);
-          const notLinkedError = new Error('Your account exists but is not linked to a valid record. Please contact your advisor.');
-          setAuthError(notLinkedError.message);
-          return { success: false, error: notLinkedError };
+          const blockError = new Error(
+            'Access denied: Your student account is not initialized in the university database. Please contact your academic advisor.'
+          );
+          setAuthError(blockError.message);
+          return { success: false, error: blockError };
         }
 
-        // Real students row found: ALL displayed data MUST come strictly from this DB row
+        // Construct profile exclusively from database columns
         const studentProfile: StudentProfile = {
           role: 'student',
           matric_no: data.matric_no,
-          advisor_staff_id: data.advisor_staff_id || '',
-          full_name: data.name || data.matric_no,
-          curriculum_year: data.syllabus_type || '',
-          program_code: data.program || '',
-          name: data.name || data.matric_no,
-          program: data.program || '',
-          syllabus_type: data.syllabus_type || '',
+          full_name: data.name,
+          email: data.institutional_email,
+          advisor_staff_id: data.advisor_staff_id,
+          program: data.program,
+          curriculum_year: data.syllabus_type,
+          academic_status: data.academic_status,
+          current_semester: data.current_semester,
+          name: data.name,
+          program_code: data.program,
+          syllabus_type: data.syllabus_type,
         };
 
         setProfile(studentProfile);
         setAuthError(null);
         return { success: true, profile: studentProfile };
-      } else {
-        // Advisor: Query advisors table
-        let { data, error } = await supabase
-          .from('advisors')
-          .select('*')
-          .eq('user_id', currentUser.id)
-          .maybeSingle();
+      }
 
-        // Fallback: check by institutional_email if user_id is not yet set
-        if (!data && email) {
-          const { data: byEmail, error: emailErr } = await supabase
-            .from('advisors')
-            .select('*')
-            .eq('institutional_email', email)
-            .maybeSingle();
-          if (byEmail) {
-            data = byEmail;
-            if (!byEmail.user_id) {
-              await supabase.from('advisors').update({ user_id: currentUser.id }).eq('staff_id', byEmail.staff_id);
-            }
-          }
-          if (emailErr) {
-            console.warn('[AuthContext] Advisor email lookup error:', emailErr.message);
-          }
-        }
+      // Check if user is an Advisor
+      const { data: advisorData, error: advErr } = await supabase
+        .from('advisors')
+        .select('*')
+        .or(`user_id.eq.${currentUser.id},institutional_email.eq.${email}`)
+        .maybeSingle();
 
-        if (error) {
-          console.warn('[AuthContext] Advisor record lookup error:', error.message);
-        }
+      if (advErr) {
+        console.warn('[AuthContext] Advisor lookup error:', advErr.message);
+      }
 
-        // STEP 2 FIX: Hard failure if no linked advisor row exists.
-        // NEVER construct a fake profile from user_metadata.
-        if (!data) {
-          if (isRegistering.current) {
-            console.log("[AuthContext] Registration in progress, bypassing ghost check.");
-            return;
-          }
-          console.warn(`[AuthContext] BLOCKED GHOST ADVISOR: user_id=${currentUser.id} has NO linked row in advisors table.`);
-          await supabase.auth.signOut();
-          setUser(null);
-          setSession(null);
-          setProfile(null);
-          const notLinkedError = new Error('Your account exists but is not linked to a valid record. Please contact your advisor.');
-          setAuthError(notLinkedError.message);
-          return { success: false, error: notLinkedError };
-        }
-
-        // Real advisors row found: ALL data MUST come strictly from this DB row
+      if (advisorData) {
         const advisorProfile: AdvisorProfile = {
           role: 'advisor',
-          staff_id: data.staff_id,
-          full_name: data.name || 'Academic Advisor',
-          email: data.institutional_email || currentUser.email || '',
-          department: data.department || '',
-          university_id: data.university_id,
-          tier: data.tier || 'freemium',
-          monthly_audit_count: data.monthly_audit_count || 0,
-          name: data.name || 'Academic Advisor',
+          staff_id: advisorData.staff_id,
+          full_name: advisorData.name,
+          email: advisorData.institutional_email,
+          department: advisorData.department,
+          university_id: advisorData.university_id,
+          tier: advisorData.tier || 'freemium',
+          monthly_audit_count: advisorData.monthly_audit_count || 0,
+          name: advisorData.name,
         };
-
         setProfile(advisorProfile);
         setAuthError(null);
         return { success: true, profile: advisorProfile };
       }
-    } catch (err: any) {
-      console.error('Error fetching profile in AuthProvider:', err);
+
+      // If neither student nor advisor found in database, reject session
+      console.warn(`[AuthContext] BLOCKED UNRECOGNIZED USER: user_id=${currentUser.id}`);
       await supabase.auth.signOut();
       setUser(null);
       setSession(null);
       setProfile(null);
-      const error = new Error('Your account exists but is not linked to a valid record. Please contact your advisor.');
-      setAuthError(error.message);
-      return { success: false, error };
+      const unrecError = new Error('Access denied: Account not recognized.');
+      setAuthError(unrecError.message);
+      return { success: false, error: unrecError };
+
+    } catch (err: any) {
+      console.error('[AuthContext] fetchUserProfile fatal exception:', err);
+      setUser(null);
+      setSession(null);
+      setProfile(null);
+      return { success: false, error: err };
     }
   };
 
@@ -316,7 +295,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true);
     const matricNo = data.matricNo.trim().toUpperCase();
     const finalEmail = data.email?.trim() ? data.email.trim().toLowerCase() : toStudentEmail(matricNo);
-    const advisorStaffId = (data.advisorId || '').trim().toUpperCase();
+    const providedCode = (data.registrationCode || data.advisorId || '').trim().toUpperCase();
 
     // Strict validation: Program Code and Syllabus Year are required to register
     if (!data.program || !data.syllabusType) {
@@ -325,14 +304,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { error: new Error("Program Code and Syllabus Year are required to register.") };
     }
 
-    // Validate that a session code was provided
-    if (!advisorStaffId) {
+    // Validate that a registration code was provided
+    if (!providedCode) {
       isRegistering.current = false;
       setIsLoading(false);
-      return { error: new Error('Please provide your Lecturer Session Code.') };
+      return { error: new Error("Please enter your Lecturer's Registration Code.") };
     }
 
     try {
+      // Validation 1: Query advisors table where registration_code = providedCode
+      const { data: matchingAdvisor, error: advisorLookupError } = await supabase
+        .from('advisors')
+        .select('staff_id, registration_code, is_registration_locked')
+        .eq('registration_code', providedCode)
+        .maybeSingle();
+
+      if (advisorLookupError || !matchingAdvisor) {
+        if (advisorLookupError) {
+          console.warn('[signUpStudent] Advisor lookup error:', advisorLookupError.message);
+        }
+        return { error: new Error("Invalid Registration Code.") };
+      }
+
+      // Validation 2: Check if registration is locked for this advisor
+      if (matchingAdvisor.is_registration_locked === true) {
+        return {
+          error: new Error("Registration for this Advisor is currently locked. Please contact them directly.")
+        };
+      }
+
+      // Execution: Extract advisor's staff_id
+      const advisorStaffId = matchingAdvisor.staff_id;
+
       // 1. Call supabase.auth.signUp
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: finalEmail,
@@ -354,7 +357,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: authError ?? new Error('Sign-up failed: no user returned.') };
       }
 
-      // 3. Immediately execute INSERT into students table using returned authData.user.id
+      // 3. Immediately execute INSERT into students table using returned authData.user.id and extracted advisorStaffId
       const { error: insertError } = await supabase.from('students').insert([
         {
           matric_no: matricNo,
@@ -367,7 +370,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         },
       ]);
 
-      // 4. If INSERT fails (duplicate matric, invalid session code, constraint violation),
+      // 4. If INSERT fails (duplicate matric, constraint violation),
       // signOut immediately so the user is never left in an unlinked ghost state
       if (insertError) {
         console.error('[signUpStudent] Student record INSERT failed:', insertError.message);

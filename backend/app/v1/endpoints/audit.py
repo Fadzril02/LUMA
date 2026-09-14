@@ -228,21 +228,30 @@ async def finalize_approval(request: FinalizeApprovalRequest):
         course_catalog=catalog
     )
 
+    matric_number = (request.matric_number or "").strip()
+    if not matric_number:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Student matric_number is required and cannot be empty."
+        )
+
     # 4. Upsert Student Record & Persist Audits to Supabase
     student = supabase_svc.get_or_create_student(
         university_id=request.university_id,
         advisor_id=request.advisor_id or "STAFF-LIYANA",
-        matric_number=request.matric_number,
-        student_name=request.student_name or f"Student ({request.matric_number})",
+        matric_number=matric_number,
+        student_name=request.student_name or f"Student ({matric_number})",
         curriculum_year=request.curriculum_year or "2023/2024",
         program_code=request.program_code or "SECJ"
     )
 
-    student_id = student.get("id") or "00000000-0000-0000-0000-000000000000"
+    resolved_advisor_id = request.advisor_id or student.get("advisor_staff_id") or "STAFF-LIYANA"
+    if resolved_advisor_id == "STAFF-LIYANA" and student.get("advisor_staff_id"):
+        resolved_advisor_id = student.get("advisor_staff_id")
 
     audit_id = supabase_svc.persist_audit_results(
-        student_id=student_id,
-        advisor_id=request.advisor_id or "STAFF-LIYANA",
+        matric_no=matric_number,
+        advisor_id=resolved_advisor_id,
         records=audited_records,
         summary=summary,
         storage_pdf_path=f"document:{request.document_id}"
@@ -307,7 +316,13 @@ async def process_storage_transcript(request: StorageAuditRequest):
     # 3. Regex Parsing (Zero AI Cost)
     metadata, parsed_courses, unparsed_lines = MalaysianTranscriptParser.parse_transcript_lines(raw_lines)
 
-    matric_no = request.matric_number or metadata.get("matric_number") or "UNKNOWN_MATRIC"
+    matric_no = request.matric_number or metadata.get("matric_number")
+    if not matric_no or matric_no == "UNKNOWN_MATRIC":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Student matric_number could not be determined from transcript and was not provided in request."
+        )
+    matric_no = matric_no.strip()
     student_name = metadata.get("student_name") or f"Student ({matric_no})"
 
     # 4. Micro-LLM Fallback (Strictly for ambiguous/transfer lines)
@@ -335,10 +350,8 @@ async def process_storage_transcript(request: StorageAuditRequest):
         program_code=request.program_code or "SECJ"
     )
 
-    student_id = student.get("id") or "00000000-0000-0000-0000-000000000000"
-
     audit_id = supabase_svc.persist_audit_results(
-        student_id=student_id,
+        matric_no=matric_no,
         advisor_id=request.advisor_id,
         records=audited_records,
         summary=summary,
@@ -347,7 +360,7 @@ async def process_storage_transcript(request: StorageAuditRequest):
 
     return DegreeAuditResponse(
         audit_id=audit_id,
-        student_id=student_id,
+        student_id=matric_no,
         matric_number=matric_no,
         student_name=student_name,
         university_id=request.university_id,

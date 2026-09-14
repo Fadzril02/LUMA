@@ -143,69 +143,71 @@ class SupabaseService:
         program_code: str = "SECJ"
     ) -> Dict[str, Any]:
         """
-        Finds existing student or inserts a new student record.
+        Finds existing student or inserts a new student record into 'students' table.
         """
-        if not self.client:
-            return {"id": "00000000-0000-0000-0000-000000000000", "matric_number": matric_number}
+        clean_matric = (matric_number or "").strip().upper()
+        if not clean_matric:
+            raise ValueError("Student matric_number is required.")
 
+        if not self.client:
+            return {"matric_no": clean_matric, "name": student_name}
+
+        # Check existing student by matric_no
         try:
-            # Check existing student by matric
-            res = self.client.table("students").select("*").eq("matric_number", matric_number).execute()
+            res = self.client.table("students").select("*").eq("matric_no", clean_matric).execute()
             if res.data and len(res.data) > 0:
                 return res.data[0]
-        except Exception:
-            try:
-                res = self.client.table("students").select("*").eq("matric_no", matric_number).execute()
-                if res.data and len(res.data) > 0:
-                    return res.data[0]
-            except Exception:
-                pass
+        except Exception as sel_err:
+            print(f"[get_or_create_student] Student select error: {sel_err}")
 
-        # Insert new student record fallback
+        # Insert new student record matching live schema
         new_student = {
-            "university_id": university_id if university_id else None,
-            "advisor_id": advisor_id if advisor_id else None,
-            "matric_number": matric_number,
-            "full_name": student_name,
-            "curriculum_year": curriculum_year,
-            "program_code": program_code,
+            "matric_no": clean_matric,
+            "name": student_name,
+            "advisor_staff_id": advisor_id if advisor_id else "TEST123",
+            "program": program_code if program_code else "SECJ",
+            "syllabus_type": curriculum_year if curriculum_year else "2024/2025",
             "academic_status": "Good Standing"
         }
         try:
             ins_res = self.client.table("students").insert(new_student).execute()
             return ins_res.data[0] if ins_res.data else new_student
-        except Exception:
+        except Exception as ins_err:
+            print(f"[get_or_create_student] Student insert warning: {ins_err}")
             return new_student
 
     def persist_audit_results(
         self,
-        student_id: str,
+        matric_no: str,
         advisor_id: str,
         records: List[CourseAuditResult],
         summary: AuditSummary,
-        storage_pdf_path: str
+        storage_pdf_path: str,
+        student_id: Optional[str] = None
     ) -> str:
         """
         Saves parsed academic records and degree audit snapshot to PostgreSQL.
+        Binds matric_no directly from the request string.
         Returns audit_id UUID.
         """
+        target_matric = (matric_no or student_id or "").strip()
+        if not target_matric or target_matric == "00000000-0000-0000-0000-000000000000":
+            raise ValueError("Valid student matric_no is required to persist audit results. Placeholder UUIDs are forbidden.")
+
         if not self.client:
             return "mock-audit-id"
 
         try:
             # 1. Clear previous records for this student to ensure idempotency
             try:
-                self.client.table("academic_records").delete().eq("matric_no", student_id).execute()
-            except Exception:
-                try:
-                    self.client.table("academic_records").delete().eq("student_id", student_id).execute()
-                except Exception:
-                    pass
+                self.client.table("academic_records").delete().eq("matric_no", target_matric).execute()
+            except Exception as del_err:
+                print(f"[persist_audit_results] Clean previous records warning: {del_err}")
 
-            # 2. Insert new academic records (support both matric_no and student_id schemas)
+            # 2. Insert new academic records (bind matric_no directly)
             records_to_insert = [
                 {
-                    "matric_no": student_id,
+                    "matric_no": target_matric,
                     "course_code": r.course_code,
                     "course_name": r.course_name,
                     "credits": r.credits,
@@ -221,31 +223,23 @@ class SupabaseService:
                 for r in records
             ]
             if records_to_insert:
-                try:
-                    self.client.table("academic_records").insert(records_to_insert).execute()
-                except Exception as ins_err:
-                    # Fallback with student_id column if matric_no fails
-                    fallback_records = [
-                        {**{k: v for k, v in rec.items() if k != "matric_no"}, "student_id": student_id}
-                        for rec in records_to_insert
-                    ]
-                    self.client.table("academic_records").insert(fallback_records).execute()
+                self.client.table("academic_records").insert(records_to_insert).execute()
 
             # 3. Update student CGPA & Credits
             update_data = {
                 "cgpa": summary.cgpa,
-                "total_credits_earned": summary.total_credits_earned,
-                "academic_status": "Good Standing" if summary.overall_traffic_light != "RED" else "At-Risk"
+                "academic_status": "Good Standing" if summary.overall_traffic_light != "RED" else "At-Risk",
+                "audit_status": "Approved"
             }
             try:
-                self.client.table("students").update(update_data).eq("matric_no", student_id).execute()
-            except Exception:
-                self.client.table("students").update(update_data).eq("id", student_id).execute()
+                self.client.table("students").update(update_data).eq("matric_no", target_matric).execute()
+            except Exception as upd_err:
+                print(f"[persist_audit_results] Update student warning: {upd_err}")
 
             # 4. Insert degree_audits snapshot
             audit_record = {
-                "student_id": student_id,
-                "advisor_id": advisor_id,
+                "matric_no": target_matric,
+                "advisor_staff_id": advisor_id,
                 "audit_status": "COMPLETED",
                 "total_credits_required": summary.total_credits_required,
                 "total_credits_earned": summary.total_credits_earned,
@@ -255,11 +249,20 @@ class SupabaseService:
                 "audit_summary": summary.model_dump(),
                 "storage_pdf_path": storage_pdf_path
             }
-            audit_res = self.client.table("degree_audits").insert(audit_record).execute()
+            try:
+                audit_res = self.client.table("degree_audits").insert(audit_record).execute()
+            except Exception:
+                alt_record = {
+                    "student_id": target_matric,
+                    "advisor_id": advisor_id,
+                    **{k: v for k, v in audit_record.items() if k not in ("matric_no", "advisor_staff_id")}
+                }
+                audit_res = self.client.table("degree_audits").insert(alt_record).execute()
+
             return audit_res.data[0]["id"] if audit_res.data else "saved-audit"
         except Exception as e:
             print(f"[Supabase Persistence Warning] {e}")
-            return "saved-audit"
+            raise e
 
     def purge_uploaded_document_file(
         self,

@@ -19,7 +19,7 @@ export function StudentAuth() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [advisorId, setAdvisorId] = useState("");
+  const [registrationCode, setRegistrationCode] = useState("");
   const [program, setProgram] = useState("SECJ");
   const [syllabusType, setSyllabusType] = useState("2023/2024");
 
@@ -50,8 +50,8 @@ export function StudentAuth() {
       setErrorMessage("Please enter your Full Name.");
       return;
     }
-    if (!advisorId.trim()) {
-      setErrorMessage("Please enter your Advisor Code / ID.");
+    if (!registrationCode.trim()) {
+      setErrorMessage("Please enter Lecturer's 6-character Code.");
       return;
     }
     if (!program.trim() || !syllabusType.trim()) {
@@ -74,7 +74,8 @@ export function StudentAuth() {
         fullName: fullName.trim(),
         email: email.trim() || undefined,
         password: password,
-        advisorId: advisorId.trim().toUpperCase(),
+        registrationCode: registrationCode.trim().toUpperCase(),
+        advisorId: registrationCode.trim().toUpperCase(), // backwards compatibility
         program: program.trim(),
         syllabusType: syllabusType.trim(),
       });
@@ -291,23 +292,23 @@ export function StudentAuth() {
                     </div>
                   </div>
 
-                  {/* Advisor Code / ID */}
+                  {/* Lecturer's Registration Code */}
                   <div className="space-y-1.5">
-                    <Label htmlFor="advisorId" className="text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                      Advisor Code / ID <span className="text-rose-500">*</span>
+                    <Label htmlFor="registrationCode" className="text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                      Lecturer's Registration Code <span className="text-rose-500">*</span>
                     </Label>
                     <div className="relative flex items-center">
                       <BookOpen className="w-4 h-4 text-gray-400 absolute left-3" />
                       <Input
-                        id="advisorId"
-                        value={advisorId}
-                        onChange={(e) => setAdvisorId(e.target.value.toUpperCase())}
-                        placeholder="e.g. STAFF-001"
+                        id="registrationCode"
+                        value={registrationCode}
+                        onChange={(e) => setRegistrationCode(e.target.value.toUpperCase())}
+                        placeholder="e.g. ABC-123"
                         required
                         className="pl-9 text-sm font-mono border-gray-300 focus:border-[#990033] focus:ring-[#990033]"
                       />
                     </div>
-                    <p className="text-[11px] text-gray-500">Provided by your faculty advisor (e.g. STAFF-LIYANA).</p>
+                    <p className="text-[11px] text-gray-500">Enter Lecturer's 6-character Code (e.g. ABC-123) provided by your advisor.</p>
                   </div>
 
                   {/* Program & Curriculum Syllabus */}

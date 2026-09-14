@@ -98,10 +98,10 @@ def test_finalize_approval_fastapi_endpoint_flow():
         assert data["records"][0]["traffic_light"] == "GREEN"
         assert data["records"][1]["traffic_light"] == "GREEN"
 
-        # Verify persist_audit_results was called with student_id and records destined for academic_records
+        # Verify persist_audit_results was called directly with matric_no string
         mock_svc.persist_audit_results.assert_called_once()
         call_args = mock_svc.persist_audit_results.call_args[1]
-        assert call_args["student_id"] == "550e8400-e29b-41d4-a716-446655440000"
+        assert (call_args.get("matric_no") or call_args.get("student_id")) == "TEST-SE24-FINAL"
         records = call_args["records"]
         assert len(records) == 2
         assert records[0].course_code == "SECJ1013"
@@ -124,3 +124,20 @@ def test_finalize_approval_empty_courses_error():
     response = client.post("/api/v1/audit/finalize-approval", json=payload)
     assert response.status_code == 400
     assert "No course records provided" in response.json()["detail"]
+
+
+def test_finalize_approval_missing_matric_422():
+    """Test validation error (422) when matric_number is missing or empty."""
+    payload = {
+        "document_id": "99999999-9999-9999-9999-999999999999",
+        "matric_number": "   ",
+        "courses": [
+            {
+                "course_code": "SECJ1013",
+                "grade": "A"
+            }
+        ]
+    }
+    response = client.post("/api/v1/audit/finalize-approval", json=payload)
+    assert response.status_code == 422
+    assert "matric_number is required" in response.json()["detail"]

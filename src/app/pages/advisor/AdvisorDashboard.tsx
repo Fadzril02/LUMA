@@ -15,11 +15,17 @@ import {
   FileUp, 
   X,
   AlertCircle,
-  BookOpen
+  BookOpen,
+  RotateCw,
+  Lock,
+  Unlock,
+  KeyRound,
+  ShieldCheck
 } from "lucide-react";
 import { toast } from "sonner";
 import { db } from "../../../lib/supabase"; 
 import { useAuth } from "../../../context/AuthContext";
+import { Switch } from "../../components/ui/switch";
 
 export function AdvisorDashboard() {
   const { profile, user } = useAuth();
@@ -27,7 +33,11 @@ export function AdvisorDashboard() {
   const [queue, setQueue] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Session Code Copy State
+  // Registration Control State (Tinkercad Persistent Model)
+  const [registrationCode, setRegistrationCode] = useState<string>("");
+  const [isRegistrationLocked, setIsRegistrationLocked] = useState<boolean>(false);
+  const [isRotating, setIsRotating] = useState(false);
+  const [isTogglingLock, setIsTogglingLock] = useState(false);
   const [copied, setCopied] = useState(false);
 
   // Curriculum Upload Modal State
@@ -42,18 +52,30 @@ export function AdvisorDashboard() {
     const fetchData = async () => {
       setIsLoading(true);
       try {
-        let query = db.from("students").select("*");
+        let studentQuery = db.from("students").select("*");
         if (advisorStaffId) {
-          query = query.eq("advisor_staff_id", advisorStaffId);
+          studentQuery = studentQuery.eq("advisor_staff_id", advisorStaffId);
         }
 
-        const [studentsRes, queueRes] = await Promise.all([
-          query,
-          db.from("correction_requests").select("*")
+        let advisorQuery = db.from("advisors").select("staff_id, registration_code, is_registration_locked");
+        if (advisorStaffId) {
+          advisorQuery = advisorQuery.eq("staff_id", advisorStaffId);
+        } else if (user?.email) {
+          advisorQuery = advisorQuery.eq("institutional_email", user.email.toLowerCase());
+        }
+
+        const [studentsRes, queueRes, advisorRes] = await Promise.all([
+          studentQuery,
+          db.from("correction_requests").select("*"),
+          advisorQuery.maybeSingle()
         ]);
 
         if (studentsRes.data) setRoster(studentsRes.data);
         if (queueRes.data) setQueue(queueRes.data);
+        if (advisorRes.data) {
+          setRegistrationCode(advisorRes.data.registration_code || "");
+          setIsRegistrationLocked(Boolean(advisorRes.data.is_registration_locked));
+        }
       } catch (error) {
         console.error("Failed to load dashboard data:", error);
       } finally {
@@ -61,17 +83,94 @@ export function AdvisorDashboard() {
       }
     };
     fetchData();
-  }, [advisorStaffId]);
+  }, [advisorStaffId, user?.email]);
 
-  // Copy Lecturer Session Code handler
-  const handleCopySessionCode = async () => {
-    if (!advisorStaffId) return;
+  // Helper to generate a random 6-character code in 'ABC-123' format
+  // Excludes ambiguous characters (0, O, 1, I)
+  const generateRegistrationCode = (): string => {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let part1 = "";
+    let part2 = "";
+    for (let i = 0; i < 3; i++) {
+      part1 += chars.charAt(Math.floor(Math.random() * chars.length));
+      part2 += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return `${part1}-${part2}`;
+  };
+
+  // Rotate Code Handler: generates fresh code and updates advisors table
+  const handleRotateCode = async () => {
+    if (!advisorStaffId && !user?.email) {
+      toast.error("Advisor identifier not found.");
+      return;
+    }
+    setIsRotating(true);
     try {
-      await navigator.clipboard.writeText(advisorStaffId);
+      const newCode = generateRegistrationCode();
+      let updateQuery = db.from("advisors").update({ registration_code: newCode });
+      if (advisorStaffId) {
+        updateQuery = updateQuery.eq("staff_id", advisorStaffId);
+      } else {
+        updateQuery = updateQuery.eq("institutional_email", user!.email!.toLowerCase());
+      }
+
+      const { error } = await updateQuery;
+      if (error) throw error;
+
+      setRegistrationCode(newCode);
+      toast.success(`Registration code rotated successfully to: ${newCode}`);
+    } catch (err: any) {
+      console.error("Failed to rotate registration code:", err);
+      toast.error(err.message || "Failed to rotate registration code in database.");
+    } finally {
+      setIsRotating(false);
+    }
+  };
+
+  // Lock Toggle Handler: updates is_registration_locked in advisors table
+  const handleToggleLock = async (nextLocked: boolean) => {
+    if (!advisorStaffId && !user?.email) {
+      toast.error("Advisor identifier not found.");
+      return;
+    }
+    setIsTogglingLock(true);
+    try {
+      let updateQuery = db.from("advisors").update({ is_registration_locked: nextLocked });
+      if (advisorStaffId) {
+        updateQuery = updateQuery.eq("staff_id", advisorStaffId);
+      } else {
+        updateQuery = updateQuery.eq("institutional_email", user!.email!.toLowerCase());
+      }
+
+      const { error } = await updateQuery;
+      if (error) throw error;
+
+      setIsRegistrationLocked(nextLocked);
+      toast.success(
+        nextLocked
+          ? "Student registration locked. Advisees cannot register with this code."
+          : "Student registration unlocked. Advisees can now register."
+      );
+    } catch (err: any) {
+      console.error("Failed to update registration lock:", err);
+      toast.error(err.message || "Failed to update registration lock in database.");
+    } finally {
+      setIsTogglingLock(false);
+    }
+  };
+
+  // Copy code handler
+  const handleCopyCode = async () => {
+    const codeToCopy = registrationCode || advisorStaffId;
+    if (!codeToCopy) return;
+    try {
+      await navigator.clipboard.writeText(codeToCopy);
       setCopied(true);
+      toast.success("Code copied to clipboard!");
       setTimeout(() => setCopied(false), 2500);
     } catch (err) {
-      console.error("Failed to copy session code:", err);
+      console.error("Failed to copy code:", err);
+      toast.error("Failed to copy code to clipboard.");
     }
   };
 
@@ -155,32 +254,88 @@ export function AdvisorDashboard() {
 
   return (
     <div className="space-y-6">
-      {/* 1. HERO WIDGET: LECTURER SESSION CODE */}
+      {/* 1. REGISTRATION CONTROL CARD (Tinkercad Persistent Model) */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-          <div className="space-y-1.5 max-w-2xl">
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-blue-50 text-blue-900 text-xs font-mono border border-blue-200 font-medium">
-              <span>Registration Key</span>
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 pb-6 border-b border-gray-100">
+          <div className="space-y-1.5 max-w-xl">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-blue-50 text-blue-900 text-xs font-mono border border-blue-200 font-semibold">
+                <KeyRound className="w-3.5 h-3.5" />
+                Registration Control
+              </span>
+              {isRegistrationLocked ? (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-rose-50 text-rose-700 text-xs font-mono border border-rose-200 font-semibold">
+                  <Lock className="w-3 h-3" />
+                  LOCKED
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700 text-xs font-mono border border-emerald-200 font-semibold">
+                  <Unlock className="w-3 h-3" />
+                  ACTIVE
+                </span>
+              )}
             </div>
-            <h3 className="text-xl font-semibold tracking-tight text-gray-900">
-              Lecturer Session Code
+            <h3 className="text-xl font-bold tracking-tight text-gray-900">
+              Advisor Registration Code
             </h3>
             <p className="text-sm text-gray-600 leading-relaxed">
-              Distribute this code to your incoming students. Advisees must provide this identifier in the{" "}
-              <span className="text-gray-900 font-mono font-medium">Lecturer Session Code</span> field during sign-up to automatically connect to your cohort roster.
+              Distribute this persistent code to incoming students. Advisees must provide this code during registration to join your cohort roster. Rotate when compromised or lock when enrollment is closed.
             </p>
           </div>
 
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
-            <div className="bg-gray-50 border border-gray-200 px-4 py-2.5 rounded-lg flex items-center justify-between sm:justify-center space-x-3">
-              <span className="text-xs font-mono text-gray-500 uppercase tracking-wider">Staff ID:</span>
-              <span className="font-mono font-bold text-base text-gray-900 tracking-wider">
-                {advisorStaffId}
+          {/* Quick Lock/Unlock Switch */}
+          <div className="flex items-center gap-4 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 shrink-0">
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-900">
+                {isRegistrationLocked ? (
+                  <>
+                    <Lock className="w-3.5 h-3.5 text-rose-600" />
+                    <span>Registration Locked</span>
+                  </>
+                ) : (
+                  <>
+                    <Unlock className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Registration Open</span>
+                  </>
+                )}
+              </div>
+              <p className="text-[11px] text-gray-500 max-w-[200px]">
+                {isRegistrationLocked
+                  ? "Rejects incoming student sign-ups"
+                  : "Accepts new advisee sign-ups"}
+              </p>
+            </div>
+            <Switch
+              id="registration-lock-toggle"
+              checked={isRegistrationLocked}
+              disabled={isTogglingLock}
+              onCheckedChange={handleToggleLock}
+              className="data-[state=checked]:bg-rose-600 cursor-pointer"
+            />
+          </div>
+        </div>
+
+        {/* Code Display & Action Row */}
+        <div className="pt-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <span className="text-xs font-mono text-gray-500 uppercase tracking-wider">
+              Registration Code:
+            </span>
+            <div className="inline-flex items-center gap-3 bg-blue-50/70 border border-blue-200/80 px-4 py-2 rounded-lg">
+              <span className="font-mono text-2xl sm:text-3xl font-bold tracking-widest text-blue-950">
+                {registrationCode || (advisorStaffId ? `${advisorStaffId}` : "---")}
+              </span>
+              <span className="text-[11px] font-mono text-blue-700 bg-blue-100/80 px-2 py-0.5 rounded">
+                Staff ID: {advisorStaffId || "N/A"}
               </span>
             </div>
+          </div>
 
+          <div className="flex items-center gap-2.5">
+            {/* Copy Button */}
             <button
-              onClick={handleCopySessionCode}
+              onClick={handleCopyCode}
+              type="button"
               className={`inline-flex items-center justify-center space-x-2 px-4 py-2.5 rounded-lg text-xs font-semibold tracking-tight transition-colors cursor-pointer shadow-sm ${
                 copied
                   ? "bg-emerald-700 text-white hover:bg-emerald-800"
@@ -190,14 +345,25 @@ export function AdvisorDashboard() {
               {copied ? (
                 <>
                   <Check className="w-4 h-4 text-white" />
-                  <span>Copied to Clipboard</span>
+                  <span>Copied</span>
                 </>
               ) : (
                 <>
                   <Copy className="w-4 h-4" />
-                  <span>Copy Session Code</span>
+                  <span>Copy Code</span>
                 </>
               )}
+            </button>
+
+            {/* Rotate Code Button */}
+            <button
+              onClick={handleRotateCode}
+              disabled={isRotating}
+              type="button"
+              className="inline-flex items-center justify-center space-x-2 px-4 py-2.5 rounded-lg text-xs font-semibold tracking-tight text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 hover:text-gray-900 transition-colors cursor-pointer shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <RotateCw className={`w-4 h-4 text-gray-600 ${isRotating ? "animate-spin text-blue-900" : ""}`} />
+              <span>{isRotating ? "Rotating..." : "Rotate Code"}</span>
             </button>
           </div>
         </div>

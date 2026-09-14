@@ -37,7 +37,7 @@ export function LandingPage() {
   const [studentEmail, setStudentEmail] = useState("");
   const [studentMatric, setStudentMatric] = useState("");
   const [studentPassword, setStudentPassword] = useState("");
-  const [studentSessionCode, setStudentSessionCode] = useState("");
+  const [studentRegistrationCode, setStudentRegistrationCode] = useState("");
   const [studentProgram, setStudentProgram] = useState("SECJ");
   const [studentSyllabusType, setStudentSyllabusType] = useState("2024/2025");
   const [showStudentPassword, setShowStudentPassword] = useState(false);
@@ -120,7 +120,7 @@ export function LandingPage() {
       const sanitizedFullName = studentFullName.trim();
       const sanitizedEmail = studentEmail.trim().toLowerCase();
       const sanitizedMatric = studentMatric.trim().toUpperCase();
-      const sanitizedSessionCode = studentSessionCode.trim().toUpperCase();
+      const sanitizedRegistrationCode = studentRegistrationCode.trim().toUpperCase();
 
       if (!sanitizedFullName) {
         toast.error("Please enter your full name.");
@@ -147,9 +147,9 @@ export function LandingPage() {
         setErrorMessage("Password must be at least 6 characters.");
         return;
       }
-      if (!sanitizedSessionCode) {
-        toast.error("Please enter your lecturer session code.");
-        setErrorMessage("Please enter your lecturer session code.");
+      if (!sanitizedRegistrationCode) {
+        toast.error("Please enter Lecturer's 6-character Code.");
+        setErrorMessage("Please enter Lecturer's 6-character Code.");
         return;
       }
 
@@ -162,7 +162,8 @@ export function LandingPage() {
           fullName: sanitizedFullName,
           email: sanitizedEmail,
           password: studentPassword,
-          advisorId: sanitizedSessionCode,
+          registrationCode: sanitizedRegistrationCode,
+          advisorId: sanitizedRegistrationCode,
           program: studentProgram.trim(),
           syllabusType: studentSyllabusType.trim(),
         });
@@ -618,20 +619,20 @@ export function LandingPage() {
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label htmlFor="studentSessionCode" className="text-xs font-semibold text-gray-700">
-                      Lecturer Session Code
+                    <Label htmlFor="studentRegistrationCode" className="text-xs font-semibold text-gray-700">
+                      Lecturer's Registration Code
                     </Label>
                     <Input
-                      id="studentSessionCode"
+                      id="studentRegistrationCode"
                       type="text"
-                      value={studentSessionCode}
-                      onChange={(e) => setStudentSessionCode(e.target.value.toUpperCase())}
-                      placeholder="e.g. STAFF-LIYANA"
+                      value={studentRegistrationCode}
+                      onChange={(e) => setStudentRegistrationCode(e.target.value.toUpperCase())}
+                      placeholder="e.g. ABC-123"
                       required
                       className="bg-gray-50 border-gray-200 focus:ring-2 focus:ring-blue-900 focus:border-transparent text-gray-900 h-10 text-sm uppercase font-mono"
                     />
                     <p className="text-[11px] text-gray-500">
-                      Session Code provided by your academic advisor
+                      Enter Lecturer's 6-character Code (e.g. ABC-123) provided by your advisor
                     </p>
                   </div>
                 </>
