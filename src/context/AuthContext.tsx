@@ -315,8 +315,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // user_id IS NULL (the UPDATE policy USING clause allows it).
     const { data: existingStudent, error: lookupError } = await supabase
       .from('students')
-      // Select 'name' — the actual live column (not 'full_name' which doesn't exist)
-      .select('matric_no, user_id, name')
+      // Select live columns including advisor_staff_id for authorization verification
+      .select('matric_no, user_id, name, advisor_staff_id')
       .eq('matric_no', matricNo)
       .is('user_id', null)   // Only find UNCLAIMED rows
       .maybeSingle();
@@ -357,6 +357,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       };
     }
 
+    // Step 2b: Verify that the entered Session Code matches the pre-seeded advisor_staff_id
+    const preseededAdvisorId = (existingStudent.advisor_staff_id || '').trim().toUpperCase();
+    if (preseededAdvisorId && preseededAdvisorId !== advisorStaffId) {
+      console.warn(
+        `[signUpStudent] Session Code mismatch for matric "${matricNo}": ` +
+        `expected "${preseededAdvisorId}", got "${advisorStaffId}"`
+      );
+      await supabase.auth.signOut();
+      setIsLoading(false);
+      return {
+        error: new Error(
+          'Invalid Session Code. This code does not match the advisor assigned to your matric number.'
+        ),
+      };
+    }
+
     // Step 3: CLAIM the row — set user_id = auth.uid() using confirmed live column names.
     // Live schema columns (verified via information_schema query 2026-09-10):
     //   user_id              UUID  — links this row to the auth identity
@@ -375,7 +391,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .from('students')
       .update(claimPayload)
       .eq('matric_no', matricNo)
-      .is('user_id', null); // Safety: only claim genuinely unclaimed rows
+      .eq('advisor_staff_id', advisorStaffId)
+      .is('user_id', null); // Safety: only claim genuinely unclaimed rows and matching advisor
 
     if (claimError) {
       console.error('[signUpStudent] Claim UPDATE failed:', claimError.message, claimError.details);
