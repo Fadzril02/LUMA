@@ -191,6 +191,8 @@ export function StudentPortal() {
     setUploadProgress(15);
     setUploadStatusMsg("Uploading to secure vault...");
 
+    let createdDocId: string | null = null;
+
     try {
       const extension = selectedFile.name.split(".").pop() || "pdf";
       const fileName = `${profile.matric_no}_${Date.now()}.${extension}`;
@@ -211,6 +213,7 @@ export function StudentPortal() {
       }]).select().single();
       
       if (docErr) throw docErr;
+      createdDocId = docData.id;
       setActiveDocumentId(docData.id);
 
       setUploadProgress(70);
@@ -248,6 +251,23 @@ export function StudentPortal() {
 
     } catch (err: any) {
       console.error("[StudentPortal] upload error:", err);
+
+      // Compensating Transaction: prevent orphaned records if extraction times out or fails
+      const targetDocId = createdDocId || activeDocumentId;
+      if (targetDocId) {
+        try {
+          await db
+            .from("uploaded_documents")
+            .update({
+              processing_status: 'Extraction_Failed',
+              processing_error: err?.message || 'Extraction timed out or failed'
+            })
+            .eq("id", targetDocId);
+        } catch (compErr) {
+          console.error("[StudentPortal] Compensating update failed:", compErr);
+        }
+      }
+
       let friendlyError = "Failed to process document. Please try again.";
       if (err.message?.includes("timed out") || err.message?.includes("75 seconds")) {
         friendlyError = "Upload timeout (75s limit reached). Backend cold-start took too long. Please retry in a moment.";
@@ -265,6 +285,17 @@ export function StudentPortal() {
 
   const handleStagedDataChange = (index: number, field: string, value: string) => {
     const newData = { ...stagedData };
+    if (!newData.courses || !newData.courses[index]) return;
+
+    // Grade and Course Code Provenance Tracking (Anti-Tampering)
+    if (!newData.courses[index].ai_grade && field === "grade") {
+      newData.courses[index].ai_grade = newData.courses[index].grade; // Store original AI grade before overwriting
+    }
+    if (!newData.courses[index].ai_course_code && field === "course_code") {
+      newData.courses[index].ai_course_code = newData.courses[index].course_code; // Store original AI course code
+    }
+
+    newData.courses[index].is_altered = true;
     newData.courses[index][field] = value.toUpperCase();
     setStagedData(newData);
   };
