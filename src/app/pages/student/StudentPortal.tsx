@@ -19,7 +19,7 @@ import { CgpaCalculatorView } from "./CgpaCalculatorView";
 
 export function StudentPortal() {
   const navigate = useNavigate();
-  const { profile, logout } = useAuth();
+  const { profile, logout, user } = useAuth();
   
   const [activeTab, setActiveTab] = useState("dashboard");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -39,6 +39,9 @@ export function StudentPortal() {
   const [stagedData, setStagedData] = useState<any>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
+
+  const studentName = (profile as any)?.name || (profile as any)?.full_name || user?.user_metadata?.full_name || "Student";
+  const studentMatric = profile?.matric_no || user?.user_metadata?.matric_no || "";
 
   // Prevent tab close or navigation during active cold-start transcript extraction
   useEffect(() => {
@@ -64,7 +67,6 @@ export function StudentPortal() {
       setLoadingData(true);
       try {
         // ── Pending upload lockout check ────────────────────────────────────
-        // Guarded with try/catch — uploaded_documents may not exist in all envs.
         try {
           const { data: pendingDoc } = await db
             .from('uploaded_documents')
@@ -77,21 +79,12 @@ export function StudentPortal() {
           // uploaded_documents table may not exist; lockout defaults to false
         }
 
-        // ── PRIORITY 2 FIX: Query `academic_records` (not the deleted `results` table) ──
-        //
-        // SECURITY BOUNDARY: RLS policy `academic_records_select` (migration 06)
-        // enforces:  matric_no IN (SELECT matric_no FROM students WHERE user_id = auth.uid())
-        // The server-side RLS, not this client filter, is what prevents cross-student leaks.
-        //
-        // The .eq("matric_no", ...) below is a PERFORMANCE HINT only — it narrows
-        // the index scan and prevents the RLS fallback path from doing a full table scan.
-        // Even if removed, RLS alone would return only this student's rows.
+        // ── Query academic_records ──────────────────────────────────────────
         const { data: resultsData, error: resultsError } = await db
           .from("academic_records")
           .select(
             "course_code, course_name, credits, grade, grade_point, semester, status"
           )
-          // Performance hint (RLS is the actual security gate):
           .eq("matric_no", profile.matric_no)
           .order("semester", { ascending: true });
 
@@ -115,7 +108,6 @@ export function StudentPortal() {
         let gradedCredits = 0;
         let totalEarnedCredits = 0;
 
-        // The live schema CHECK constraint allows: 'Passed', 'Failed', 'Exempted', 'In-Progress'
         historyMapped.forEach((item) => {
           const passed = item.status === "Passed" || item.status === "Pass";
           if (passed) {
@@ -175,7 +167,6 @@ export function StudentPortal() {
       return;
     }
 
-    // UI Lockdown: Set isProcessing immediately on click
     setIsProcessing(true);
     setUploadProgress(15);
     setUploadStatusMsg("Uploading to secure vault...");
@@ -262,7 +253,6 @@ export function StudentPortal() {
     if (!profile?.matric_no || !activeDocumentId) return;
     setIsSaving(true);
     try {
-      // Inject the hidden fraud flag into the database
       const suspectedFraud = stagedData?.fraud_flag === true;
 
       const { error: updErr } = await db
@@ -290,86 +280,146 @@ export function StudentPortal() {
   const NavItem = ({ id, icon: Icon, label }: { id: string; icon: any; label: string }) => (
     <button 
       onClick={() => { setActiveTab(id); setIsMobileMenuOpen(false); }} 
-      className={`w-full flex items-center space-x-3 px-4 py-2.5 rounded-lg transition-colors tracking-tight ${
+      className={`w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-lg transition-all tracking-tight cursor-pointer ${
         activeTab === id 
-          ? "bg-blue-900 text-white shadow-sm font-semibold" 
-          : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+          ? "bg-blue-50 text-blue-900 font-semibold border border-blue-100 shadow-sm" 
+          : "text-gray-600 hover:bg-gray-50 hover:text-gray-900 border border-transparent font-medium"
       }`}
     >
-      <Icon className="w-5 h-5" />
-      <span className="text-sm font-medium">{label}</span>
+      <Icon className={`w-4 h-4 shrink-0 ${activeTab === id ? "text-blue-900" : "text-gray-500"}`} />
+      <span className="text-xs">{label}</span>
     </button>
   );
 
-  if (loadingData) return <div className="flex h-screen w-screen items-center justify-center bg-gray-50 text-blue-900 font-mono tracking-widest text-xs uppercase">LOADING SECURE PORTAL...</div>;
+  if (loadingData) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-[#F9FAFB] text-blue-900 font-mono tracking-widest text-xs uppercase">
+        <Loader2 className="w-5 h-5 mr-2 animate-spin text-blue-900" />
+        INITIALIZING STUDENT PORTAL...
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#F9FAFB] flex font-sans text-gray-900 antialiased">
-      <aside className={`fixed lg:static inset-y-0 left-0 z-50 w-64 bg-white border-r border-gray-200 transform transition-transform duration-200 ease-in-out flex flex-col ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}>
+      {/* Mobile Drawer Backdrop */}
+      {isMobileMenuOpen && (
+        <div 
+          className="fixed inset-0 bg-gray-900/40 backdrop-blur-xs z-40 lg:hidden transition-opacity"
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
+
+      {/* Academic Minimalist Light Sidebar */}
+      <aside className={`fixed lg:static inset-y-0 left-0 z-50 w-64 bg-white border-r border-gray-200 transform transition-transform duration-200 ease-in-out flex flex-col ${
+        isMobileMenuOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+      }`}>
+        {/* Brand Header */}
         <div className="p-6 border-b border-gray-200 flex items-center space-x-3">
-          <div className="w-9 h-9 rounded-lg bg-blue-900 flex items-center justify-center text-white shadow-sm">
+          <div className="w-10 h-10 rounded-lg bg-blue-900 flex items-center justify-center text-white shadow-sm">
             <GraduationCap className="w-5 h-5" />
           </div>
           <div>
-            <span className="font-extrabold text-base text-blue-900 tracking-tight leading-none block">LUMA</span>
-            <span className="text-xs text-gray-400 font-normal">Student Portal</span>
+            <span className="font-extrabold text-lg text-blue-900 tracking-tight leading-none block">LUMA</span>
+            <span className="text-[11px] text-gray-500 font-medium">Student Advising</span>
           </div>
         </div>
-        <nav className="flex-1 p-3 space-y-1">
+
+        {/* Navigation Items */}
+        <nav className="flex-1 p-4 space-y-1.5 overflow-y-auto">
           <NavItem id="dashboard" icon={BarChart} label="Dashboard Snapshot" />
           <NavItem id="history" icon={FileText} label="Academic Timeline" />
           <NavItem id="audit" icon={CheckCircle} label="Degree Audit" />
           <NavItem id="whatif" icon={Target} label="Grade Predictor" />
         </nav>
+
+        {/* Student Profile Card & Sign Out */}
         <div className="p-4 border-t border-gray-200 bg-gray-50/50">
-          <button onClick={logout} className="w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-lg text-xs font-medium text-gray-600 hover:bg-red-50 hover:text-red-700 transition-colors">
+          <div className="flex items-center space-x-3 mb-3 p-2.5 rounded-lg bg-white border border-gray-200 shadow-sm">
+            <div className="w-9 h-9 rounded-full bg-blue-50 border border-blue-200 flex items-center justify-center font-bold text-xs text-blue-900 shrink-0">
+              {studentName ? studentName.slice(0, 2).toUpperCase() : "ST"}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-xs font-semibold text-gray-900 truncate">{studentName}</div>
+              <div className="text-[11px] font-mono text-gray-500 truncate">{studentMatric}</div>
+            </div>
+          </div>
+
+          <button 
+            onClick={logout} 
+            className="w-full flex items-center justify-center space-x-2 px-3 py-2 rounded-lg text-xs font-medium text-gray-600 hover:bg-red-50 hover:text-red-700 hover:border-red-200 border border-transparent transition-colors cursor-pointer"
+          >
             <LogOut className="w-4 h-4" />
-            <span>Sign Out</span>
+            <span>Sign Out Platform</span>
           </button>
         </div>
       </aside>
 
-      <main className="flex-1 flex flex-col min-h-screen overflow-hidden">
-        <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between sticky top-0 z-30">
-          <div className="flex items-center">
-            <button className="lg:hidden mr-4" onClick={() => setIsMobileMenuOpen(true)}><Menu className="w-6 h-6 text-gray-600" /></button>
-            <h1 className="text-xl font-semibold text-gray-800 capitalize">Student Portal</h1>
+      {/* Main Viewport */}
+      <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
+        {/* Top Header Bar */}
+        <header className="bg-white border-b border-gray-200 px-6 py-3.5 flex items-center justify-between sticky top-0 z-30">
+          <div className="flex items-center space-x-3">
+            <button 
+              className="lg:hidden p-2 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors cursor-pointer" 
+              onClick={() => setIsMobileMenuOpen(true)}
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            <div>
+              <div className="text-xs text-gray-500 font-medium">Student Advising Portal</div>
+              <h1 className="text-lg font-bold text-gray-900 tracking-tight">
+                {activeTab === "dashboard" && "Dashboard Snapshot"}
+                {activeTab === "history" && "Academic Timeline"}
+                {activeTab === "audit" && "Degree Audit"}
+                {activeTab === "whatif" && "Grade Predictor"}
+              </h1>
+            </div>
           </div>
           
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-3">
             {isLockedOut ? (
-              <div className="bg-amber-50 border border-amber-200 px-4 py-2 rounded-lg flex items-center text-amber-800 text-sm font-medium shadow-sm">
-                <Clock className="w-4 h-4 mr-2 text-amber-600" />
+              <div className="bg-amber-50 border border-amber-200 px-3.5 py-1.5 rounded-lg flex items-center text-amber-700 text-xs font-medium shadow-sm">
+                <Clock className="w-4 h-4 mr-1.5 text-amber-600 shrink-0" />
                 Under Advisor Review
               </div>
             ) : (
               <Button 
                 onClick={() => setIsUploadModalOpen(true)} 
                 disabled={isProcessing}
-                className="bg-blue-900 hover:bg-blue-800 text-white shadow-sm disabled:opacity-50"
+                className="bg-blue-900 hover:bg-blue-800 text-white font-medium rounded-lg shadow-sm transition-colors text-xs px-3.5 py-2 disabled:opacity-50 cursor-pointer"
               >
-                <Upload className="w-4 h-4 mr-2" />Upload Slip
+                <Upload className="w-4 h-4 mr-1.5" />
+                Upload Transcript
               </Button>
             )}
           </div>
         </header>
 
-        <div className="flex-1 overflow-auto p-6">
+        {/* Content Body Viewport */}
+        <main className="flex-1 overflow-auto p-6 md:p-8 bg-[#F9FAFB]">
           <AnimatePresence mode="wait">
-            <motion.div key={activeTab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="max-w-6xl mx-auto space-y-6">
+            <motion.div 
+              key={activeTab} 
+              initial={{ opacity: 0, y: 8 }} 
+              animate={{ opacity: 1, y: 0 }} 
+              exit={{ opacity: 0, y: -8 }} 
+              className="max-w-6xl mx-auto space-y-6"
+            >
               {activeTab === "dashboard" && <StudentDashboardView stats={stats} creditProgress={creditProgress} />}
               {activeTab === "history" && <AcademicHistoryView courseHistory={courseHistory} />}
               {activeTab === "audit" && <DegreeAuditView />}
               {activeTab === "whatif" && <CgpaCalculatorView />}
             </motion.div>
           </AnimatePresence>
-        </div>
-      </main>
+        </main>
+      </div>
 
+      {/* PDF Upload Modal */}
       <AnimatePresence>
         {isUploadModalOpen && (
           <div 
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/40 backdrop-blur-xs"
             onClick={() => {
               if (!isProcessing) setIsUploadModalOpen(false);
             }}
@@ -378,38 +428,41 @@ export function StudentPortal() {
               initial={{ opacity: 0, scale: 0.95 }} 
               animate={{ opacity: 1, scale: 1 }} 
               exit={{ opacity: 0, scale: 0.95 }} 
-              className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden"
+              className="bg-white rounded-xl shadow-sm border border-gray-200 w-full max-w-md overflow-hidden"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+              <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50/50">
                 <div className="flex items-center space-x-2">
-                  <FileUp className="w-5 h-5 text-blue-900" />
-                  <h3 className="text-base font-semibold text-gray-900">Upload Academic Slip</h3>
+                  <div className="w-8 h-8 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-900">
+                    <FileUp className="w-4 h-4" />
+                  </div>
+                  <h3 className="text-base font-bold text-gray-900">Upload Academic Slip</h3>
                 </div>
                 <button 
                   disabled={isProcessing}
                   onClick={() => setIsUploadModalOpen(false)}
-                  className="p-1 rounded-md text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  className="p-1 rounded-md text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
               <div className="p-6 space-y-5">
-                {/* Cold-start idempotency alert banner */}
-                <div className="bg-amber-50/70 border border-amber-200/80 rounded-lg p-3 text-xs text-amber-800 flex items-start space-x-2">
-                  <Clock className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                {/* Cold-start idempotency notice banner */}
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-700 flex items-start space-x-2">
+                  <Clock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                   <p className="leading-relaxed">
                     <strong className="font-semibold text-amber-900">Cold Start Notice:</strong> Extraction service spins down when idle. First document upload may take 30–60s. Please keep this tab open.
                   </p>
                 </div>
 
+                {/* PDF Upload Dropzone */}
                 <div className={`border-2 border-dashed rounded-xl p-6 text-center transition-all relative ${
                   isProcessing 
                     ? "border-gray-200 bg-gray-50/50 cursor-not-allowed" 
                     : selectedFile 
                       ? "border-emerald-300 bg-emerald-50/20" 
-                      : "border-gray-300 bg-gray-50 hover:border-blue-300 hover:bg-blue-50/10"
+                      : "border-gray-200 bg-gray-50 hover:border-blue-900/40 hover:bg-blue-50/20"
                 }`}>
                   <FileUp className={`w-10 h-10 mx-auto mb-3 ${isProcessing ? "text-gray-300" : selectedFile ? "text-emerald-600" : "text-gray-400"}`} />
                   
@@ -438,7 +491,7 @@ export function StudentPortal() {
                             const input = document.getElementById("file-uploader") as HTMLInputElement | null;
                             if (input) input.value = "";
                           }}
-                          className="text-xs text-red-600 hover:underline pt-1 inline-block"
+                          className="text-xs text-rose-600 hover:underline pt-1 inline-block cursor-pointer font-medium"
                         >
                           Choose different file
                         </button>
@@ -450,7 +503,7 @@ export function StudentPortal() {
                       <Button 
                         type="button"
                         disabled={isProcessing}
-                        className="bg-blue-900 hover:bg-blue-800 text-white text-xs py-2 px-4 shadow-sm" 
+                        className="bg-blue-900 hover:bg-blue-800 text-white font-medium rounded-lg shadow-sm transition-colors text-xs py-2 px-4 cursor-pointer" 
                         onClick={() => document.getElementById("file-uploader")?.click()}
                       >
                         Browse PDF Files
@@ -462,9 +515,9 @@ export function StudentPortal() {
                 {/* Progress Indicator */}
                 {uploadProgress > 0 && (
                   <div className="space-y-2 pt-1">
-                    <div className="flex justify-between text-xs font-mono font-bold">
+                    <div className="flex justify-between text-xs font-mono font-semibold">
                       <span className="text-gray-600 truncate mr-2">{uploadStatusMsg}</span>
-                      <span className="text-blue-900 flex-shrink-0">{uploadProgress}%</span>
+                      <span className="text-blue-900 shrink-0">{uploadProgress}%</span>
                     </div>
                     <div className="w-full bg-gray-100 h-2 rounded-full overflow-hidden">
                       <div 
@@ -475,13 +528,13 @@ export function StudentPortal() {
                   </div>
                 )}
 
-                {/* Submit Action Button with Mutability & Cold-Start Spinner */}
+                {/* Submit Action Button */}
                 <div className="pt-2">
                   <Button
                     type="button"
                     disabled={!selectedFile || isProcessing}
                     onClick={handleUploadTranscript}
-                    className="w-full bg-blue-900 hover:bg-blue-800 text-white py-2.5 font-medium disabled:opacity-60 disabled:cursor-not-allowed shadow-sm transition-all text-sm"
+                    className="w-full bg-blue-900 hover:bg-blue-800 text-white py-2.5 font-medium rounded-lg shadow-sm transition-colors text-sm disabled:opacity-50 cursor-pointer"
                   >
                     {isProcessing ? (
                       <span className="flex items-center justify-center">
@@ -501,44 +554,79 @@ export function StudentPortal() {
           </div>
         )}
 
+        {/* Verification Modal */}
         {isVerificationModalOpen && stagedData && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
-              <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/40 backdrop-blur-xs">
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }} 
+              animate={{ opacity: 1, y: 0 }} 
+              className="bg-white rounded-xl shadow-sm border border-gray-200 w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]"
+            >
+              <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
                 <div className="flex items-center space-x-2">
-                  <Edit3 className="w-5 h-5 text-amber-600" />
-                  <h3 className="text-lg font-bold text-gray-900">Verify AI Extraction</h3>
+                  <div className="w-8 h-8 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-900">
+                    <Edit3 className="w-4 h-4" />
+                  </div>
+                  <h3 className="text-base font-bold text-gray-900">Verify AI Extraction</h3>
                 </div>
               </div>
-              <div className="p-6 overflow-y-auto flex-1">
-                <div className="bg-blue-50 border border-blue-200 text-blue-900 text-sm p-4 rounded-lg mb-6 flex items-start">
-                  <AlertTriangle className="w-5 h-5 mr-3 flex-shrink-0 mt-0.5 text-blue-700" />
-                  <p>Check the AI's work. Fix any errors below before submitting to your advisor.</p>
+              
+              <div className="p-6 overflow-y-auto flex-1 space-y-4">
+                <div className="bg-blue-50 border border-blue-200 text-blue-900 text-xs p-4 rounded-lg flex items-start">
+                  <AlertTriangle className="w-4 h-4 mr-2.5 shrink-0 mt-0.5 text-blue-900" />
+                  <p className="leading-relaxed">
+                    Check the AI's extracted course codes and grades. Correct any discrepancies before submitting to your academic advisor for formal approval.
+                  </p>
                 </div>
+
                 <div className="border border-gray-200 rounded-lg overflow-hidden">
                   <table className="w-full text-left">
                     <thead className="bg-gray-50 border-b border-gray-200">
                       <tr>
-                        <th className="px-4 py-3 text-xs font-semibold text-gray-600 uppercase">Code</th>
-                        <th className="px-4 py-3 text-xs font-semibold text-gray-600 uppercase">Grade</th>
-                        <th className="px-4 py-3 text-xs font-semibold text-gray-600 uppercase">Credits</th>
+                        <th className="px-4 py-2.5 text-xs font-semibold text-gray-600 uppercase">Course Code</th>
+                        <th className="px-4 py-2.5 text-xs font-semibold text-gray-600 uppercase">Grade</th>
+                        <th className="px-4 py-2.5 text-xs font-semibold text-gray-600 uppercase">Credits</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {stagedData.courses.map((course: any, index: number) => (
-                        <tr key={index}>
-                          <td className="px-4 py-2"><Input value={course.course_code} onChange={(e) => handleStagedDataChange(index, "course_code", e.target.value)} className="font-mono text-sm max-w-[120px]" /></td>
-                          <td className="px-4 py-2"><Input value={course.grade} onChange={(e) => handleStagedDataChange(index, "grade", e.target.value)} className="font-bold text-sm max-w-[80px]" /></td>
-                          <td className="px-4 py-2 font-mono text-sm">{course.credit_hour}</td>
+                        <tr key={index} className="hover:bg-gray-50/50">
+                          <td className="px-4 py-2">
+                            <Input 
+                              value={course.course_code} 
+                              onChange={(e) => handleStagedDataChange(index, "course_code", e.target.value)} 
+                              className="font-mono text-sm max-w-[140px] bg-gray-50 border-gray-200 focus:ring-2 focus:ring-blue-900 focus:border-transparent text-gray-900" 
+                            />
+                          </td>
+                          <td className="px-4 py-2">
+                            <Input 
+                              value={course.grade} 
+                              onChange={(e) => handleStagedDataChange(index, "grade", e.target.value)} 
+                              className="font-bold text-sm max-w-[80px] bg-gray-50 border-gray-200 focus:ring-2 focus:ring-blue-900 focus:border-transparent text-gray-900 uppercase" 
+                            />
+                          </td>
+                          <td className="px-4 py-2 font-mono text-sm text-gray-700">{course.credit_hour}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
               </div>
-              <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 flex justify-end space-x-3">
-                <Button onClick={handleConfirmAndSave} disabled={isSaving} className="bg-blue-900 hover:bg-blue-800 text-white shadow-sm">
-                  {isSaving ? "Submitting..." : <><CheckCircle className="w-4 h-4 mr-2"/> Submit to Advisor</>}
+
+              <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end space-x-3">
+                <Button 
+                  onClick={handleConfirmAndSave} 
+                  disabled={isSaving} 
+                  className="bg-blue-900 hover:bg-blue-800 text-white font-medium rounded-lg shadow-sm transition-colors text-sm px-4 py-2 cursor-pointer"
+                >
+                  {isSaving ? (
+                    "Submitting..."
+                  ) : (
+                    <>
+                      <CheckCircle className="w-4 h-4 mr-2" />
+                      Confirm &amp; Submit
+                    </>
+                  )}
                 </Button>
               </div>
             </motion.div>
