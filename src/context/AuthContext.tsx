@@ -57,6 +57,8 @@ export interface AuthContextType {
   advisor: AdvisorProfile | null;
   student: StudentProfile | null;
   role: UserRole;
+  authError: string | null;
+  clearAuthError: () => void;
   isLoading: boolean;
   loading: boolean; // Backwards-compatible alias for isLoading
   signInWithEmail: (emailOrMatric: string, passwordOrSessionCode: string) => Promise<{ error: Error | null; role?: UserRole }>;
@@ -106,101 +108,125 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  const fetchUserProfile = async (currentUser: User) => {
+  const [authError, setAuthError] = useState<string | null>(null);
+
+  const clearAuthError = () => setAuthError(null);
+
+  const fetchUserProfile = async (currentUser: User): Promise<{ success: boolean; profile?: Profile; error?: Error }> => {
     try {
       const email = (currentUser.email || '').toLowerCase();
       
       // Check if user is a Student (via @student.utm.my domain or user metadata)
       if (isStudentEmail(email) || currentUser.user_metadata?.role === 'student') {
-        const matricNo = currentUser.user_metadata?.matric_no || extractMatricFromEmail(email);
-
-        // PRIORITY 4 FIX: Always try user_id = auth.uid() FIRST so the profile
-        // is anchored to the authenticated identity (not just the matric_no string).
-        // This also respects the new RLS policy which only returns the student's own row.
-        let data: any = null;
-        let fetchError: any = null;
-
-        const { data: byUid, error: uidErr } = await supabase
+        // Query students strictly WHERE user_id = auth.uid()
+        const { data, error: uidErr } = await supabase
           .from('students')
           .select('*')
           .eq('user_id', currentUser.id)
           .maybeSingle();
 
-        if (!uidErr && byUid) {
-          data = byUid;
-        } else {
-          // Fallback: user_id not yet set (e.g. just signed up before claim ran)
-          const { data: byMatric, error: matricErr } = await supabase
-            .from('students')
-            .select('*')
-            .eq('matric_no', matricNo)
-            .maybeSingle();
-          data = byMatric;
-          fetchError = matricErr;
+        if (uidErr) {
+          console.warn('[AuthContext] Student lookup error:', uidErr.message);
         }
 
-        if (fetchError) {
-          console.warn('Student record lookup warning:', fetchError.message);
+        // STEP 2 FIX: Hard failure if no linked student row exists.
+        // NEVER construct a fake profile from user_metadata.
+        if (!data) {
+          console.warn(`[AuthContext] BLOCKED GHOST STUDENT: user_id=${currentUser.id} has NO linked row in students table.`);
+          await supabase.auth.signOut();
+          setUser(null);
+          setSession(null);
+          setProfile(null);
+          const notLinkedError = new Error('Your account exists but is not linked to a valid record. Please contact your advisor.');
+          setAuthError(notLinkedError.message);
+          return { success: false, error: notLinkedError };
         }
 
-        // Live schema uses 'name' (not 'full_name'), 'program' (not 'program_code'),
-        // 'syllabus_type' (not 'curriculum_year')
-        const fullName = data?.name || data?.full_name || currentUser.user_metadata?.full_name || matricNo;
-        const advisorId = data?.advisor_staff_id || currentUser.user_metadata?.advisor_staff_id || 'STAFF-LIYANA';
-        const curriculumYear = data?.syllabus_type || data?.curriculum_year || '2023/2024';
-        const programCode = data?.program || data?.program_code || 'SECJ';
-
+        // Real students row found: ALL displayed data MUST come strictly from this DB row
         const studentProfile: StudentProfile = {
           role: 'student',
-          matric_no: matricNo,
-          advisor_staff_id: advisorId,
-          full_name: fullName,
-          curriculum_year: curriculumYear,
-          program_code: programCode,
-          name: fullName,
-          program: programCode,
-          syllabus_type: curriculumYear,
+          matric_no: data.matric_no,
+          advisor_staff_id: data.advisor_staff_id || '',
+          full_name: data.name || data.matric_no,
+          curriculum_year: data.syllabus_type || '',
+          program_code: data.program || '',
+          name: data.name || data.matric_no,
+          program: data.program || '',
+          syllabus_type: data.syllabus_type || '',
         };
 
         setProfile(studentProfile);
+        setAuthError(null);
+        return { success: true, profile: studentProfile };
       } else {
-        // User is an Advisor — query by institutional_email (primary identity link)
-        // NOTE: advisors table has NO 'id' UUID column — staff_id is the PK
-        const staffId = currentUser.user_metadata?.staff_id || '';
-        const email = currentUser.email || '';
+        // Advisor: Query advisors table
+        let { data, error } = await supabase
+          .from('advisors')
+          .select('*')
+          .eq('user_id', currentUser.id)
+          .maybeSingle();
 
-        let query = supabase.from('advisors').select('*');
-
-        if (email) {
-          query = query.eq('institutional_email', email);
-        } else if (staffId) {
-          query = query.eq('staff_id', staffId);
+        // Fallback: check by institutional_email if user_id is not yet set
+        if (!data && email) {
+          const { data: byEmail, error: emailErr } = await supabase
+            .from('advisors')
+            .select('*')
+            .eq('institutional_email', email)
+            .maybeSingle();
+          if (byEmail) {
+            data = byEmail;
+            if (!byEmail.user_id) {
+              await supabase.from('advisors').update({ user_id: currentUser.id }).eq('staff_id', byEmail.staff_id);
+            }
+          }
+          if (emailErr) {
+            console.warn('[AuthContext] Advisor email lookup error:', emailErr.message);
+          }
         }
-
-        const { data, error } = await query.maybeSingle();
 
         if (error) {
-          console.warn('Advisor record lookup warning:', error.message);
+          console.warn('[AuthContext] Advisor record lookup error:', error.message);
         }
 
-        const fullName = data?.name || data?.full_name || currentUser.user_metadata?.full_name || 'Academic Advisor';
+        // STEP 2 FIX: Hard failure if no linked advisor row exists.
+        // NEVER construct a fake profile from user_metadata.
+        if (!data) {
+          console.warn(`[AuthContext] BLOCKED GHOST ADVISOR: user_id=${currentUser.id} has NO linked row in advisors table.`);
+          await supabase.auth.signOut();
+          setUser(null);
+          setSession(null);
+          setProfile(null);
+          const notLinkedError = new Error('Your account exists but is not linked to a valid record. Please contact your advisor.');
+          setAuthError(notLinkedError.message);
+          return { success: false, error: notLinkedError };
+        }
+
+        // Real advisors row found: ALL data MUST come strictly from this DB row
         const advisorProfile: AdvisorProfile = {
           role: 'advisor',
-          staff_id: data?.staff_id || staffId,
-          full_name: fullName,
-          email: data?.institutional_email || currentUser.email || '',
-          department: data?.department || 'Computer Science',
-          university_id: data?.university_id,
-          tier: data?.tier || 'freemium',
-          monthly_audit_count: data?.monthly_audit_count || 0,
-          name: fullName,
+          staff_id: data.staff_id,
+          full_name: data.name || 'Academic Advisor',
+          email: data.institutional_email || currentUser.email || '',
+          department: data.department || '',
+          university_id: data.university_id,
+          tier: data.tier || 'freemium',
+          monthly_audit_count: data.monthly_audit_count || 0,
+          name: data.name || 'Academic Advisor',
         };
 
         setProfile(advisorProfile);
+        setAuthError(null);
+        return { success: true, profile: advisorProfile };
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error fetching profile in AuthProvider:', err);
+      await supabase.auth.signOut();
+      setUser(null);
+      setSession(null);
       setProfile(null);
+      const error = new Error('Your account exists but is not linked to a valid record. Please contact your advisor.');
+      setAuthError(error.message);
+      return { success: false, error };
     }
   };
 
@@ -218,14 +244,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // Listen for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        if (session?.user) {
-          await fetchUserProfile(session.user);
-        } else {
+      async (event, session) => {
+        if (event === 'SIGNED_OUT' || !session?.user) {
+          setSession(null);
+          setUser(null);
           setProfile(null);
+          setIsLoading(false);
+          return;
         }
+
+        setSession(session);
+        setUser(session.user);
+        await fetchUserProfile(session.user);
         setIsLoading(false);
       }
     );
@@ -237,6 +267,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signInWithEmail = async (emailOrMatric: string, passwordOrSessionCode: string) => {
     setIsLoading(true);
+    setAuthError(null);
     const input = emailOrMatric.trim();
     const isEmail = input.includes('@');
     const finalEmail = isEmail ? input.toLowerCase() : toStudentEmail(input);
@@ -246,10 +277,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       password: passwordOrSessionCode,
     });
 
-    setIsLoading(false);
-    if (error) return { error };
+    if (error || !data.user) {
+      setIsLoading(false);
+      return { error: error ?? new Error('Sign in failed.') };
+    }
 
-    const detectedRole: UserRole = isStudentEmail(finalEmail) ? 'student' : 'advisor';
+    // Immediately verify and require the real DB-linked row
+    const profileRes = await fetchUserProfile(data.user);
+    setIsLoading(false);
+
+    if (!profileRes.success) {
+      return { 
+        error: profileRes.error ?? new Error('Your account exists but is not linked to a valid record. Please contact your advisor.') 
+      };
+    }
+
+    const detectedRole: UserRole = profileRes.profile?.role ?? (isStudentEmail(finalEmail) ? 'student' : 'advisor');
     return { error: null, role: detectedRole };
   };
 
@@ -264,8 +307,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const matricNo = data.matricNo.trim().toUpperCase();
     const finalEmail = data.email?.trim() ? data.email.trim().toLowerCase() : toStudentEmail(matricNo);
     const advisorStaffId = (data.advisorId || '').trim().toUpperCase();
-    const curriculumYear = (data.syllabusType || '2023/2024').trim();
-    const programCode = (data.program || 'SECJ').trim().toUpperCase();
 
     // Validate that a session code was provided
     if (!advisorStaffId) {
@@ -273,19 +314,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { error: new Error('Please provide your Lecturer Session Code.') };
     }
 
-    // ── PRIORITY 4: Claim-based registration ──────────────────────────────────
-    //
-    // We do NOT create a new row in `students`. Instead:
-    //   1. Create the Supabase Auth user (gives us a session + auth.uid())
-    //   2. While logged in, SELECT the pre-seeded students row by matric_no
-    //   3. Validate it exists and is unclaimed (user_id IS NULL)
-    //   4. CLAIM it: UPDATE students SET user_id = auth.uid() WHERE matric_no = ?
-    //
-    // If no pre-seeded row → reject with a clear advisor-contact error.
-    // If already claimed by another UID → reject as squatted.
-    // ─────────────────────────────────────────────────────────────────────────
-
-    // Step 1: Create the Supabase Auth user (this also signs them in)
+    // ── Self-Serve Model: Direct Student Registration ─────────────────────────
+    // 1. Create the Supabase Auth user
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email: finalEmail,
       password: data.password,
@@ -304,110 +334,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { error: authError ?? new Error('Sign-up failed: no user returned.') };
     }
 
-    // Step 2: SELECT the pre-seeded row by matric_no.
-    // At this point the student is authenticated, so the RLS UPDATE policy
-    // (user_id = auth.uid() OR advisor path) will allow the claim below
-    // because the current row has user_id = NULL (not yet claimed).
-    // NOTE: The SELECT policy requires user_id = auth.uid() OR advisor path.
-    // Since user_id is NULL, we need the service_role or a special open policy
-    // for unclaimed rows. We work around this by using the auth.uid() match
-    // on the UPDATE directly — the claim succeeds if the row exists and
-    // user_id IS NULL (the UPDATE policy USING clause allows it).
-    const { data: existingStudent, error: lookupError } = await supabase
-      .from('students')
-      // Select live columns including advisor_staff_id for authorization verification
-      .select('matric_no, user_id, name, advisor_staff_id')
-      .eq('matric_no', matricNo)
-      .is('user_id', null)   // Only find UNCLAIMED rows
-      .maybeSingle();
+    // 2. Direct INSERT into students table immediately after successful sign-up
+    const { error: insertError } = await supabase.from('students').insert([
+      {
+        matric_no: matricNo,
+        user_id: authData.user.id,
+        name: data.fullName,
+        institutional_email: finalEmail,
+        advisor_staff_id: advisorStaffId,
+        program: data.program || 'SECJ',
+        syllabus_type: data.syllabusType || '2024/2025',
+      },
+    ]);
 
-    if (lookupError) {
-      console.error('[signUpStudent] Student lookup failed:', lookupError.message);
-      await supabase.auth.signOut();
-      setIsLoading(false);
-      return { error: new Error('Registration lookup failed — please try again.') };
-    }
-
-    if (!existingStudent) {
-      // Either the matric_no is not pre-seeded, OR it's already claimed.
-      // Check which case it is for a better error message.
-      const { data: claimedRow } = await supabase
-        .from('students')
-        .select('user_id')
-        .eq('matric_no', matricNo)
-        .not('user_id', 'is', null)
-        .maybeSingle();
-
-      await supabase.auth.signOut();
-      setIsLoading(false);
-
-      if (claimedRow) {
-        return {
-          error: new Error(
-            `Matric number "${matricNo}" is already registered to an account. ` +
-            `If this is your matric number, contact your advisor.`
-          ),
-        };
-      }
-      return {
-        error: new Error(
-          `Matric number "${matricNo}" not found — contact your advisor to have ` +
-          `your record pre-registered before signing up.`
-        ),
-      };
-    }
-
-    // Step 2b: Verify that the entered Session Code matches the pre-seeded advisor_staff_id
-    const preseededAdvisorId = (existingStudent.advisor_staff_id || '').trim().toUpperCase();
-    if (preseededAdvisorId && preseededAdvisorId !== advisorStaffId) {
-      console.warn(
-        `[signUpStudent] Session Code mismatch for matric "${matricNo}": ` +
-        `expected "${preseededAdvisorId}", got "${advisorStaffId}"`
-      );
+    if (insertError) {
+      console.error('[signUpStudent] Student record INSERT failed:', insertError.message);
       await supabase.auth.signOut();
       setIsLoading(false);
       return {
         error: new Error(
-          'Invalid Session Code. This code does not match the advisor assigned to your matric number.'
+          insertError.message.includes('duplicate') || insertError.message.includes('unique')
+            ? `Matric number "${matricNo}" is already registered.`
+            : `Failed to create student record: ${insertError.message}`
         ),
       };
     }
 
-    // Step 3: CLAIM the row — set user_id = auth.uid() using confirmed live column names.
-    // Live schema columns (verified via information_schema query 2026-09-10):
-    //   user_id              UUID  — links this row to the auth identity
-    //   name                 TEXT  — student's display name (NOT 'full_name')
-    //   institutional_email  TEXT  — student's email
-    const claimPayload: Record<string, unknown> = {
-      user_id: authData.user.id,
-      institutional_email: finalEmail,
-    };
-    // Only overwrite name if the pre-seeded row doesn't already have one
-    if (!existingStudent.name && data.fullName) {
-      claimPayload.name = data.fullName;
-    }
-
-    const { error: claimError } = await supabase
-      .from('students')
-      .update(claimPayload)
-      .eq('matric_no', matricNo)
-      .eq('advisor_staff_id', advisorStaffId)
-      .is('user_id', null); // Safety: only claim genuinely unclaimed rows and matching advisor
-
-    if (claimError) {
-      console.error('[signUpStudent] Claim UPDATE failed:', claimError.message, claimError.details);
-      // Auth user created but DB claim failed. Sign out to leave no orphan session.
-      await supabase.auth.signOut();
-      setIsLoading(false);
-      return {
-        error: new Error(
-          'Account created but could not be linked to your student record. ' +
-          'Contact your advisor — this may be an RLS configuration issue.'
-        ),
-      };
-    }
-
-    // Step 4: Re-fetch profile now that user_id is set on the row
+    // 3. Re-fetch profile now that user_id and row are in place
     await fetchUserProfile(authData.user);
     setIsLoading(false);
     return { error: null };
@@ -474,6 +427,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
     setSession(null);
     setProfile(null);
+    setAuthError(null);
     setIsLoading(false);
   };
 
@@ -496,6 +450,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         advisor: advisorProfile,
         student: studentProfile,
         role: currentRole,
+        authError,
+        clearAuthError,
         isLoading,
         loading: isLoading,
         signInWithEmail,

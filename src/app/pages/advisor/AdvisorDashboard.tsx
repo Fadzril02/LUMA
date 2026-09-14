@@ -36,7 +36,7 @@ export function AdvisorDashboard() {
   const [uploadStatus, setUploadStatus] = useState<"idle" | "uploading" | "success" | "error">("idle");
   const [uploadMessage, setUploadMessage] = useState<string>("");
 
-  const advisorStaffId = (profile as any)?.staff_id || user?.user_metadata?.staff_id || "STAFF-LIYANA";
+  const advisorStaffId = (profile as any)?.staff_id || "";
 
   useEffect(() => {
     const fetchData = async () => {

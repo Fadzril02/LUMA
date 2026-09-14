@@ -5,20 +5,14 @@ import { Award, BookOpen, CheckCircle2 } from "lucide-react";
 
 export function StudentDashboardView({ stats, creditProgress }: { stats?: any, creditProgress?: any[] }) {
   
-  // High-Fidelity Data Fallback
-  const displayStats = stats?.earned > 0 ? stats : {
-    cgpa: "3.42",
-    earned: 83,
+  // Real DB stats — no fake fallback data
+  const displayStats = stats || {
+    cgpa: "0.00",
+    earned: 0,
     required: 130
   };
 
-  const displayProgress = creditProgress && creditProgress.length > 0 ? creditProgress : [
-    { name: "Sem 1", earned: 18, total: 18 },
-    { name: "Sem 2", earned: 35, total: 36 },
-    { name: "Sem 3", earned: 52, total: 54 },
-    { name: "Sem 4", earned: 68, total: 72 },
-    { name: "Current", earned: 83, total: 90 },
-  ];
+  const displayProgress = creditProgress && creditProgress.length > 0 ? creditProgress : [];
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -84,43 +78,51 @@ export function StudentDashboardView({ stats, creditProgress }: { stats?: any, c
             </div>
           </div>
         </div>
-        <div className="h-[320px] w-full mt-6">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={displayProgress} margin={{ top: 20, right: 30, left: -20, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
-              <XAxis 
-                dataKey="name" 
-                axisLine={false} 
-                tickLine={false} 
-                tick={{ fill: '#6B7280', fontWeight: 600, fontSize: 12 }} 
-                dy={10}
-              />
-              <YAxis 
-                axisLine={false} 
-                tickLine={false} 
-                tick={{ fill: '#6B7280', fontWeight: 600, fontSize: 12 }}
-              />
-              <RechartsTooltip 
-                cursor={{ fill: '#F8FAFC' }} 
-                contentStyle={{ borderRadius: '8px', border: '1px solid #E5E7EB', boxShadow: '0 1px 2px 0 rgb(0 0 0 / 0.05)' }} 
-              />
-              <Bar 
-                dataKey="earned" 
-                name="Credits Accumulated" 
-                fill="#1E3A8A" 
-                radius={[4, 4, 0, 0]} 
-                maxBarSize={50}
-              />
-              <Bar 
-                dataKey="total" 
-                name="Target Benchmark" 
-                fill="#BFDBFE" 
-                radius={[4, 4, 0, 0]} 
-                maxBarSize={50}
-              />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+        {displayProgress.length === 0 ? (
+          <div className="h-[200px] w-full mt-6 flex flex-col items-center justify-center border border-dashed border-gray-200 rounded-lg text-center p-6 bg-gray-50/50">
+            <BookOpen className="w-8 h-8 text-gray-400 mb-2" />
+            <p className="text-xs font-semibold text-gray-700">No Academic Records Yet</p>
+            <p className="text-xs text-gray-500 mt-1">Upload your official transcript slip to populate semester credit progression.</p>
+          </div>
+        ) : (
+          <div className="h-[320px] w-full mt-6">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={displayProgress} margin={{ top: 20, right: 30, left: -20, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
+                <XAxis 
+                  dataKey="name" 
+                  axisLine={false} 
+                  tickLine={false} 
+                  tick={{ fill: '#6B7280', fontWeight: 600, fontSize: 12 }} 
+                  dy={10}
+                />
+                <YAxis 
+                  axisLine={false} 
+                  tickLine={false} 
+                  tick={{ fill: '#6B7280', fontWeight: 600, fontSize: 12 }}
+                />
+                <RechartsTooltip 
+                  cursor={{ fill: '#F8FAFC' }} 
+                  contentStyle={{ borderRadius: '8px', border: '1px solid #E5E7EB', boxShadow: '0 1px 2px 0 rgb(0 0 0 / 0.05)' }} 
+                />
+                <Bar 
+                  dataKey="earned" 
+                  name="Credits Accumulated" 
+                  fill="#1E3A8A" 
+                  radius={[4, 4, 0, 0]} 
+                  maxBarSize={50}
+                />
+                <Bar 
+                  dataKey="total" 
+                  name="Target Benchmark" 
+                  fill="#BFDBFE" 
+                  radius={[4, 4, 0, 0]} 
+                  maxBarSize={50}
+                />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </div>
     </div>
   );

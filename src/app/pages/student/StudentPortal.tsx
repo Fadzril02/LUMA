@@ -40,8 +40,28 @@ export function StudentPortal() {
   const [isSaving, setIsSaving] = useState(false);
   const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
 
-  const studentName = (profile as any)?.name || (profile as any)?.full_name || user?.user_metadata?.full_name || "Student";
-  const studentMatric = profile?.matric_no || user?.user_metadata?.matric_no || "";
+  const studentName = (profile as any)?.name || (profile as any)?.full_name || "Student";
+  const studentMatric = profile?.matric_no || "";
+
+  // Guard: If profile is not linked to a real student row, block rendering completely
+  if (!profile || profile.role !== "student" || !profile.matric_no) {
+    return (
+      <div className="min-h-screen bg-[#F8F9FA] flex flex-col items-center justify-center p-6 text-center">
+        <div className="max-w-md bg-white p-8 rounded-2xl shadow-sm border border-red-200 space-y-4">
+          <div className="w-12 h-12 rounded-full bg-red-50 border border-red-100 flex items-center justify-center mx-auto text-red-600">
+            <ShieldAlert size={28} />
+          </div>
+          <h2 className="text-base font-bold text-gray-900">Record Not Linked</h2>
+          <p className="text-xs text-gray-600 leading-relaxed">
+            Your account exists but is not linked to a valid student record. Please contact your advisor.
+          </p>
+          <Button onClick={logout} className="w-full bg-blue-900 hover:bg-blue-800 text-white text-xs py-2 rounded-lg cursor-pointer">
+            Sign Out Platform
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   // Prevent tab close or navigation during active cold-start transcript extraction
   useEffect(() => {

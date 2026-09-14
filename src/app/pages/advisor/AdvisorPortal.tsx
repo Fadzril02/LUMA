@@ -17,7 +17,7 @@ export function AdvisorPortal() {
   const [auditQueue, setAuditQueue] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const advisorStaffId = (profile as any)?.staff_id || user?.user_metadata?.staff_id || "STAFF-LIYANA";
+  const advisorStaffId = (profile as any)?.staff_id || "";
 
   useEffect(() => {
     const fetchAdvisorData = async () => {

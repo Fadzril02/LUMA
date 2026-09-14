@@ -20,7 +20,7 @@ export function StudentsList() {
   // Track who advisor clicked on
   const [selectedStudent, setSelectedStudent] = useState<any | null>(null);
 
-  const currentAdvisorId = (profile as any)?.staff_id || user?.user_metadata?.staff_id;
+  const currentAdvisorId = (profile as any)?.staff_id || "";
 
 useEffect(() => {
   const fetchStudents = async () => {

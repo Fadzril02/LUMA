@@ -30,9 +30,9 @@ export function AdvisorLayout({
   const { profile, user, logout } = useAuth();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
 
-  const advisorName = (profile as any)?.name || (profile as any)?.full_name || user?.user_metadata?.full_name || "Faculty Advisor";
-  const advisorEmail = (profile as any)?.institutional_email || (profile as any)?.email || user?.email || "";
-  const advisorStaffId = (profile as any)?.staff_id || user?.user_metadata?.staff_id || "STAFF-LIYANA";
+  const advisorName = (profile as any)?.name || (profile as any)?.full_name || "Faculty Advisor";
+  const advisorEmail = (profile as any)?.institutional_email || (profile as any)?.email || "";
+  const advisorStaffId = (profile as any)?.staff_id || "";
 
   const getInitials = (name: string) => {
     const parts = name.trim().split(" ");

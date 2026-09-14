@@ -4,15 +4,8 @@ import { BookOpen, ChevronDown, ChevronUp, AlertTriangle } from "lucide-react";
 export function AcademicHistoryView({ courseHistory = [] }: { courseHistory?: any[] }) {
   const [expandedSems, setExpandedSems] = useState<string[]>([]);
 
-  // High-Fidelity Data Fallback
-  const dataToRender = courseHistory.length > 0 ? courseHistory : [
-    { code: "SCSE1013", name: "Data Structures and Algorithms", credits: 3, grade: "A", status: "Pass", session_semester: "2024/2025-1" },
-    { code: "SECJ1013", name: "Programming Technique I", credits: 3, grade: "A-", status: "Pass", session_semester: "2024/2025-1" },
-    { code: "UHLB1112", name: "English Communication", credits: 2, grade: "B+", status: "Pass", session_semester: "2024/2025-1" },
-    { code: "SCSE2013", name: "Software Engineering", credits: 3, grade: "A", status: "Pass", session_semester: "2024/2025-2" },
-    { code: "SCSE2043", name: "Operating Systems", credits: 3, grade: "B", status: "Pass", session_semester: "2024/2025-2" },
-    { code: "SCSE3113", name: "Artificial Intelligence", credits: 3, grade: "E", status: "Fail", session_semester: "2024/2025-2" }
-  ];
+  // Real DB academic history — no fake fallback data
+  const dataToRender = courseHistory || [];
 
   // Group courses by semester
   const groupedResults = dataToRender.reduce((acc, course) => {

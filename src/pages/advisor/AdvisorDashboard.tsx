@@ -328,7 +328,7 @@ export function AdvisorDashboard() {
             <div className="h-6 w-px bg-slate-200" />
 
             <div className="text-right hidden sm:block">
-              <div className="text-xs font-bold text-slate-900">{advisor?.full_name || user?.email}</div>
+              <div className="text-xs font-bold text-slate-900">{advisor?.full_name || 'Academic Advisor'}</div>
               <div className="text-[11px] text-slate-500 font-mono">{advisor?.staff_id || 'Academic Advisor'}</div>
             </div>
 

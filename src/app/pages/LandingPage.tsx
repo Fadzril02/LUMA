@@ -8,14 +8,15 @@ import {
   Eye, 
   EyeOff, 
   CheckCircle2,
-  ArrowRight
+  ArrowRight,
+  AlertCircle
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { toast } from "sonner";
 
 export function LandingPage() {
   const navigate = useNavigate();
-  const { signInWithEmail, signUpStudent, signUpAdvisor } = useAuth();
+  const { signInWithEmail, signUpStudent, signUpAdvisor, authError, clearAuthError } = useAuth();
 
   // Navigation / View State: 'login' | 'register'
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
@@ -54,6 +55,7 @@ export function LandingPage() {
   const resetFormFeedback = () => {
     setErrorMessage(null);
     setSuccessMessage(null);
+    clearAuthError();
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -386,6 +388,13 @@ export function LandingPage() {
                   </button>
                 </div>
               </div>
+
+              {(errorMessage || authError) && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-xs font-medium flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-red-600 mt-0.5" />
+                  <span className="leading-snug">{errorMessage || authError}</span>
+                </div>
+              )}
 
               <div className="space-y-1.5">
                 <Label htmlFor="loginEmail" className="text-xs font-semibold text-gray-700">
