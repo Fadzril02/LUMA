@@ -45,8 +45,8 @@ export interface StudentRegistrationData {
   fullName: string;
   password: string;
   advisorId: string;
-  program?: string;
-  syllabusType?: string;
+  program: string;
+  syllabusType: string;
   email?: string;
 }
 
@@ -318,6 +318,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const finalEmail = data.email?.trim() ? data.email.trim().toLowerCase() : toStudentEmail(matricNo);
     const advisorStaffId = (data.advisorId || '').trim().toUpperCase();
 
+    // Strict validation: Program Code and Syllabus Year are required to register
+    if (!data.program || !data.syllabusType) {
+      isRegistering.current = false;
+      setIsLoading(false);
+      return { error: new Error("Program Code and Syllabus Year are required to register.") };
+    }
+
     // Validate that a session code was provided
     if (!advisorStaffId) {
       isRegistering.current = false;
@@ -336,6 +343,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             matric_no: matricNo,
             full_name: data.fullName,
             advisor_staff_id: advisorStaffId,
+            program: data.program,
+            syllabus_type: data.syllabusType,
           },
         },
       });
@@ -353,8 +362,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           name: data.fullName,
           institutional_email: finalEmail,
           advisor_staff_id: advisorStaffId,
-          program: data.program || 'SECJ',
-          syllabus_type: data.syllabusType || '2024/2025',
+          program: data.program,
+          syllabus_type: data.syllabusType,
         },
       ]);
 

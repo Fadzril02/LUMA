@@ -54,6 +54,10 @@ export function StudentAuth() {
       setErrorMessage("Please enter your Advisor Code / ID.");
       return;
     }
+    if (!program.trim() || !syllabusType.trim()) {
+      setErrorMessage("Program Code and Syllabus Year are required to register.");
+      return;
+    }
     if (password.length < 6) {
       setErrorMessage("Password must be at least 6 characters.");
       return;
@@ -71,8 +75,8 @@ export function StudentAuth() {
         email: email.trim() || undefined,
         password: password,
         advisorId: advisorId.trim().toUpperCase(),
-        program: program,
-        syllabusType: syllabusType,
+        program: program.trim(),
+        syllabusType: syllabusType.trim(),
       });
 
       if (error) throw error;

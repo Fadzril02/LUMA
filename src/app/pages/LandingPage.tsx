@@ -38,6 +38,8 @@ export function LandingPage() {
   const [studentMatric, setStudentMatric] = useState("");
   const [studentPassword, setStudentPassword] = useState("");
   const [studentSessionCode, setStudentSessionCode] = useState("");
+  const [studentProgram, setStudentProgram] = useState("SECJ");
+  const [studentSyllabusType, setStudentSyllabusType] = useState("2024/2025");
   const [showStudentPassword, setShowStudentPassword] = useState(false);
 
   // Advisor Registration Form State
@@ -135,6 +137,11 @@ export function LandingPage() {
         setErrorMessage("Please enter your matric number.");
         return;
       }
+      if (!studentProgram.trim() || !studentSyllabusType.trim()) {
+        toast.error("Program Code and Syllabus Year are required to register.");
+        setErrorMessage("Program Code and Syllabus Year are required to register.");
+        return;
+      }
       if (!studentPassword || studentPassword.length < 6) {
         toast.error("Password must be at least 6 characters.");
         setErrorMessage("Password must be at least 6 characters.");
@@ -149,15 +156,15 @@ export function LandingPage() {
       setProcessing(true);
 
       try {
-        // Direct registration: Let Supabase Auth and backend handle validation and claims
+        // Direct registration: Dynamic variable-driven payload with no hardcoded fallbacks
         const { error } = await signUpStudent({
           matricNo: sanitizedMatric,
           fullName: sanitizedFullName,
           email: sanitizedEmail,
           password: studentPassword,
           advisorId: sanitizedSessionCode,
-          program: "SECJ",
-          syllabusType: "2024/2025",
+          program: studentProgram.trim(),
+          syllabusType: studentSyllabusType.trim(),
         });
 
         if (error) throw error;
@@ -567,6 +574,46 @@ export function LandingPage() {
                           <Eye className="w-4 h-4" />
                         )}
                       </button>
+                    </div>
+                  </div>
+
+                  {/* Program Code and Syllabus Year */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="studentProgram" className="text-xs font-semibold text-gray-700">
+                        Degree Program
+                      </Label>
+                      <select
+                        id="studentProgram"
+                        value={studentProgram}
+                        onChange={(e) => setStudentProgram(e.target.value)}
+                        className="w-full h-10 px-3 text-sm bg-gray-50 border border-gray-200 rounded-md focus:ring-2 focus:ring-blue-900 focus:border-transparent text-gray-900"
+                        required
+                      >
+                        <option value="SECJ">SECJ (Software Eng.)</option>
+                        <option value="SECR">SECR (Networks & Security)</option>
+                        <option value="SECP">SECP (Data Engineering)</option>
+                        <option value="SECV">SECV (Graphics & Multimedia)</option>
+                        <option value="SECB">SECB (Bioinformatics)</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor="studentSyllabusType" className="text-xs font-semibold text-gray-700">
+                        Syllabus Year
+                      </Label>
+                      <select
+                        id="studentSyllabusType"
+                        value={studentSyllabusType}
+                        onChange={(e) => setStudentSyllabusType(e.target.value)}
+                        className="w-full h-10 px-3 text-sm bg-gray-50 border border-gray-200 rounded-md focus:ring-2 focus:ring-blue-900 focus:border-transparent text-gray-900"
+                        required
+                      >
+                        <option value="2024/2025">2024/2025</option>
+                        <option value="2023/2024">2023/2024</option>
+                        <option value="2022/2023">2022/2023</option>
+                        <option value="SCSE">Legacy (SCSE)</option>
+                      </select>
                     </div>
                   </div>
 
