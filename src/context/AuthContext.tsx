@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 
@@ -103,6 +103,7 @@ export const isStudentEmail = (email?: string | null): boolean => {
 // ==============================================================================
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const isRegistering = useRef(false);
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile>(null);
@@ -112,7 +113,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const clearAuthError = () => setAuthError(null);
 
-  const fetchUserProfile = async (currentUser: User): Promise<{ success: boolean; profile?: Profile; error?: Error }> => {
+  const fetchUserProfile = async (currentUser: User): Promise<{ success: boolean; profile?: Profile; error?: Error } | void> => {
     try {
       const email = (currentUser.email || '').toLowerCase();
       
@@ -132,6 +133,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // STEP 2 FIX: Hard failure if no linked student row exists.
         // NEVER construct a fake profile from user_metadata.
         if (!data) {
+          if (isRegistering.current) {
+            console.log("[AuthContext] Registration in progress, bypassing ghost check.");
+            return; 
+          }
           console.warn(`[AuthContext] BLOCKED GHOST STUDENT: user_id=${currentUser.id} has NO linked row in students table.`);
           await supabase.auth.signOut();
           setUser(null);
@@ -191,6 +196,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // STEP 2 FIX: Hard failure if no linked advisor row exists.
         // NEVER construct a fake profile from user_metadata.
         if (!data) {
+          if (isRegistering.current) {
+            console.log("[AuthContext] Registration in progress, bypassing ghost check.");
+            return;
+          }
           console.warn(`[AuthContext] BLOCKED GHOST ADVISOR: user_id=${currentUser.id} has NO linked row in advisors table.`);
           await supabase.auth.signOut();
           setUser(null);
@@ -303,6 +312,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signUpStudent = async (data: StudentRegistrationData) => {
+    isRegistering.current = true;
     setIsLoading(true);
     const matricNo = data.matricNo.trim().toUpperCase();
     const finalEmail = data.email?.trim() ? data.email.trim().toLowerCase() : toStudentEmail(matricNo);
@@ -310,60 +320,75 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // Validate that a session code was provided
     if (!advisorStaffId) {
+      isRegistering.current = false;
       setIsLoading(false);
       return { error: new Error('Please provide your Lecturer Session Code.') };
     }
 
-    // ── Self-Serve Model: Direct Student Registration ─────────────────────────
-    // 1. Create the Supabase Auth user
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-      email: finalEmail,
-      password: data.password,
-      options: {
-        data: {
-          role: 'student',
-          matric_no: matricNo,
-          full_name: data.fullName,
-          advisor_staff_id: advisorStaffId,
+    try {
+      // 1. Call supabase.auth.signUp
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: finalEmail,
+        password: data.password,
+        options: {
+          data: {
+            role: 'student',
+            matric_no: matricNo,
+            full_name: data.fullName,
+            advisor_staff_id: advisorStaffId,
+          },
         },
-      },
-    });
+      });
 
-    if (authError || !authData.user) {
-      setIsLoading(false);
-      return { error: authError ?? new Error('Sign-up failed: no user returned.') };
-    }
+      // 2. If signUp fails, return the error
+      if (authError || !authData.user) {
+        return { error: authError ?? new Error('Sign-up failed: no user returned.') };
+      }
 
-    // 2. Direct INSERT into students table immediately after successful sign-up
-    const { error: insertError } = await supabase.from('students').insert([
-      {
-        matric_no: matricNo,
-        user_id: authData.user.id,
-        name: data.fullName,
-        institutional_email: finalEmail,
-        advisor_staff_id: advisorStaffId,
-        program: data.program || 'SECJ',
-        syllabus_type: data.syllabusType || '2024/2025',
-      },
-    ]);
+      // 3. Immediately execute INSERT into students table using returned authData.user.id
+      const { error: insertError } = await supabase.from('students').insert([
+        {
+          matric_no: matricNo,
+          user_id: authData.user.id,
+          name: data.fullName,
+          institutional_email: finalEmail,
+          advisor_staff_id: advisorStaffId,
+          program: data.program || 'SECJ',
+          syllabus_type: data.syllabusType || '2024/2025',
+        },
+      ]);
 
-    if (insertError) {
-      console.error('[signUpStudent] Student record INSERT failed:', insertError.message);
-      await supabase.auth.signOut();
-      setIsLoading(false);
+      // 4. If INSERT fails (duplicate matric, invalid session code, constraint violation),
+      // signOut immediately so the user is never left in an unlinked ghost state
+      if (insertError) {
+        console.error('[signUpStudent] Student record INSERT failed:', insertError.message);
+        await supabase.auth.signOut();
+        return {
+          error: new Error(
+            insertError.message.includes('duplicate') || insertError.message.includes('unique')
+              ? `Matric number "${matricNo}" is already registered.`
+              : `Registration failed (database error): ${insertError.message}`
+          ),
+        };
+      }
+
+      // 5. Re-fetch profile now that user_id and row are anchored in students
+      await fetchUserProfile(authData.user);
+      return { error: null };
+    } catch (err: any) {
+      console.error('[signUpStudent] Unexpected registration failure:', err);
+      try {
+        await supabase.auth.signOut();
+      } catch (signOutErr) {
+        console.error('[signUpStudent] Cleanup signOut failed:', signOutErr);
+      }
       return {
-        error: new Error(
-          insertError.message.includes('duplicate') || insertError.message.includes('unique')
-            ? `Matric number "${matricNo}" is already registered.`
-            : `Failed to create student record: ${insertError.message}`
-        ),
+        error: err instanceof Error ? err : new Error(err?.message || 'Unexpected sign-up failure.'),
       };
+    } finally {
+      isRegistering.current = false;
+      setIsLoading(false);
     }
-
-    // 3. Re-fetch profile now that user_id and row are in place
-    await fetchUserProfile(authData.user);
-    setIsLoading(false);
-    return { error: null };
   };
 
   const signUpAdvisor = async (data: {
