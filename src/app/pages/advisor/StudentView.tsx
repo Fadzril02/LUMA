@@ -13,7 +13,14 @@ export function StudentView({ student, onBack }: StudentViewProps) {
 
   // Extract real metrics safely passed downwards inside array parameters
   const courseResults = student.rawResults || [];
-  const creditProgressPercentage = Math.min((student.credits / 130) * 100, 100);
+  const totalRequiredCredits =
+    student.total_credits_required ||
+    student.required_credits ||
+    student.degree_template?.total_credits_required ||
+    student.cohorts?.degree_templates?.total_credits_required ||
+    120;
+  const currentCredits = Number(student.credits) || 0;
+  const creditProgressPercentage = Math.min((currentCredits / totalRequiredCredits) * 100, 100);
 
   const handleSaveNotes = () => {
     setIsSaving(true);
@@ -52,7 +59,7 @@ export function StudentView({ student, onBack }: StudentViewProps) {
             <div className="space-y-2 pt-4 border-t border-gray-100">
               <div className="flex justify-between text-sm font-medium">
                 <span className="text-gray-600">Total Program Credit Progress</span>
-                <span className="text-gray-900 font-bold">{student.credits} / 130 Credits</span>
+                <span className="text-gray-900 font-bold">{currentCredits} / {totalRequiredCredits} Credits</span>
               </div>
               <div className="w-full bg-gray-100 h-3 rounded-full overflow-hidden">
                 <div 
@@ -60,7 +67,7 @@ export function StudentView({ student, onBack }: StudentViewProps) {
                   style={{ width: `${creditProgressPercentage}%` }}
                 />
               </div>
-              <p className="text-xs text-gray-400">Completion threshold calculated against Software Engineering syllabus blueprints.</p>
+              <p className="text-xs text-gray-400">Completion threshold calculated against degree program blueprint.</p>
             </div>
           </CardContent>
         </Card>

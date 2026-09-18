@@ -17,7 +17,8 @@ export function AppLayout({ children, userRole = "advisor", userName = "System U
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // ✨ PULL THE MASTER LOGOUT COMMAND FROM CONTEXT
-  const { logout } = useAuth();
+  const { logout, profile } = useAuth();
+  const userProfile = profile as any;
 
   // 🧭 DYNAMIC SIDEBAR MENUS: Changes automatically based on who logs in!
   const navMenus = {
@@ -137,7 +138,7 @@ export function AppLayout({ children, userRole = "advisor", userName = "System U
             </button>
             <div className="h-8 w-px bg-gray-200 hidden lg:block" />
             <div className="text-sm text-gray-500 hidden sm:block">
-              <span className="font-medium text-gray-900">UTM</span> / Software Engineering
+              <span className="font-medium text-gray-900">{userProfile?.university_name || 'LUMA'}</span> / {userProfile?.program_name || userProfile?.department || 'Academic Advising'}
             </div>
           </div>
           <div className="flex items-center space-x-4">

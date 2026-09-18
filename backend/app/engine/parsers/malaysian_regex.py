@@ -10,18 +10,18 @@ except ImportError:
     from backend.app.schemas.audit import ParsedLineItem
 
 
-# Grade Regex Pattern: A+, A, A-, B+, B, B-, C+, C, C-, D+, D, E, HL, PC, EX, TD, TS, TL
+# Course Regex Pattern (allows 2 to 6 letters, optional spaces/hyphens, 3 to 5 digits, optional trailing letter)
 COURSE_PATTERN = re.compile(
-    r'(?P<code>[A-Z]{3,4}\s?[0-9]{4})\s+'               # Code: SECJ1013
-    r'(?P<name>[\w\s\(\)\/\-\,\&]+?)\s+'               # Name: PROGRAMMING TECHNIQUE I
-    r'(?P<credit>[1-9])\s+'                            # Credits: 3
+    r'(?P<code>[A-Z]{2,6}\s*[-]?\s*[0-9]{3,5}[A-Z]?)\s+'
+    r'(?P<name>[\w\s\(\)\/\-\,\&]+?)\s+'
+    r'(?P<credit>[1-9])\s+'
     r'(?P<grade>[A-D][\+\-]?|[EF]|HL|PC|EX|TD|TS|TL)(?:\s+(?P<gp>[0-4]\.[0-9]{2}))?(?:\s+|$)',
     re.IGNORECASE
 )
 
 # Alternative Pattern for tabular transcripts
 COURSE_PATTERN_ALT = re.compile(
-    r'(?P<code>[A-Z]{3,4}\s?[0-9]{4})\s+'
+    r'(?P<code>[A-Z]{2,6}\s*[-]?\s*[0-9]{3,5}[A-Z]?)\s+'
     r'(?P<name>.+?)\s+'
     r'(?P<credit>[1-9])\s+'
     r'(?P<grade>[A-D][\+\-]?|[EF]|HL|PC|EX|TD|TS|TL)(?:\s+(?P<gp>[0-4]\.[0-9]{2}))?(?:\s+|$)',
@@ -41,9 +41,9 @@ NAME_PATTERN = re.compile(
     re.IGNORECASE
 )
 
-# Semester / Session Pattern
+# Semester / Session Pattern (captures standard international terms: Semester, Term, Trimester, Quarter, Fall, Spring, Summer)
 SEMESTER_PATTERN = re.compile(
-    r'(?:SEMESTER|SEM)\s*([1-3]|I|II|III|PENDEK|SHORT)\s*(?:SESSION|SESI)?\s*([0-9]{4}\s*[\/\-]\s*[0-9]{4})',
+    r'(?:SEMESTER|SEM|TERM|TRIMESTER|QUARTER|FALL|SPRING|SUMMER)\s*([A-Za-z0-9]+)\s*(?:SESSION|SESI|YEAR)?\s*([0-9]{4}(?:\s*[\/\-]\s*[0-9]{4})?)',
     re.IGNORECASE
 )
 
@@ -148,8 +148,8 @@ class MalaysianTranscriptParser:
                     raw_extracted_text=line_str
                 ))
             else:
-                # Flag lines that look like courses (contain 3-4 letters followed by digits) but failed full regex
-                if re.search(r'\b[A-Z]{3,4}\s?[0-9]{4}\b', line_str):
+                # Flag lines that look like courses (contain 2-6 letters followed by digits) but failed full regex
+                if re.search(r'\b[A-Z]{2,6}\s*[-]?\s*[0-9]{3,5}[A-Z]?\b', line_str):
                     unparsed_lines.append(line_str)
 
         return metadata, parsed_courses, unparsed_lines

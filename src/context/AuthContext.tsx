@@ -19,7 +19,11 @@ export interface StudentProfile extends BaseProfile {
   full_name: string;
   curriculum_year: string;
   program_code: string;
-  // UI aliases for backwards compatibility
+  // UI aliases and student attributes for backwards compatibility
+  email?: string;
+  institutional_email?: string;
+  academic_status?: string;
+  current_semester?: string;
   name?: string;
   program?: string;
   syllabus_type?: string;
@@ -44,11 +48,13 @@ export interface StudentRegistrationData {
   matricNo: string;
   fullName: string;
   password: string;
-  registrationCode: string;
-  advisorId?: string; // backwards compatibility alias
-  program: string;
-  syllabusType: string;
+  cohortCode: string;
+  institutionalEmail?: string;
   email?: string;
+  registrationCode?: string; // backwards compatibility alias
+  advisorId?: string; // backwards compatibility alias
+  program?: string;
+  syllabusType?: string;
 }
 
 export interface AuthContextType {
@@ -85,18 +91,8 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 // 2. Helper Functions
 // ==============================================================================
 
-export const toStudentEmail = (matricNo: string): string => {
-  const clean = matricNo.trim().toLowerCase();
-  return clean.includes('@') ? clean : `${clean}@student.utm.my`;
-};
-
 export const extractMatricFromEmail = (email: string): string => {
   return email.split('@')[0].toUpperCase();
-};
-
-export const isStudentEmail = (email?: string | null): boolean => {
-  if (!email) return false;
-  return email.toLowerCase().endsWith('@student.utm.my') || email.toLowerCase().endsWith('@graduate.utm.my');
 };
 
 // ==============================================================================
@@ -114,12 +110,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const clearAuthError = () => setAuthError(null);
 
-  const fetchUserProfile = async (currentUser: User): Promise<{ success: boolean; profile?: Profile; error?: Error } | void> => {
+  const fetchUserProfile = async (currentUser: User): Promise<{ success: boolean; profile?: Profile; error?: Error }> => {
     try {
       const email = (currentUser.email || '').toLowerCase();
       
-      // Check if user is a Student (via @student.utm.my domain or user metadata)
-      if (isStudentEmail(email) || currentUser.user_metadata?.role === 'student') {
+      // Check if user is a Student (via user metadata role)
+      if (currentUser.user_metadata?.role === 'student') {
         // Query students strictly WHERE user_id = auth.uid()
         const { data, error: uidErr } = await supabase
           .from('students')
@@ -136,7 +132,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (!data) {
           if (isRegistering.current) {
             console.log("[AuthContext] Registration in progress, bypassing ghost check.");
-            return; 
+            return { success: true }; 
           }
           console.warn(`[AuthContext] BLOCKED GHOST STUDENT: user_id=${currentUser.id} has NO linked row in students table.`);
           await supabase.auth.signOut();
@@ -257,8 +253,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true);
     setAuthError(null);
     const input = emailOrMatric.trim();
-    const isEmail = input.includes('@');
-    const finalEmail = isEmail ? input.toLowerCase() : toStudentEmail(input);
+    let finalEmail = input.toLowerCase();
+
+    if (!input.includes('@')) {
+      // Look up student by matric_no to resolve their institutional email
+      const { data: studentRow } = await supabase
+        .from('students')
+        .select('institutional_email')
+        .eq('matric_no', input.toUpperCase())
+        .maybeSingle();
+
+      if (studentRow?.institutional_email) {
+        finalEmail = studentRow.institutional_email.toLowerCase();
+      }
+    }
 
     const { data, error } = await supabase.auth.signInWithPassword({
       email: finalEmail,
@@ -280,63 +288,80 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       };
     }
 
-    const detectedRole: UserRole = profileRes.profile?.role ?? (isStudentEmail(finalEmail) ? 'student' : 'advisor');
+    const detectedRole: UserRole = profileRes.profile?.role ?? (data.user.user_metadata?.role === 'student' ? 'student' : 'advisor');
     return { error: null, role: detectedRole };
   };
 
   const signInStudent = async (matricNo: string, sessionCode: string) => {
-    const studentEmail = toStudentEmail(matricNo);
-    const result = await signInWithEmail(studentEmail, sessionCode);
-    return { error: result.error };
+    return await signInWithEmail(matricNo, sessionCode);
   };
 
   const signUpStudent = async (data: StudentRegistrationData) => {
     isRegistering.current = true;
     setIsLoading(true);
     const matricNo = data.matricNo.trim().toUpperCase();
-    const finalEmail = data.email?.trim() ? data.email.trim().toLowerCase() : toStudentEmail(matricNo);
-    const providedCode = (data.registrationCode || data.advisorId || '').trim().toUpperCase();
 
-    // Strict validation: Program Code and Syllabus Year are required to register
-    if (!data.program || !data.syllabusType) {
+    const matricRegex = /^[A-Z0-9]{5,15}$/i;
+    if (!matricRegex.test(matricNo)) {
       isRegistering.current = false;
       setIsLoading(false);
-      return { error: new Error("Program Code and Syllabus Year are required to register.") };
+      return { error: new Error("Invalid matric format. Expected format: 5-15 letters and numbers") };
     }
 
-    // Validate that a registration code was provided
+    const rawEmail = (data.institutionalEmail || data.email || '').trim().toLowerCase();
+    if (!rawEmail || !rawEmail.includes('@')) {
+      isRegistering.current = false;
+      setIsLoading(false);
+      return { error: new Error("Institutional email is required and must be a valid email address.") };
+    }
+    const finalEmail = rawEmail;
+    const providedCode = (data.cohortCode || data.registrationCode || data.advisorId || '').trim().toUpperCase();
+
+    // Validate that a cohort code was provided
     if (!providedCode) {
       isRegistering.current = false;
       setIsLoading(false);
-      return { error: new Error("Please enter your Lecturer's Registration Code.") };
+      return { error: new Error("Please enter your 6-character Cohort Code.") };
     }
 
     try {
-      // Validation 1: Query advisors table where registration_code = providedCode
-      const { data: matchingAdvisor, error: advisorLookupError } = await supabase
-        .from('advisors')
-        .select('staff_id, registration_code, is_registration_locked')
-        .eq('registration_code', providedCode)
+      // 1. Validation Update: Query cohorts table JOIN degree_templates where cohort_code = providedCode
+      const { data: cohortRow, error: cohortLookupError } = await supabase
+        .from('cohorts')
+        .select(`
+          id,
+          cohort_name,
+          cohort_code,
+          is_locked,
+          advisor_staff_id,
+          template_id,
+          degree_templates (
+            program_code,
+            program_name,
+            syllabus_year
+          )
+        `)
+        .eq('cohort_code', providedCode)
         .maybeSingle();
 
-      if (advisorLookupError || !matchingAdvisor) {
-        if (advisorLookupError) {
-          console.warn('[signUpStudent] Advisor lookup error:', advisorLookupError.message);
+      // If the cohort is not found (or is locked, per RLS / is_locked flag), throw exact required error
+      if (cohortLookupError || !cohortRow || cohortRow.is_locked === true) {
+        if (cohortLookupError) {
+          console.warn('[signUpStudent] Cohort lookup error:', cohortLookupError.message);
         }
-        return { error: new Error("Invalid Registration Code.") };
+        return { error: new Error("Invalid or locked Cohort Code.") };
       }
 
-      // Validation 2: Check if registration is locked for this advisor
-      if (matchingAdvisor.is_registration_locked === true) {
-        return {
-          error: new Error("Registration for this Advisor is currently locked. Please contact them directly.")
-        };
-      }
+      // 2. Extract blueprint metadata from linked degree_templates
+      const degreeTemplate = Array.isArray(cohortRow.degree_templates) 
+        ? cohortRow.degree_templates[0] 
+        : cohortRow.degree_templates;
+      const programCode = (degreeTemplate as any)?.program_code || data.program || 'Unassigned';
+      const syllabusYear = (degreeTemplate as any)?.syllabus_year || data.syllabusType || '2024/2025';
+      const advisorStaffId = cohortRow.advisor_staff_id;
+      const cohortId = cohortRow.id;
 
-      // Execution: Extract advisor's staff_id
-      const advisorStaffId = matchingAdvisor.staff_id;
-
-      // 1. Call supabase.auth.signUp
+      // 3. Call supabase.auth.signUp, storing extracted program_code and syllabus_year in user metadata
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: finalEmail,
         password: data.password,
@@ -346,18 +371,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             matric_no: matricNo,
             full_name: data.fullName,
             advisor_staff_id: advisorStaffId,
-            program: data.program,
-            syllabus_type: data.syllabusType,
+            program: programCode,
+            syllabus_type: syllabusYear,
+            cohort_id: cohortId,
           },
         },
       });
 
-      // 2. If signUp fails, return the error
+      // 4. If signUp fails, return the error
       if (authError || !authData.user) {
         return { error: authError ?? new Error('Sign-up failed: no user returned.') };
       }
 
-      // 3. Immediately execute INSERT into students table using returned authData.user.id and extracted advisorStaffId
+      // 5. Immediately execute INSERT into students table, including program, syllabus_type, advisor_staff_id, and cohort_id
       const { error: insertError } = await supabase.from('students').insert([
         {
           matric_no: matricNo,
@@ -365,12 +391,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           name: data.fullName,
           institutional_email: finalEmail,
           advisor_staff_id: advisorStaffId,
-          program: data.program,
-          syllabus_type: data.syllabusType,
+          program: programCode,
+          syllabus_type: syllabusYear,
+          cohort_id: cohortId,
         },
       ]);
 
-      // 4. If INSERT fails (duplicate matric, constraint violation),
+      // 6. If INSERT fails (duplicate matric, constraint violation),
       // signOut immediately so the user is never left in an unlinked ghost state
       if (insertError) {
         console.error('[signUpStudent] Student record INSERT failed:', insertError.message);
@@ -384,7 +411,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         };
       }
 
-      // 5. Re-fetch profile now that user_id and row are anchored in students
+      // 7. Re-fetch profile now that user_id and row are anchored in students
       await fetchUserProfile(authData.user);
       return { error: null };
     } catch (err: any) {
@@ -459,13 +486,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signOut = async () => {
-    setIsLoading(true);
-    await supabase.auth.signOut();
-    setUser(null);
-    setSession(null);
-    setProfile(null);
-    setAuthError(null);
-    setIsLoading(false);
+    try {
+      setIsLoading(true);
+      await supabase.auth.signOut();
+    } catch (error) {
+      console.warn("[AuthContext] Server-side logout failed, forcing local wipe:", error);
+    } finally {
+      // 1. Clear React State
+      setUser(null);
+      setProfile(null);
+
+      // 2. Nuke ALL Local Storage (not just sb- keys)
+      localStorage.clear();
+
+      // 3. Nuke ALL Session Storage
+      sessionStorage.clear();
+
+      // 4. Nuke ALL Accessible Cookies
+      document.cookie.split(";").forEach((c) => {
+        document.cookie = c
+          .replace(/^ +/, "")
+          .replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+      });
+
+      setIsLoading(false);
+
+      // 5. Hard redirect to flush memory
+      window.location.href = '/';
+    }
   };
 
   const refreshProfile = async () => {

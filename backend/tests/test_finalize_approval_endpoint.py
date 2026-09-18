@@ -4,7 +4,7 @@ Validates that approving staged transcript data:
 1. Passes through DAG graph resolver with prerequisite min-grade checks
 2. Persists validated results into 'academic_records' and 'degree_audits'
 3. Updates 'uploaded_documents.processing_status' to 'Approved'
-4. Does NOT insert records into legacy 'results' table
+4. Enforces strict advisor_id requirement (throws 400 if missing)
 """
 
 import sys
@@ -15,11 +15,21 @@ from unittest.mock import MagicMock, patch
 try:
     from app.main import app
     from app.schemas.audit import FinalizeApprovalRequest, ExtractedCourseItem
+    from app.core.auth import verify_advisor_jwt
 except ImportError:
     from backend.app.main import app
     from backend.app.schemas.audit import FinalizeApprovalRequest, ExtractedCourseItem
+    from backend.app.core.auth import verify_advisor_jwt
 
 client = TestClient(app)
+
+# Override JWT verification for test client
+app.dependency_overrides[verify_advisor_jwt] = lambda: {
+    "email": "advisor@university.edu.my",
+    "sub": "mock-advisor-uid"
+}
+
+AUTH_HEADERS = {"Authorization": "Bearer mock-test-token"}
 
 
 def test_finalize_approval_fastapi_endpoint_flow():
@@ -55,6 +65,7 @@ def test_finalize_approval_fastapi_endpoint_flow():
         "document_id": "99999999-9999-9999-9999-999999999999",
         "matric_number": "TEST-SE24-FINAL",
         "student_name": "Test Finalize Student",
+        "advisor_id": "STAFF-001",
         "academic_session": "2024/2025",
         "semester": 1,
         "courses": [
@@ -80,13 +91,15 @@ def test_finalize_approval_fastapi_endpoint_flow():
     }
 
     patch_target = "app.v1.endpoints.audit.supabase_svc" if "app.v1.endpoints.audit" in sys.modules else "backend.app.v1.endpoints.audit.supabase_svc"
-    with patch(patch_target) as mock_svc:
+    patch_id_target = "app.v1.endpoints.audit._check_advisor_identity" if "app.v1.endpoints.audit" in sys.modules else "backend.app.v1.endpoints.audit._check_advisor_identity"
+    
+    with patch(patch_target) as mock_svc, patch(patch_id_target) as mock_check_id:
         mock_svc.get_university_course_catalog.return_value = mock_catalog
         mock_svc.get_or_create_student.return_value = mock_student
         mock_svc.persist_audit_results.return_value = "audit-uuid-12345"
         mock_svc.client = mock_supabase
 
-        response = client.post("/api/v1/audit/finalize-approval", json=payload)
+        response = client.post("/api/v1/audit/finalize-approval", json=payload, headers=AUTH_HEADERS)
         
         assert response.status_code == 200
         data = response.json()
@@ -114,14 +127,35 @@ def test_finalize_approval_fastapi_endpoint_flow():
         mock_supabase.table().update.assert_called_with({"processing_status": "Approved"})
 
 
+def test_finalize_approval_missing_advisor_id_400():
+    """Test that omitting advisor_id returns 400 Bad Request."""
+    payload = {
+        "document_id": "99999999-9999-9999-9999-999999999999",
+        "matric_number": "TEST-SE24-FINAL",
+        "advisor_id": "",
+        "courses": [
+            {
+                "course_code": "SECJ1013",
+                "grade": "A"
+            }
+        ]
+    }
+    response = client.post("/api/v1/audit/finalize-approval", json=payload, headers=AUTH_HEADERS)
+    assert response.status_code == 400
+    assert "advisor_id is required" in response.json()["detail"]
+
+
 def test_finalize_approval_empty_courses_error():
     """Test validation error when no courses are submitted."""
     payload = {
         "document_id": "99999999-9999-9999-9999-999999999999",
         "matric_number": "TEST-SE24-EMPTY",
+        "advisor_id": "STAFF-001",
         "courses": []
     }
-    response = client.post("/api/v1/audit/finalize-approval", json=payload)
+    patch_id_target = "app.v1.endpoints.audit._check_advisor_identity" if "app.v1.endpoints.audit" in sys.modules else "backend.app.v1.endpoints.audit._check_advisor_identity"
+    with patch(patch_id_target):
+        response = client.post("/api/v1/audit/finalize-approval", json=payload, headers=AUTH_HEADERS)
     assert response.status_code == 400
     assert "No course records provided" in response.json()["detail"]
 
@@ -131,6 +165,7 @@ def test_finalize_approval_missing_matric_422():
     payload = {
         "document_id": "99999999-9999-9999-9999-999999999999",
         "matric_number": "   ",
+        "advisor_id": "STAFF-001",
         "courses": [
             {
                 "course_code": "SECJ1013",
@@ -138,6 +173,8 @@ def test_finalize_approval_missing_matric_422():
             }
         ]
     }
-    response = client.post("/api/v1/audit/finalize-approval", json=payload)
+    patch_id_target = "app.v1.endpoints.audit._check_advisor_identity" if "app.v1.endpoints.audit" in sys.modules else "backend.app.v1.endpoints.audit._check_advisor_identity"
+    with patch(patch_id_target):
+        response = client.post("/api/v1/audit/finalize-approval", json=payload, headers=AUTH_HEADERS)
     assert response.status_code == 422
     assert "matric_number is required" in response.json()["detail"]

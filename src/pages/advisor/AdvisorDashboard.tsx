@@ -43,6 +43,7 @@ interface StudentRosterItem {
   cohort_id: string;
   cgpa: number;
   total_credits_earned: number;
+  total_credits_required?: number;
   academic_status: string;
   traffic_light: 'RED' | 'YELLOW' | 'GREEN';
   unmet_prereq_count: number;
@@ -102,6 +103,12 @@ export function AdvisorDashboard() {
           cgpa,
           total_credits_earned,
           academic_status,
+          cohorts (
+            template_id,
+            degree_templates (
+              total_credits_required
+            )
+          ),
           degree_audits (
             traffic_light_status,
             unmet_prerequisites_count,
@@ -127,6 +134,10 @@ export function AdvisorDashboard() {
           const latestAudit = s.degree_audits?.[0];
           const rawTrafficLight = latestAudit?.traffic_light_status || (Number(s.cgpa) < 2.0 ? 'RED' : 'GREEN');
           const summary = latestAudit?.audit_summary || {};
+          const reqCredits =
+            summary.total_credits_required ||
+            s.cohorts?.degree_templates?.total_credits_required ||
+            120;
 
           // Convert academic_records to CourseAuditItem format
           const formattedRecords: CourseAuditItem[] = (s.academic_records || []).map((r: any) => {
@@ -156,6 +167,7 @@ export function AdvisorDashboard() {
             cohort_id: s.cohort_id || 'unassigned',
             cgpa: Number(s.cgpa) || 0.0,
             total_credits_earned: s.total_credits_earned || 0,
+            total_credits_required: reqCredits,
             academic_status: s.academic_status || 'Good Standing',
             traffic_light: rawTrafficLight,
             unmet_prereq_count: latestAudit?.unmet_prerequisites_count || 0,
@@ -545,7 +557,7 @@ export function AdvisorDashboard() {
 
                         {/* Credits */}
                         <td className="px-6 py-4 font-semibold text-slate-700">
-                          {s.total_credits_earned} / 130
+                          {s.total_credits_earned} / {s.total_credits_required || 120}
                         </td>
 
                         {/* Summary Message */}
@@ -651,13 +663,13 @@ export function AdvisorDashboard() {
                 <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/70">
                   <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Graduation Credits</span>
                   <div className="text-2xl font-black text-slate-900 mt-1">
-                    {activeStudent.total_credits_earned} <span className="text-sm font-semibold text-slate-500">/ 130</span>
+                    {activeStudent.total_credits_earned} <span className="text-sm font-semibold text-slate-500">/ {activeStudent.total_credits_required || 120}</span>
                   </div>
                   <div className="w-full bg-slate-200 rounded-full h-2 mt-2">
                     <div
                       className="bg-indigo-600 h-2 rounded-full"
                       style={{
-                        width: `${Math.min(100, (activeStudent.total_credits_earned / 130) * 100)}%`,
+                        width: `${Math.min(100, (activeStudent.total_credits_earned / (activeStudent.total_credits_required || 120)) * 100)}%`,
                       }}
                     />
                   </div>

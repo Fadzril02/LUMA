@@ -4,11 +4,11 @@ import { Card, CardContent, CardHeader, CardTitle, Button, Input, Badge } from "
 
 // Mock Data: Master list of electives
 const AVAILABLE_ELECTIVES = [
-  { id: "SECJ3103", name: "Web Programming", credits: 3 },
-  { id: "SECJ3203", name: "Artificial Intelligence", credits: 3 },
-  { id: "SECJ3223", name: "Machine Learning", credits: 3 },
-  { id: "SECJ3303", name: "Data Engineering", credits: 3 },
-  { id: "SECJ3553", name: "Cloud Computing Architectures", credits: 3 },
+  { id: "CS310", name: "Web Application Development", credits: 3 },
+  { id: "CS320", name: "Artificial Intelligence", credits: 3 },
+  { id: "CS322", name: "Machine Learning", credits: 3 },
+  { id: "CS330", name: "Data Engineering", credits: 3 },
+  { id: "CS355", name: "Cloud Computing Architectures", credits: 3 },
 ];
 
 // Mock Data: Pre-configured Elective Tracks
@@ -17,13 +17,13 @@ const INITIAL_GROUPS = [
     id: "TRK-AI",
     name: "Artificial Intelligence Specialization",
     requiredCredits: 9,
-    courses: ["SECJ3203", "SECJ3223"]
+    courses: ["CS320", "CS322"]
   },
   {
     id: "TRK-SE",
     name: "Software Engineering Core Electives",
     requiredCredits: 12,
-    courses: ["SECJ3103", "SECJ3553"]
+    courses: ["CS310", "CS355"]
   }
 ];
 

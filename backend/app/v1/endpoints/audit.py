@@ -3,7 +3,7 @@ Smart Academic Assessment System - Degree Audit Processing Endpoints
 """
 
 import fitz  # PyMuPDF
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
 from typing import Dict, Any, List
 
 try:
@@ -30,6 +30,7 @@ try:
     from app.engine.graph_resolver import PrerequisiteGraphResolver
     from app.engine.llm_fallback import MicroLLMFallback
     from app.core.supabase_client import SupabaseService
+    from app.core.auth import verify_advisor_jwt
 except ImportError:
     from backend.app.schemas.audit import (
         StorageAuditRequest,
@@ -54,10 +55,59 @@ except ImportError:
     from backend.app.engine.graph_resolver import PrerequisiteGraphResolver
     from backend.app.engine.llm_fallback import MicroLLMFallback
     from backend.app.core.supabase_client import SupabaseService
+    from backend.app.core.auth import verify_advisor_jwt
 
 router = APIRouter(prefix="/audit", tags=["Degree Audit"])
 supabase_svc = SupabaseService()
 llm_fallback = MicroLLMFallback()
+
+
+def _check_advisor_identity(jwt_payload: dict, claimed_advisor_id: str) -> None:
+    """
+    Cross-reference the JWT's institutional email against the advisor_id
+    claimed in the request body.
+
+    Raises HTTP 403 if:
+      - The JWT email does not match any advisor in the database.
+      - The matched advisor's staff_id differs from the claimed advisor_id.
+
+    This is the gate that prevents advisor A from submitting records on
+    behalf of advisor B using their own valid token.
+    """
+    jwt_email = (jwt_payload.get("email") or "").strip().lower()
+    if not jwt_email:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="JWT contains no email claim; cannot verify advisor identity.",
+        )
+
+    if not supabase_svc.client:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database client unavailable.",
+        )
+
+    res = supabase_svc.client.table("advisors") \
+        .select("staff_id") \
+        .eq("institutional_email", jwt_email) \
+        .maybe_single() \
+        .execute()
+
+    if not res.data:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"JWT identity '{jwt_email}' is not a registered advisor.",
+        )
+
+    actual_staff_id = res.data["staff_id"]
+    if actual_staff_id != claimed_advisor_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                f"JWT identity (staff_id='{actual_staff_id}') does not match "
+                f"the claimed advisor_id='{claimed_advisor_id}' in the request body."
+            ),
+        )
 
 
 @router.post(
@@ -66,7 +116,10 @@ llm_fallback = MicroLLMFallback()
     status_code=status.HTTP_200_OK,
     summary="Extracts course grades and metadata from a transcript PDF in storage"
 )
-async def extract_transcript_from_storage(request: ExtractPDFRequest):
+async def extract_transcript_from_storage(
+    request: ExtractPDFRequest,
+    jwt_payload: dict = Depends(verify_advisor_jwt),
+):
     """
     Zero-Waste Fast Extraction:
     1. Downloads PDF from Supabase storage ('academic-slips' / 'transcripts').
@@ -173,7 +226,10 @@ async def extract_transcript_from_storage(request: ExtractPDFRequest):
     status_code=status.HTTP_200_OK,
     summary="Finalizes advisor approval: runs DAG audit, saves to academic_records, updates status to Approved"
 )
-async def finalize_approval(request: FinalizeApprovalRequest):
+async def finalize_approval(
+    request: FinalizeApprovalRequest,
+    jwt_payload: dict = Depends(verify_advisor_jwt),
+):
     """
     Advisor Approval Finalization:
     1. Converts staged courses to normalized ParsedLineItem models.
@@ -183,6 +239,16 @@ async def finalize_approval(request: FinalizeApprovalRequest):
     5. Updates student CGPA & academic standing in 'students'.
     6. Updates uploaded_documents row to processing_status = 'Approved'.
     """
+    advisor_id = (request.advisor_id or "").strip()
+    if not advisor_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="advisor_id is required."
+        )
+
+    # Cross-reference: JWT email must own the claimed advisor_id
+    _check_advisor_identity(jwt_payload, advisor_id)
+
     if not request.courses:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -219,15 +285,6 @@ async def finalize_approval(request: FinalizeApprovalRequest):
             raw_extracted_text=f"[ADVISOR APPROVED] {code} {grade} ({credits_val} cr)"
         ))
 
-    # 2. Fetch Course Catalog & Prerequisite Graph for University
-    catalog = supabase_svc.get_university_course_catalog(request.university_id)
-
-    # 3. Run Pure Python Graph Prerequisite Audit (with min_grade & credit gates)
-    audited_records, summary = PrerequisiteGraphResolver.audit_student_records(
-        records=parsed_items,
-        course_catalog=catalog
-    )
-
     matric_number = (request.matric_number or "").strip()
     if not matric_number:
         raise HTTPException(
@@ -235,23 +292,37 @@ async def finalize_approval(request: FinalizeApprovalRequest):
             detail="Student matric_number is required and cannot be empty."
         )
 
+    # 2. Fetch Course Catalog & Prerequisite Graph for University
+    catalog = supabase_svc.get_university_course_catalog(request.university_id)
+
+    # 3. Fetch student's degree_template via cohort_id & extract total_credits_required
+    total_required_credits = supabase_svc.get_student_required_credits(
+        matric_no=matric_number,
+        cohort_id=getattr(request, "cohort_id", None),
+        program_code=request.program_code,
+        curriculum_year=request.curriculum_year
+    )
+
+    # 4. Run Pure Python Graph Prerequisite Audit (with min_grade & credit gates)
+    audited_records, summary = PrerequisiteGraphResolver.audit_student_records(
+        records=parsed_items,
+        course_catalog=catalog,
+        total_required_credits=total_required_credits
+    )
+
     # 4. Upsert Student Record & Persist Audits to Supabase
     student = supabase_svc.get_or_create_student(
         university_id=request.university_id,
-        advisor_id=request.advisor_id or "STAFF-LIYANA",
+        advisor_id=advisor_id,
         matric_number=matric_number,
         student_name=request.student_name or f"Student ({matric_number})",
-        curriculum_year=request.curriculum_year or "2023/2024",
-        program_code=request.program_code or "SECJ"
+        curriculum_year=request.curriculum_year,
+        program_code=request.program_code
     )
-
-    resolved_advisor_id = request.advisor_id or student.get("advisor_staff_id") or "STAFF-LIYANA"
-    if resolved_advisor_id == "STAFF-LIYANA" and student.get("advisor_staff_id"):
-        resolved_advisor_id = student.get("advisor_staff_id")
 
     audit_id = supabase_svc.persist_audit_results(
         matric_no=matric_number,
-        advisor_id=resolved_advisor_id,
+        advisor_id=advisor_id,
         records=audited_records,
         summary=summary,
         storage_pdf_path=f"document:{request.document_id}"
@@ -285,10 +356,16 @@ async def finalize_approval(request: FinalizeApprovalRequest):
     status_code=status.HTTP_200_OK,
     summary="Process PDF transcript directly from Supabase Storage"
 )
-async def process_storage_transcript(request: StorageAuditRequest):
+async def process_storage_transcript(
+    request: StorageAuditRequest,
+    jwt_payload: dict = Depends(verify_advisor_jwt),
+):
     """
     Zero-Waste Direct Storage Processing
     """
+    # Cross-reference: JWT email must own the claimed advisor_id
+    _check_advisor_identity(jwt_payload, request.advisor_id)
+
     # 1. Download PDF bytes
     try:
         pdf_bytes = supabase_svc.download_transcript_bytes(request.storage_path)
@@ -334,25 +411,41 @@ async def process_storage_transcript(request: StorageAuditRequest):
     # 5. Fetch Course Catalog & Prerequisite Graph for University
     catalog = supabase_svc.get_university_course_catalog(request.university_id)
 
-    # 6. Run Pure Python Graph Prerequisite Audit
+    # 6. Fetch student's degree_template via cohort_id & extract total_credits_required
+    total_required_credits = supabase_svc.get_student_required_credits(
+        matric_no=matric_no,
+        cohort_id=getattr(request, "cohort_id", None),
+        program_code=request.program_code,
+        curriculum_year=request.curriculum_year
+    )
+
+    # 7. Run Pure Python Graph Prerequisite Audit
     audited_records, summary = PrerequisiteGraphResolver.audit_student_records(
         records=parsed_courses,
-        course_catalog=catalog
+        course_catalog=catalog,
+        total_required_credits=total_required_credits
     )
+
+    advisor_id = (request.advisor_id or "").strip()
+    if not advisor_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="advisor_id is required."
+        )
 
     # 7. Upsert Student Record & Persist Audits to Supabase
     student = supabase_svc.get_or_create_student(
         university_id=request.university_id,
-        advisor_id=request.advisor_id,
+        advisor_id=advisor_id,
         matric_number=matric_no,
         student_name=student_name,
-        curriculum_year=request.curriculum_year or "2023/2024",
-        program_code=request.program_code or "SECJ"
+        curriculum_year=request.curriculum_year,
+        program_code=request.program_code
     )
 
     audit_id = supabase_svc.persist_audit_results(
         matric_no=matric_no,
-        advisor_id=request.advisor_id,
+        advisor_id=advisor_id,
         records=audited_records,
         summary=summary,
         storage_pdf_path=request.storage_path
@@ -377,7 +470,10 @@ async def process_storage_transcript(request: StorageAuditRequest):
     status_code=status.HTTP_200_OK,
     summary="Admin purge of raw transcript PDF after advisor approval"
 )
-async def purge_document(request: PurgeDocumentRequest):
+async def purge_document(
+    request: PurgeDocumentRequest,
+    jwt_payload: dict = Depends(verify_advisor_jwt),
+):
     """
     Data Retention & Privacy Enforcement:
     1. Validates that the target document is marked 'Approved'.

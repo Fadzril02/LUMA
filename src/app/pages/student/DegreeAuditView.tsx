@@ -19,7 +19,7 @@ export function DegreeAuditView() {
           </div>
           <div>
             <h2 className="text-base font-bold text-gray-900">Graduation Requirements Audit</h2>
-            <p className="text-xs text-gray-500">Tracking against the Software Engineering (SECJ) 2024/2025 Syllabus</p>
+            <p className="text-xs text-gray-500">Tracking against the Degree Program Syllabus Blueprint</p>
           </div>
         </div>
         
@@ -59,7 +59,7 @@ export function DegreeAuditView() {
         <div>
           <h3 className="text-rose-900 font-bold text-sm">Prerequisite Verification Alert</h3>
           <p className="text-rose-800 text-xs mt-1.5 leading-relaxed">
-            A non-passing grade ("E") was registered in <strong>SECJ1013 (Programming Technique 1)</strong>. 
+            A non-passing grade ("E") was registered in <strong>CS101 (Introduction to Computer Science)</strong>. 
             Directed acyclic graph verification indicates a prerequisite hold on advanced algorithms and software architecture modules.
           </p>
           <p className="text-rose-700 text-xs mt-2 font-medium">

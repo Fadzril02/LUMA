@@ -7,11 +7,16 @@ import {
   Users, 
   Eye, 
   EyeOff, 
-  CheckCircle2,
-  ArrowRight,
-  AlertCircle
+  CheckCircle2, 
+  ArrowRight, 
+  AlertCircle,
+  Lock,
+  Hash,
+  Mail,
+  Loader2
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
+import { supabase } from "../../lib/supabase";
 import { toast } from "sonner";
 
 export function LandingPage() {
@@ -37,10 +42,21 @@ export function LandingPage() {
   const [studentEmail, setStudentEmail] = useState("");
   const [studentMatric, setStudentMatric] = useState("");
   const [studentPassword, setStudentPassword] = useState("");
-  const [studentRegistrationCode, setStudentRegistrationCode] = useState("");
-  const [studentProgram, setStudentProgram] = useState("SECJ");
-  const [studentSyllabusType, setStudentSyllabusType] = useState("2024/2025");
+  const [cohortCode, setCohortCode] = useState("");
   const [showStudentPassword, setShowStudentPassword] = useState(false);
+
+  // Live Matric Validation
+  const MATRIC_REGEX = /^[A-Z0-9]{5,15}$/i;
+  const isStudentMatricValid = MATRIC_REGEX.test(studentMatric.trim());
+  const showStudentMatricError = studentMatric.trim().length > 0 && !isStudentMatricValid;
+
+  // Collision & Dispute Contest States
+  const [isDuplicate, setIsDuplicate] = useState(false);
+  const [isContesting, setIsContesting] = useState(false);
+  const [contestEmail, setContestEmail] = useState("");
+  const [contestProcessing, setContestProcessing] = useState(false);
+  const [contestSuccess, setContestSuccess] = useState(false);
+  const [contestErrorMessage, setContestErrorMessage] = useState<string | null>(null);
 
   // Advisor Registration Form State
   const [advisorFullName, setAdvisorFullName] = useState("");
@@ -57,6 +73,10 @@ export function LandingPage() {
   const resetFormFeedback = () => {
     setErrorMessage(null);
     setSuccessMessage(null);
+    setIsDuplicate(false);
+    setIsContesting(false);
+    setContestErrorMessage(null);
+    setContestSuccess(false);
     clearAuthError();
   };
 
@@ -120,7 +140,7 @@ export function LandingPage() {
       const sanitizedFullName = studentFullName.trim();
       const sanitizedEmail = studentEmail.trim().toLowerCase();
       const sanitizedMatric = studentMatric.trim().toUpperCase();
-      const sanitizedRegistrationCode = studentRegistrationCode.trim().toUpperCase();
+      const sanitizedCohortCode = cohortCode.trim().toUpperCase();
 
       if (!sanitizedFullName) {
         toast.error("Please enter your full name.");
@@ -137,9 +157,9 @@ export function LandingPage() {
         setErrorMessage("Please enter your matric number.");
         return;
       }
-      if (!studentProgram.trim() || !studentSyllabusType.trim()) {
-        toast.error("Program Code and Syllabus Year are required to register.");
-        setErrorMessage("Program Code and Syllabus Year are required to register.");
+      if (!isStudentMatricValid) {
+        toast.error("Expected format: 5-15 letters and numbers");
+        setErrorMessage("Expected format: 5-15 letters and numbers");
         return;
       }
       if (!studentPassword || studentPassword.length < 6) {
@@ -147,25 +167,23 @@ export function LandingPage() {
         setErrorMessage("Password must be at least 6 characters.");
         return;
       }
-      if (!sanitizedRegistrationCode) {
-        toast.error("Please enter Lecturer's 6-character Code.");
-        setErrorMessage("Please enter Lecturer's 6-character Code.");
+      if (!sanitizedCohortCode) {
+        toast.error("Please enter your 6-character Cohort Code.");
+        setErrorMessage("Please enter your 6-character Cohort Code.");
         return;
       }
 
       setProcessing(true);
 
       try {
-        // Direct registration: Dynamic variable-driven payload with no hardcoded fallbacks
+        // Direct registration: Dynamic variable-driven payload with no manual program/syllabus input
         const { error } = await signUpStudent({
           matricNo: sanitizedMatric,
           fullName: sanitizedFullName,
+          institutionalEmail: sanitizedEmail,
           email: sanitizedEmail,
           password: studentPassword,
-          registrationCode: sanitizedRegistrationCode,
-          advisorId: sanitizedRegistrationCode,
-          program: studentProgram.trim(),
-          syllabusType: studentSyllabusType.trim(),
+          cohortCode: sanitizedCohortCode,
         });
 
         if (error) throw error;
@@ -177,8 +195,9 @@ export function LandingPage() {
         }, 900);
       } catch (err: any) {
         let friendlyError = err.message || "Student registration failed. Please verify your details.";
-        if (friendlyError.includes("already registered")) {
+        if (friendlyError.toLowerCase().includes("already registered")) {
           friendlyError = `Matric number "${sanitizedMatric}" is already registered. If this is you, please sign in.`;
+          setIsDuplicate(true);
         } else if (friendlyError.includes("pre-registered") || friendlyError.includes("not found")) {
           friendlyError = `Matric number "${sanitizedMatric}" not found in institutional roster. Contact your advisor to initialize your record.`;
         }
@@ -243,6 +262,55 @@ export function LandingPage() {
     }
   };
 
+  const handleContestSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setContestErrorMessage(null);
+
+    const cleanEmail = contestEmail.trim().toLowerCase();
+    if (!cleanEmail) {
+      toast.error("Please enter your institutional email address.");
+      setContestErrorMessage("Please enter your institutional email address.");
+      return;
+    }
+
+    if (!/^[\w.-]+@[\w.-]+\.[a-zA-Z]{2,}$/.test(cleanEmail)) {
+      toast.error("Please provide a valid institutional email.");
+      setContestErrorMessage("Please provide a valid institutional email.");
+      return;
+    }
+
+    setContestProcessing(true);
+    try {
+      let advisorStaffIdVal: string | null = null;
+      if (cohortCode.trim()) {
+        const { data: cohortRow } = await supabase
+          .from('cohorts')
+          .select('advisor_staff_id')
+          .eq('cohort_code', cohortCode.trim().toUpperCase())
+          .maybeSingle();
+        advisorStaffIdVal = cohortRow?.advisor_staff_id ?? null;
+      }
+
+      const { error } = await supabase.from('registration_disputes').insert({
+        matric_no: studentMatric.trim().toUpperCase(),
+        disputed_by_email: cleanEmail,
+        advisor_staff_id: advisorStaffIdVal,
+      });
+
+      if (error) throw error;
+
+      toast.success("Contest filed successfully!");
+      setContestSuccess(true);
+    } catch (err: any) {
+      console.error("Contest Registration Error:", err);
+      const errMsg = err.message || "Failed to submit dispute. Please try again.";
+      setContestErrorMessage(errMsg);
+      toast.error(errMsg);
+    } finally {
+      setContestProcessing(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#F9FAFB] text-gray-900 font-sans flex flex-col justify-between antialiased selection:bg-blue-900 selection:text-white">
       {/* Top Institutional Header */}
@@ -297,44 +365,68 @@ export function LandingPage() {
         {/* Pristine Auth Card */}
         <div className="w-full max-w-md bg-white rounded-xl shadow-sm border border-gray-200 p-6 sm:p-8">
           {/* Main Auth Mode Segmented Control */}
-          <div className="grid grid-cols-2 p-1 bg-gray-100 rounded-lg mb-6 border border-gray-200/80">
-            <button
-              type="button"
-              onClick={() => {
-                setAuthMode("login");
-                resetFormFeedback();
-              }}
-              className={`py-2 text-xs font-semibold rounded-md transition-all cursor-pointer ${
-                authMode === "login"
-                  ? "bg-white text-blue-900 shadow-sm"
-                  : "text-gray-600 hover:text-gray-900"
-              }`}
-            >
-              Sign In
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setAuthMode("register");
-                resetFormFeedback();
-              }}
-              className={`py-2 text-xs font-semibold rounded-md transition-all cursor-pointer ${
-                authMode === "register"
-                  ? "bg-white text-blue-900 shadow-sm"
-                  : "text-gray-600 hover:text-gray-900"
-              }`}
-            >
-              Create Account
-            </button>
-          </div>
+          {!isContesting ? (
+            <div className="grid grid-cols-2 p-1 bg-gray-100 rounded-lg mb-6 border border-gray-200/80">
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMode("login");
+                  resetFormFeedback();
+                }}
+                className={`py-2 text-xs font-semibold rounded-md transition-all cursor-pointer ${
+                  authMode === "login"
+                    ? "bg-white text-blue-900 shadow-sm"
+                    : "text-gray-600 hover:text-gray-900"
+                }`}
+              >
+                Sign In
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMode("register");
+                  resetFormFeedback();
+                }}
+                className={`py-2 text-xs font-semibold rounded-md transition-all cursor-pointer ${
+                  authMode === "register"
+                    ? "bg-white text-blue-900 shadow-sm"
+                    : "text-gray-600 hover:text-gray-900"
+                }`}
+              >
+                Create Account
+              </button>
+            </div>
+          ) : (
+            <div className="mb-6 flex items-center justify-between">
+              <span className="text-xs font-semibold text-blue-900 uppercase tracking-wider bg-blue-50 px-3 py-1.5 rounded-full border border-blue-200">
+                Dispute Flow
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsContesting(false);
+                  setContestErrorMessage(null);
+                }}
+                className="text-xs text-gray-500 hover:text-gray-900 font-medium cursor-pointer"
+              >
+                ← Back to Registration
+              </button>
+            </div>
+          )}
 
           {/* Form Header */}
           <div className="mb-5">
             <h2 className="text-xl font-bold tracking-tight text-gray-900">
-              {authMode === "login" ? "Sign In to Portal" : "Create Institutional Account"}
+              {isContesting
+                ? "Contest Registration"
+                : authMode === "login"
+                ? "Sign In to Portal"
+                : "Create Institutional Account"}
             </h2>
             <p className="text-xs text-gray-500 mt-1">
-              {authMode === "login"
+              {isContesting
+                ? "Verify ownership of your UTM Matric Number with your institutional email."
+                : authMode === "login"
                 ? "Enter your academic credentials to access your advising dashboard."
                 : "Select your role and complete details to initialize your credentials."}
             </p>
@@ -342,8 +434,26 @@ export function LandingPage() {
 
           {/* Feedback Messages */}
           {errorMessage && (
-            <div className="mb-5 p-3 rounded-lg bg-red-50 border border-red-200 text-xs font-medium text-red-700 leading-relaxed">
-              {errorMessage}
+            <div className="mb-5 p-3 rounded-lg bg-red-50 border border-red-200 text-xs font-medium text-red-700 leading-relaxed space-y-2">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-red-600 mt-0.5" />
+                <span>{errorMessage}</span>
+              </div>
+              {isDuplicate && (
+                <div className="pt-2 border-t border-red-200 flex items-center justify-between">
+                  <span className="text-gray-700">Is this your matric number?</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsContesting(true);
+                      setErrorMessage(null);
+                    }}
+                    className="text-blue-900 hover:text-blue-700 font-semibold underline underline-offset-2 ml-1 cursor-pointer transition-colors"
+                  >
+                    Contest this registration.
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -354,7 +464,115 @@ export function LandingPage() {
           )}
 
           {/* Form Content */}
-          {authMode === "login" ? (
+          {isContesting ? (
+            /* ================= CONTEST REGISTRATION FORM ================= */
+            contestSuccess ? (
+              <div className="p-5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs space-y-4">
+                <div className="flex items-center space-x-2.5">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                  <span className="text-sm font-bold">Dispute Submitted Successfully</span>
+                </div>
+                <p className="leading-relaxed">
+                  Your registration dispute for matric number <strong className="font-mono text-emerald-900">{studentMatric.toUpperCase()}</strong> has been recorded. Your academic advisor will review your institutional claim (<strong className="font-mono text-emerald-900">{contestEmail}</strong>) and resolve the collision.
+                </p>
+                <Button
+                  type="button"
+                  onClick={() => {
+                    setIsContesting(false);
+                    setContestSuccess(false);
+                    setIsDuplicate(false);
+                    setErrorMessage(null);
+                  }}
+                  className="w-full h-10 bg-blue-900 hover:bg-blue-800 text-white font-medium text-xs rounded-lg transition-colors cursor-pointer"
+                >
+                  Return to Registration
+                </Button>
+              </div>
+            ) : (
+              <form onSubmit={handleContestSubmit} className="space-y-4">
+                {contestErrorMessage && (
+                  <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-xs font-medium text-red-700 leading-relaxed flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-red-600 mt-0.5" />
+                    <span>{contestErrorMessage}</span>
+                  </div>
+                )}
+
+                {/* Locked Matric Number */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="lockedStudentMatric" className="text-xs font-semibold text-gray-700">
+                    Matric Number <span className="text-gray-400 font-normal">(Locked)</span>
+                  </Label>
+                  <div className="relative flex items-center">
+                    <Hash className="w-4 h-4 text-gray-400 absolute left-3" />
+                    <Input
+                      id="lockedStudentMatric"
+                      value={studentMatric.toUpperCase()}
+                      disabled
+                      readOnly
+                      className="pl-9 pr-9 bg-gray-100 font-mono text-sm text-gray-700 cursor-not-allowed border-gray-200 h-10"
+                    />
+                    <Lock className="w-4 h-4 text-gray-400 absolute right-3" />
+                  </div>
+                  <p className="text-[11px] text-gray-500">
+                    This matric number is locked to match the collided registration.
+                  </p>
+                </div>
+
+                {/* Institutional Email */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="contestStudentEmail" className="text-xs font-semibold text-gray-700">
+                    Institutional Email <span className="text-red-500">*</span>
+                  </Label>
+                  <div className="relative flex items-center">
+                    <Mail className="w-4 h-4 text-gray-400 absolute left-3" />
+                    <Input
+                      id="contestStudentEmail"
+                      type="email"
+                      value={contestEmail}
+                      onChange={(e) => setContestEmail(e.target.value)}
+                      placeholder="e.g. student@university.edu.my"
+                      required
+                      className="pl-9 bg-gray-50 border-gray-200 focus:ring-2 focus:ring-blue-900 focus:border-transparent text-gray-900 h-10 text-sm"
+                    />
+                  </div>
+                  <p className="text-[11px] text-gray-500">
+                    Provide your official institutional email to prove ownership.
+                  </p>
+                </div>
+
+                <Button
+                  type="submit"
+                  disabled={contestProcessing || !contestEmail.trim()}
+                  className="w-full h-10 mt-2 bg-blue-900 hover:bg-blue-800 text-white font-medium rounded-lg shadow-sm transition-colors cursor-pointer text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {contestProcessing ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Submitting Dispute...</span>
+                    </span>
+                  ) : (
+                    <span className="flex items-center justify-center gap-2">
+                      <span>Submit Registration Contest</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </span>
+                  )}
+                </Button>
+
+                <div className="text-center pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsContesting(false);
+                      setContestErrorMessage(null);
+                    }}
+                    className="text-xs text-gray-500 hover:text-gray-900 font-medium transition-colors cursor-pointer"
+                  >
+                    Cancel and return
+                  </button>
+                </div>
+              </form>
+            )
+          ) : authMode === "login" ? (
             /* ================= LOGIN FORM ================= */
             <form onSubmit={handleLogin} className="space-y-4">
               {/* Role Toggle for Login */}
@@ -413,7 +631,7 @@ export function LandingPage() {
                   type="text"
                   value={loginEmail}
                   onChange={(e) => setLoginEmail(e.target.value)}
-                  placeholder={loginRole === "student" ? "e.g. alex@student.utm.my or A24CS0001" : "e.g. liyana@utm.my or STAFF-LIYANA"}
+                  placeholder={loginRole === "student" ? "e.g. student@university.edu.my or A24CS0001" : "e.g. advisor@university.edu or STAFF-8842"}
                   required
                   className="bg-gray-50 border-gray-200 focus:ring-2 focus:ring-blue-900 focus:border-transparent text-gray-900 h-10 text-sm"
                 />
@@ -527,7 +745,7 @@ export function LandingPage() {
                       type="email"
                       value={studentEmail}
                       onChange={(e) => setStudentEmail(e.target.value)}
-                      placeholder="e.g. alex@student.utm.my"
+                      placeholder="e.g. alex@university.edu.my"
                       required
                       className="bg-gray-50 border-gray-200 focus:ring-2 focus:ring-blue-900 focus:border-transparent text-gray-900 h-10 text-sm"
                     />
@@ -541,11 +759,21 @@ export function LandingPage() {
                       id="studentMatric"
                       type="text"
                       value={studentMatric}
-                      onChange={(e) => setStudentMatric(e.target.value.toUpperCase())}
-                      placeholder="e.g. A24CS0001"
+                      onChange={(e) => {
+                        setStudentMatric(e.target.value.toUpperCase());
+                        if (isDuplicate) setIsDuplicate(false);
+                      }}
+                      placeholder="e.g. CS12345 or A24CS0001"
                       required
-                      className="bg-gray-50 border-gray-200 focus:ring-2 focus:ring-blue-900 focus:border-transparent text-gray-900 h-10 text-sm uppercase font-mono"
+                      className={`bg-gray-50 border-gray-200 focus:ring-2 focus:ring-blue-900 focus:border-transparent text-gray-900 h-10 text-sm uppercase font-mono ${
+                        showStudentMatricError ? "border-red-500 focus:ring-red-500" : ""
+                      }`}
                     />
+                    {showStudentMatricError && (
+                      <p className="text-xs text-red-600 font-medium mt-1">
+                        Expected format: 5-15 letters and numbers
+                      </p>
+                    )}
                   </div>
 
                   <div className="space-y-1.5">
@@ -578,61 +806,22 @@ export function LandingPage() {
                     </div>
                   </div>
 
-                  {/* Program Code and Syllabus Year */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="studentProgram" className="text-xs font-semibold text-gray-700">
-                        Degree Program
-                      </Label>
-                      <select
-                        id="studentProgram"
-                        value={studentProgram}
-                        onChange={(e) => setStudentProgram(e.target.value)}
-                        className="w-full h-10 px-3 text-sm bg-gray-50 border border-gray-200 rounded-md focus:ring-2 focus:ring-blue-900 focus:border-transparent text-gray-900"
-                        required
-                      >
-                        <option value="SECJ">SECJ (Software Eng.)</option>
-                        <option value="SECR">SECR (Networks & Security)</option>
-                        <option value="SECP">SECP (Data Engineering)</option>
-                        <option value="SECV">SECV (Graphics & Multimedia)</option>
-                        <option value="SECB">SECB (Bioinformatics)</option>
-                      </select>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <Label htmlFor="studentSyllabusType" className="text-xs font-semibold text-gray-700">
-                        Syllabus Year
-                      </Label>
-                      <select
-                        id="studentSyllabusType"
-                        value={studentSyllabusType}
-                        onChange={(e) => setStudentSyllabusType(e.target.value)}
-                        className="w-full h-10 px-3 text-sm bg-gray-50 border border-gray-200 rounded-md focus:ring-2 focus:ring-blue-900 focus:border-transparent text-gray-900"
-                        required
-                      >
-                        <option value="2024/2025">2024/2025</option>
-                        <option value="2023/2024">2023/2024</option>
-                        <option value="2022/2023">2022/2023</option>
-                        <option value="SCSE">Legacy (SCSE)</option>
-                      </select>
-                    </div>
-                  </div>
-
+                  {/* 6-Character Cohort Code */}
                   <div className="space-y-1.5">
-                    <Label htmlFor="studentRegistrationCode" className="text-xs font-semibold text-gray-700">
-                      Lecturer's Registration Code
+                    <Label htmlFor="cohortCode" className="text-xs font-semibold text-gray-700">
+                      Cohort Code
                     </Label>
                     <Input
-                      id="studentRegistrationCode"
+                      id="cohortCode"
                       type="text"
-                      value={studentRegistrationCode}
-                      onChange={(e) => setStudentRegistrationCode(e.target.value.toUpperCase())}
+                      value={cohortCode}
+                      onChange={(e) => setCohortCode(e.target.value.toUpperCase())}
                       placeholder="e.g. ABC-123"
                       required
                       className="bg-gray-50 border-gray-200 focus:ring-2 focus:ring-blue-900 focus:border-transparent text-gray-900 h-10 text-sm uppercase font-mono"
                     />
                     <p className="text-[11px] text-gray-500">
-                      Enter Lecturer's 6-character Code (e.g. ABC-123) provided by your advisor
+                      Enter the 6-character Cohort Code provided by your advisor. Degree Program and Syllabus are automatically configured.
                     </p>
                   </div>
                 </>
@@ -663,7 +852,7 @@ export function LandingPage() {
                       type="email"
                       value={advisorEmail}
                       onChange={(e) => setAdvisorEmail(e.target.value)}
-                      placeholder="e.g. jane@utm.my"
+                      placeholder="e.g. advisor@university.edu"
                       required
                       className="bg-gray-50 border-gray-200 focus:ring-2 focus:ring-blue-900 focus:border-transparent text-gray-900 h-10 text-sm"
                     />
@@ -718,8 +907,8 @@ export function LandingPage() {
 
               <Button
                 type="submit"
-                disabled={processing}
-                className="w-full h-10 mt-2 bg-blue-900 hover:bg-blue-800 text-white font-medium rounded-lg shadow-sm transition-colors cursor-pointer text-sm"
+                disabled={processing || (registrationRole === "student" && !isStudentMatricValid)}
+                className="w-full h-10 mt-2 bg-blue-900 hover:bg-blue-800 text-white font-medium rounded-lg shadow-sm transition-colors cursor-pointer text-sm disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {processing
                   ? "Creating Account..."
@@ -731,20 +920,22 @@ export function LandingPage() {
           )}
 
           {/* Bottom Switch Links */}
-          <div className="mt-6 pt-5 border-t border-gray-100 flex flex-col items-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setAuthMode(authMode === "login" ? "register" : "login");
-                resetFormFeedback();
-              }}
-              className="text-xs text-gray-600 hover:text-blue-900 font-medium transition-colors cursor-pointer"
-            >
-              {authMode === "login"
-                ? "Don't have an account? Create one"
-                : "Already registered? Sign in"}
-            </button>
-          </div>
+          {!isContesting && (
+            <div className="mt-6 pt-5 border-t border-gray-100 flex flex-col items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMode(authMode === "login" ? "register" : "login");
+                  resetFormFeedback();
+                }}
+                className="text-xs text-gray-600 hover:text-blue-900 font-medium transition-colors cursor-pointer"
+              >
+                {authMode === "login"
+                  ? "Don't have an account? Create one"
+                  : "Already registered? Sign in"}
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Institutional Pillars / Value Propositions */}

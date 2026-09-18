@@ -4,10 +4,10 @@ import { Card, CardContent, Button, Badge, Input } from "../../components/ui";
 
 // Mock data: In the future, this will be fetched from the `course_catalog` table
 const INITIAL_COURSES = [
-  { code: "SECJ1013", name: "Programming Technique I", credits: 3, prereqs: "None", type: "Core", isOffered: true },
-  { code: "SECJ1023", name: "Programming Technique II", credits: 3, prereqs: "SECJ1013", type: "Core", isOffered: true },
-  { code: "SECP1513", name: "Technology & Information System", credits: 3, prereqs: "None", type: "Core", isOffered: false },
-  { code: "SECJ2013", name: "Data Structures and Algorithms", credits: 3, prereqs: "SECJ1023", type: "Core", isOffered: true },
+  { code: "CS101", name: "Introduction to Computer Science", credits: 3, prereqs: "None", type: "Core", isOffered: true },
+  { code: "CS102", name: "Programming Fundamentals", credits: 3, prereqs: "CS101", type: "Core", isOffered: true },
+  { code: "SYS105", name: "Computer Systems Architecture", credits: 3, prereqs: "None", type: "Core", isOffered: false },
+  { code: "CS201", name: "Data Structures and Algorithms", credits: 3, prereqs: "CS102", type: "Core", isOffered: true },
 ];
 
 export function CourseManagerView() {
@@ -70,7 +70,7 @@ export function CourseManagerView() {
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
               <div className="space-y-2">
                 <label className="text-xs font-bold text-gray-600">Course Code</label>
-                <Input placeholder="e.g. SECJ3203" className="border-gray-300 bg-white" />
+                <Input placeholder="e.g. CS301" className="border-gray-300 bg-white" />
               </div>
               <div className="space-y-2 md:col-span-2">
                 <label className="text-xs font-bold text-gray-600">Course Name</label>

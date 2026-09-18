@@ -34,8 +34,8 @@ class CSVCourseParser:
         # Check for OR vs AND
         prereq_type = "OR" if " OR " in cleaned.upper() else "AND"
 
-        # Extract Malaysian course codes (3-4 uppercase letters + 4 digits)
-        course_codes = re.findall(r'\b[A-Z]{3,4}\s?[0-9]{4}\b', cleaned.upper())
+        # Extract course codes (allows 2 to 6 letters, optional spaces/hyphens, 3 to 5 digits, optional trailing letter)
+        course_codes = re.findall(r'\b[A-Z]{2,6}\s*[-]?\s*[0-9]{3,5}[A-Z]?\b', cleaned.upper())
         normalized_codes = [c.replace(" ", "") for c in course_codes]
 
         return {

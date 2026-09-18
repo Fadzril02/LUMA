@@ -72,7 +72,7 @@ export function AdvisorPortal() {
               id: student.matric_no,
               name: student.name || "Student",
               matric_no: student.matric_no,
-              program: student.program || "SECJ",
+              program: student.program || "Unassigned",
               cgpa: cgpa,
               credits: earnedCreds,
               status: status,

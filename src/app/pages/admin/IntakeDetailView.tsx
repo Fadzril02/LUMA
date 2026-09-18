@@ -15,28 +15,28 @@ const MOCK_AI_EXTRACTED_SEMESTERS = [
   {
     term: "Year 1 - Semester 1",
     courses: [
-      { code: "SECJ1013", name: "Programming Technique I", credits: 3 },
-      { code: "SECP1513", name: "Technology & Information System", credits: 3 },
-      { code: "SECI1013", name: "Discrete Structure", credits: 3 },
-      { code: "UHMT1012", name: "Graduate Success Attributes", credits: 2 },
+      { code: "CS101", name: "Introduction to Computer Science", credits: 3 },
+      { code: "SYS102", name: "Technology & Information Systems", credits: 3 },
+      { code: "MATH103", name: "Discrete Mathematics", credits: 3 },
+      { code: "GEN101", name: "Academic Communication", credits: 2 },
     ]
   },
   {
     term: "Year 1 - Semester 2",
     courses: [
-      { code: "SECJ1023", name: "Programming Technique II", credits: 3 },
-      { code: "SECR2043", name: "Operating Systems", credits: 3 },
-      { code: "SECR2033", name: "Computer Organization & Architecture", credits: 3 },
-      { code: "UHIS1022", name: "Philosophy and Current Issues", credits: 2 },
+      { code: "CS102", name: "Programming Fundamentals", credits: 3 },
+      { code: "SYS204", name: "Operating Systems", credits: 3 },
+      { code: "SYS203", name: "Computer Architecture", credits: 3 },
+      { code: "GEN102", name: "Ethics and Professional Practice", credits: 2 },
     ]
   },
   {
     term: "Year 2 - Semester 1",
     courses: [
-      { code: "SECJ2013", name: "Data Structures and Algorithms", credits: 3 },
-      { code: "SECV2113", name: "Human Computer Interaction", credits: 3 },
-      { code: "SECD2523", name: "Database", credits: 3 },
-      { code: "SECJ2203", name: "Software Engineering", credits: 3 },
+      { code: "CS201", name: "Data Structures and Algorithms", credits: 3 },
+      { code: "HCI211", name: "Human-Computer Interaction", credits: 3 },
+      { code: "DB252", name: "Database Systems", credits: 3 },
+      { code: "SWE300", name: "Software Engineering Principles", credits: 3 },
     ]
   }
 ];
@@ -360,7 +360,7 @@ export function IntakeDetailView({ intake, onBack }: IntakeDetailViewProps) {
               <div className="space-y-2">
                 <Label className="text-xs font-bold text-gray-600 uppercase">Course Code</Label>
                 <Input 
-                  placeholder="e.g. SECJ3203" 
+                  placeholder="e.g. CS301" 
                   value={manualCode} 
                   onChange={e => setManualCode(e.target.value)} 
                   className="border-gray-300 focus:border-[#990033] uppercase" 

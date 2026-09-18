@@ -20,7 +20,9 @@ import {
   Lock,
   Unlock,
   KeyRound,
-  ShieldCheck
+  ShieldCheck,
+  ShieldAlert,
+  Trash2
 } from "lucide-react";
 import { toast } from "sonner";
 import { db } from "../../../lib/supabase"; 
@@ -33,12 +35,40 @@ export function AdvisorDashboard() {
   const [queue, setQueue] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Registration Control State (Tinkercad Persistent Model)
-  const [registrationCode, setRegistrationCode] = useState<string>("");
-  const [isRegistrationLocked, setIsRegistrationLocked] = useState<boolean>(false);
-  const [isRotating, setIsRotating] = useState(false);
-  const [isTogglingLock, setIsTogglingLock] = useState(false);
-  const [copied, setCopied] = useState(false);
+// Cohort Management State (Multi-Tenant Blueprint Architecture)
+  interface AdvisorCohort {
+    id: string;
+    cohort_name: string;
+    cohort_code: string;
+    is_locked: boolean;
+    advisor_staff_id: string;
+    template_id: string;
+    degree_templates?: {
+      program_code?: string;
+      program_name?: string;
+      syllabus_year?: string;
+    } | {
+      program_code?: string;
+      program_name?: string;
+      syllabus_year?: string;
+    }[];
+  }
+
+  const [cohorts, setCohorts] = useState<AdvisorCohort[]>([]);
+  const [togglingCohortId, setTogglingCohortId] = useState<string | null>(null);
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
+
+  // Recent Enrollments State (Loose Admission Safety Net)
+  interface RecentEnrollment {
+    matric_no: string;
+    user_id: string | null;
+    name: string;
+    institutional_email: string;
+    cohort_id: string | null;
+    created_at: string;
+  }
+  const [recentEnrollments, setRecentEnrollments] = useState<RecentEnrollment[]>([]);
+  const [isRevoking, setIsRevoking] = useState<string | null>(null); // stores matric_no being revoked
 
   // Curriculum Upload Modal State
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
@@ -52,29 +82,49 @@ export function AdvisorDashboard() {
     const fetchData = async () => {
       setIsLoading(true);
       try {
-        let studentQuery = db.from("students").select("*");
+        // Step 1: Fetch recent enrollments — specific columns, desc by created_at
+        let studentQuery = db
+          .from("students")
+          .select("matric_no, user_id, name, institutional_email, cohort_id, created_at")
+          .order("created_at", { ascending: false });
         if (advisorStaffId) {
           studentQuery = studentQuery.eq("advisor_staff_id", advisorStaffId);
         }
 
-        let advisorQuery = db.from("advisors").select("staff_id, registration_code, is_registration_locked");
+        // Fetch all cohorts belonging to this advisor with blueprint details
+        let cohortsQuery = db
+          .from("cohorts")
+          .select(`
+            id,
+            cohort_name,
+            cohort_code,
+            is_locked,
+            advisor_staff_id,
+            template_id,
+            degree_templates (
+              program_code,
+              program_name,
+              syllabus_year
+            )
+          `);
+
         if (advisorStaffId) {
-          advisorQuery = advisorQuery.eq("staff_id", advisorStaffId);
-        } else if (user?.email) {
-          advisorQuery = advisorQuery.eq("institutional_email", user.email.toLowerCase());
+          cohortsQuery = cohortsQuery.eq("advisor_staff_id", advisorStaffId);
         }
 
-        const [studentsRes, queueRes, advisorRes] = await Promise.all([
+        const [studentsRes, queueRes, cohortsRes] = await Promise.all([
           studentQuery,
           db.from("correction_requests").select("*"),
-          advisorQuery.maybeSingle()
+          cohortsQuery
         ]);
 
-        if (studentsRes.data) setRoster(studentsRes.data);
+        if (studentsRes.data) {
+          setRoster(studentsRes.data);
+          setRecentEnrollments(studentsRes.data as RecentEnrollment[]);
+        }
         if (queueRes.data) setQueue(queueRes.data);
-        if (advisorRes.data) {
-          setRegistrationCode(advisorRes.data.registration_code || "");
-          setIsRegistrationLocked(Boolean(advisorRes.data.is_registration_locked));
+        if (cohortsRes.data) {
+          setCohorts(cohortsRes.data as AdvisorCohort[]);
         }
       } catch (error) {
         console.error("Failed to load dashboard data:", error);
@@ -83,91 +133,71 @@ export function AdvisorDashboard() {
       }
     };
     fetchData();
-  }, [advisorStaffId, user?.email]);
+  }, [advisorStaffId]);
 
-  // Helper to generate a random 6-character code in 'ABC-123' format
-  // Excludes ambiguous characters (0, O, 1, I)
-  const generateRegistrationCode = (): string => {
-    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-    let part1 = "";
-    let part2 = "";
-    for (let i = 0; i < 3; i++) {
-      part1 += chars.charAt(Math.floor(Math.random() * chars.length));
-      part2 += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return `${part1}-${part2}`;
-  };
-
-  // Rotate Code Handler: generates fresh code and updates advisors table
-  const handleRotateCode = async () => {
-    if (!advisorStaffId && !user?.email) {
-      toast.error("Advisor identifier not found.");
-      return;
-    }
-    setIsRotating(true);
+  // Lock Toggle Handler: updates is_locked in cohorts table for specific cohort
+  const handleToggleCohortLock = async (cohortId: string, currentStatus: boolean) => {
+    const nextStatus = !currentStatus;
+    setTogglingCohortId(cohortId);
     try {
-      const newCode = generateRegistrationCode();
-      let updateQuery = db.from("advisors").update({ registration_code: newCode });
-      if (advisorStaffId) {
-        updateQuery = updateQuery.eq("staff_id", advisorStaffId);
-      } else {
-        updateQuery = updateQuery.eq("institutional_email", user!.email!.toLowerCase());
-      }
+      const { error } = await db
+        .from("cohorts")
+        .update({ is_locked: nextStatus, updated_at: new Date().toISOString() })
+        .eq("id", cohortId);
 
-      const { error } = await updateQuery;
       if (error) throw error;
 
-      setRegistrationCode(newCode);
-      toast.success(`Registration code rotated successfully to: ${newCode}`);
-    } catch (err: any) {
-      console.error("Failed to rotate registration code:", err);
-      toast.error(err.message || "Failed to rotate registration code in database.");
-    } finally {
-      setIsRotating(false);
-    }
-  };
-
-  // Lock Toggle Handler: updates is_registration_locked in advisors table
-  const handleToggleLock = async (nextLocked: boolean) => {
-    if (!advisorStaffId && !user?.email) {
-      toast.error("Advisor identifier not found.");
-      return;
-    }
-    setIsTogglingLock(true);
-    try {
-      let updateQuery = db.from("advisors").update({ is_registration_locked: nextLocked });
-      if (advisorStaffId) {
-        updateQuery = updateQuery.eq("staff_id", advisorStaffId);
-      } else {
-        updateQuery = updateQuery.eq("institutional_email", user!.email!.toLowerCase());
-      }
-
-      const { error } = await updateQuery;
-      if (error) throw error;
-
-      setIsRegistrationLocked(nextLocked);
+      setCohorts((prev) =>
+        prev.map((c) => (c.id === cohortId ? { ...c, is_locked: nextStatus } : c))
+      );
       toast.success(
-        nextLocked
-          ? "Student registration locked. Advisees cannot register with this code."
-          : "Student registration unlocked. Advisees can now register."
+        nextStatus
+          ? "Cohort registration locked. Advisees cannot join with this code."
+          : "Cohort registration unlocked. Advisees can now join."
       );
     } catch (err: any) {
-      console.error("Failed to update registration lock:", err);
-      toast.error(err.message || "Failed to update registration lock in database.");
+      console.error("Failed to update cohort lock:", err);
+      toast.error(err.message || "Failed to update cohort lock status.");
     } finally {
-      setIsTogglingLock(false);
+      setTogglingCohortId(null);
     }
   };
 
-  // Copy code handler
-  const handleCopyCode = async () => {
-    const codeToCopy = registrationCode || advisorStaffId;
-    if (!codeToCopy) return;
+  // Handle Revoke Student — Step 2
+  const handleRevokeStudent = async (matricNo: string, userId: string) => {
+    const confirmed = window.confirm(
+      `Are you sure you want to revoke this student's access? This will permanently delete their account and enforce a 24-hour registration ban on this matric number.`
+    );
+    if (!confirmed) return;
+
+    setIsRevoking(matricNo);
     try {
-      await navigator.clipboard.writeText(codeToCopy);
-      setCopied(true);
-      toast.success("Code copied to clipboard!");
-      setTimeout(() => setCopied(false), 2500);
+      const { data, error } = await db.functions.invoke('revoke-student', {
+        body: { matric_no: matricNo, user_id: userId, advisor_staff_id: advisorStaffId }
+      });
+
+      if (error) throw error;
+
+      // Optimistically remove from local state on success
+      setRecentEnrollments((prev) => prev.filter((e) => e.matric_no !== matricNo));
+      setRoster((prev) => prev.filter((s) => s.matric_no !== matricNo));
+      toast.success(`Access revoked for ${matricNo}. A 24-hour re-registration ban has been enforced.`);
+    } catch (err: any) {
+      console.error('[handleRevokeStudent] Edge Function error:', err);
+      toast.error(err.message || `Failed to revoke access for ${matricNo}. Please try again.`);
+    } finally {
+      setIsRevoking(null);
+    }
+  };
+
+  // Copy specific cohort code handler
+  const handleCopyCohortCode = async (code: string) => {
+    if (!code) return;
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopiedCode(code);
+      toast.success(`Cohort code "${code}" copied to clipboard!`);
+      setTimeout(() => setCopiedCode(null), 2500);
     } catch (err) {
       console.error("Failed to copy code:", err);
       toast.error("Failed to copy code to clipboard.");
@@ -178,11 +208,11 @@ export function AdvisorDashboard() {
   const handleDownloadTemplate = () => {
     const csvHeader = "course_code,course_name,credits,category,semester,prerequisite_code,min_grade\n";
     const sampleRows = [
-      "SECJ1013,Programming Technique I,3,Core,1,,",
-      "SECJ1023,Programming Technique II,3,Core,2,SECJ1013,C",
-      "SECP2243,Software Engineering Project I,3,Core,3,SECJ1023,C",
-      "SECP3723,Systems Development Technology,3,Elective,4,,",
-      "UCSD2762,Creative & Innovation,2,University,1,,"
+      "CS101,Introduction to Computer Science,3,Core,1,,",
+      "CS102,Programming Fundamentals,3,Core,2,CS101,C",
+      "SWE300,Software Engineering Project I,3,Core,3,CS102,C",
+      "CS310,Systems Development Technology,3,Elective,4,,",
+      "GEN101,Creative Thinking and Innovation,2,University,1,,"
     ].join("\n");
 
     const blob = new Blob([csvHeader + sampleRows], { type: "text/csv;charset=utf-8;" });
@@ -254,118 +284,129 @@ export function AdvisorDashboard() {
 
   return (
     <div className="space-y-6">
-      {/* 1. REGISTRATION CONTROL CARD (Tinkercad Persistent Model) */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 pb-6 border-b border-gray-100">
-          <div className="space-y-1.5 max-w-xl">
+      {/* 1. COHORT MANAGEMENT CARD (Multi-Tenant Blueprint Architecture) */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-100">
+          <div className="space-y-1">
             <div className="flex items-center gap-2">
               <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-blue-50 text-blue-900 text-xs font-mono border border-blue-200 font-semibold">
                 <KeyRound className="w-3.5 h-3.5" />
-                Registration Control
+                Cohort Management
               </span>
-              {isRegistrationLocked ? (
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-rose-50 text-rose-700 text-xs font-mono border border-rose-200 font-semibold">
-                  <Lock className="w-3 h-3" />
-                  LOCKED
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700 text-xs font-mono border border-emerald-200 font-semibold">
-                  <Unlock className="w-3 h-3" />
-                  ACTIVE
-                </span>
-              )}
+              <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-gray-100 text-gray-700 text-xs font-mono font-medium">
+                {cohorts.length} {cohorts.length === 1 ? "Cohort" : "Cohorts"} Active
+              </span>
             </div>
             <h3 className="text-xl font-bold tracking-tight text-gray-900">
-              Advisor Registration Code
+              Advisor Cohort Gatekeeper
             </h3>
-            <p className="text-sm text-gray-600 leading-relaxed">
-              Distribute this persistent code to incoming students. Advisees must provide this code during registration to join your cohort roster. Rotate when compromised or lock when enrollment is closed.
+            <p className="text-sm text-gray-600 leading-relaxed max-w-2xl">
+              Distribute cohort codes to your advisees. Students enter the code during registration to join your cohort roster with degree blueprints automatically assigned.
             </p>
-          </div>
-
-          {/* Quick Lock/Unlock Switch */}
-          <div className="flex items-center gap-4 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 shrink-0">
-            <div className="space-y-0.5">
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-900">
-                {isRegistrationLocked ? (
-                  <>
-                    <Lock className="w-3.5 h-3.5 text-rose-600" />
-                    <span>Registration Locked</span>
-                  </>
-                ) : (
-                  <>
-                    <Unlock className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Registration Open</span>
-                  </>
-                )}
-              </div>
-              <p className="text-[11px] text-gray-500 max-w-[200px]">
-                {isRegistrationLocked
-                  ? "Rejects incoming student sign-ups"
-                  : "Accepts new advisee sign-ups"}
-              </p>
-            </div>
-            <Switch
-              id="registration-lock-toggle"
-              checked={isRegistrationLocked}
-              disabled={isTogglingLock}
-              onCheckedChange={handleToggleLock}
-              className="data-[state=checked]:bg-rose-600 cursor-pointer"
-            />
           </div>
         </div>
 
-        {/* Code Display & Action Row */}
-        <div className="pt-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-            <span className="text-xs font-mono text-gray-500 uppercase tracking-wider">
-              Registration Code:
-            </span>
-            <div className="inline-flex items-center gap-3 bg-blue-50/70 border border-blue-200/80 px-4 py-2 rounded-lg">
-              <span className="font-mono text-2xl sm:text-3xl font-bold tracking-widest text-blue-950">
-                {registrationCode || (advisorStaffId ? `${advisorStaffId}` : "---")}
-              </span>
-              <span className="text-[11px] font-mono text-blue-700 bg-blue-100/80 px-2 py-0.5 rounded">
-                Staff ID: {advisorStaffId || "N/A"}
-              </span>
+        {/* Cohorts List */}
+        <div className="space-y-3">
+          {cohorts.length === 0 ? (
+            <div className="text-center py-8 bg-gray-50 rounded-lg border border-dashed border-gray-300">
+              <p className="text-xs font-mono uppercase text-gray-500">No active cohorts found</p>
             </div>
-          </div>
+          ) : (
+            cohorts.map((cohort) => {
+              const tmpl = Array.isArray(cohort.degree_templates)
+                ? cohort.degree_templates[0]
+                : cohort.degree_templates;
+              const programCode = tmpl?.program_code || "Unassigned";
+              const syllabusYear = tmpl?.syllabus_year || "2024/2025";
+              const programName = tmpl?.program_name || "Degree Program";
+              const isLocked = cohort.is_locked;
+              const isToggling = togglingCohortId === cohort.id;
+              const isCopied = copiedCode === cohort.cohort_code;
 
-          <div className="flex items-center gap-2.5">
-            {/* Copy Button */}
-            <button
-              onClick={handleCopyCode}
-              type="button"
-              className={`inline-flex items-center justify-center space-x-2 px-4 py-2.5 rounded-lg text-xs font-semibold tracking-tight transition-colors cursor-pointer shadow-sm ${
-                copied
-                  ? "bg-emerald-700 text-white hover:bg-emerald-800"
-                  : "bg-blue-900 hover:bg-blue-800 text-white"
-              }`}
-            >
-              {copied ? (
-                <>
-                  <Check className="w-4 h-4 text-white" />
-                  <span>Copied</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="w-4 h-4" />
-                  <span>Copy Code</span>
-                </>
-              )}
-            </button>
+              return (
+                <div
+                  key={cohort.id}
+                  className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-4 rounded-xl border border-gray-200 bg-gray-50/50 hover:bg-gray-50 transition-colors"
+                >
+                  {/* Cohort Meta */}
+                  <div className="space-y-1.5 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h4 className="font-semibold text-gray-900 text-sm tracking-tight">
+                        {cohort.cohort_name}
+                      </h4>
+                      <span className="inline-flex items-center px-2 py-0.5 rounded bg-blue-100/70 text-blue-800 text-[11px] font-mono font-semibold">
+                        {programCode}
+                      </span>
+                      <span className="inline-flex items-center px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[11px] font-mono">
+                        {syllabusYear}
+                      </span>
+                      {isLocked ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-rose-50 text-rose-700 text-[11px] font-mono font-semibold border border-rose-200">
+                          <Lock className="w-3 h-3" />
+                          LOCKED
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[11px] font-mono font-semibold border border-emerald-200">
+                          <Unlock className="w-3 h-3" />
+                          ACTIVE
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      {programName} • Linked to institutional degree blueprint
+                    </p>
+                  </div>
 
-            {/* Rotate Code Button */}
-            <button
-              onClick={handleRotateCode}
-              disabled={isRotating}
-              type="button"
-              className="inline-flex items-center justify-center space-x-2 px-4 py-2.5 rounded-lg text-xs font-semibold tracking-tight text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 hover:text-gray-900 transition-colors cursor-pointer shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <RotateCw className={`w-4 h-4 text-gray-600 ${isRotating ? "animate-spin text-blue-900" : ""}`} />
-              <span>{isRotating ? "Rotating..." : "Rotate Code"}</span>
-            </button>
-          </div>
+                  {/* Cohort Code Display & Lock Switch */}
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-4 shrink-0">
+                    {/* Code Display */}
+                    <div className="flex items-center gap-2">
+                      <div className="bg-white border border-gray-300 px-3.5 py-1.5 rounded-lg flex items-center gap-2 shadow-xs">
+                        <span className="text-[10px] font-mono text-gray-400 uppercase tracking-wider">
+                          Code:
+                        </span>
+                        <span className="font-mono text-xl font-bold tracking-wider text-blue-950">
+                          {cohort.cohort_code}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => handleCopyCohortCode(cohort.cohort_code)}
+                        type="button"
+                        className={`inline-flex items-center justify-center p-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer shadow-xs ${
+                          isCopied
+                            ? "bg-emerald-700 text-white hover:bg-emerald-800"
+                            : "bg-blue-900 hover:bg-blue-800 text-white"
+                        }`}
+                        title="Copy Cohort Code"
+                      >
+                        {isCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                      </button>
+                    </div>
+
+                    {/* Lock Toggle */}
+                    <div className="flex items-center gap-3 bg-white border border-gray-200 rounded-lg px-3 py-1.5">
+                      <div className="text-right">
+                        <span className="text-xs font-medium text-gray-700 block">
+                          {isLocked ? "Registration Locked" : "Registration Open"}
+                        </span>
+                        <span className="text-[10px] text-gray-400 block">
+                          {isLocked ? "Reject sign-ups" : "Accept sign-ups"}
+                        </span>
+                      </div>
+                      <Switch
+                        id={`cohort-lock-${cohort.id}`}
+                        checked={isLocked}
+                        disabled={isToggling}
+                        onCheckedChange={() => handleToggleCohortLock(cohort.id, isLocked)}
+                        className="data-[state=checked]:bg-rose-600 cursor-pointer"
+                      />
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
         </div>
       </div>
 
@@ -554,7 +595,7 @@ export function AdvisorDashboard() {
                         {student.matric_no}
                       </td>
                       <td className="py-4 px-6 text-sm text-gray-600">
-                        {student.program || "SECJ"}
+                        {student.program || "Unassigned"}
                       </td>
                       <td className="py-4 px-6 text-sm font-mono font-bold text-gray-900">
                         {Number(student.cgpa || 0).toFixed(2)}
@@ -579,7 +620,107 @@ export function AdvisorDashboard() {
         )}
       </div>
 
-      {/* 5. UPLOAD COURSE STRUCTURE MODAL */}
+      {/* 5. RECENT ENROLLMENTS SURVEILLANCE PANEL (Loose Admission Safety Net) */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="p-6 border-b border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <ShieldAlert className="w-5 h-5 text-amber-600" />
+              <h3 className="text-lg font-semibold tracking-tight text-gray-900">
+                Recent Enrollments
+              </h3>
+              <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 text-[11px] font-mono border border-amber-200">
+                Safety Net
+              </span>
+            </div>
+            <p className="text-sm text-gray-600 leading-relaxed">
+              Review self-registered students. Revoke access for fraudulent or duplicate registrations.
+            </p>
+          </div>
+          <span className="text-xs font-mono text-gray-600 bg-gray-50 px-2.5 py-1 rounded-md border border-gray-200 shrink-0">
+            {recentEnrollments.length} {recentEnrollments.length === 1 ? 'enrollment' : 'enrollments'}
+          </span>
+        </div>
+
+        {recentEnrollments.length === 0 ? (
+          <div className="flex flex-col items-center justify-center p-10 text-center">
+            <ShieldCheck className="w-10 h-10 text-emerald-300 mb-3" />
+            <p className="text-sm font-medium text-gray-500">No enrollments to review.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="text-xs font-semibold text-gray-500 uppercase tracking-wider bg-gray-50/50 border-b border-gray-200">
+                  <th className="py-3 px-6">Student Name</th>
+                  <th className="py-3 px-6">Matric No</th>
+                  <th className="py-3 px-6">Institutional Email</th>
+                  <th className="py-3 px-6">Registered At</th>
+                  <th className="py-3 px-6 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {recentEnrollments.map((enrollment) => {
+                  const registeredAt = enrollment.created_at
+                    ? new Date(enrollment.created_at).toLocaleString('en-MY', {
+                        dateStyle: 'medium',
+                        timeStyle: 'short',
+                      })
+                    : '—';
+                  const isBeingRevoked = isRevoking === enrollment.matric_no;
+
+                  return (
+                    <tr
+                      key={enrollment.matric_no}
+                      className="hover:bg-rose-50/30 transition-colors duration-150"
+                    >
+                      <td className="py-3.5 px-6 text-sm font-medium text-gray-900">
+                        {enrollment.name || '—'}
+                      </td>
+                      <td className="py-3.5 px-6 text-sm font-mono text-gray-700">
+                        {enrollment.matric_no}
+                      </td>
+                      <td className="py-3.5 px-6 text-sm text-gray-500">
+                        {enrollment.institutional_email || '—'}
+                      </td>
+                      <td className="py-3.5 px-6 text-xs text-gray-500 font-mono">
+                        {registeredAt}
+                      </td>
+                      <td className="py-3.5 px-6 text-right">
+                        <button
+                          id={`revoke-btn-${enrollment.matric_no}`}
+                          onClick={() =>
+                            handleRevokeStudent(
+                              enrollment.matric_no,
+                              enrollment.user_id ?? ''
+                            )
+                          }
+                          disabled={isBeingRevoked || !enrollment.user_id}
+                          title={
+                            !enrollment.user_id
+                              ? 'Cannot revoke: no auth account linked'
+                              : 'Revoke this student\'s access'
+                          }
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-rose-700 bg-rose-50 border border-rose-200 hover:bg-rose-100 hover:border-rose-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                        >
+                          {isBeingRevoked ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Trash2 className="w-3.5 h-3.5" />
+                          )}
+                          {isBeingRevoked ? 'Revoking…' : 'Revoke'}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* 6. UPLOAD COURSE STRUCTURE MODAL */}
       {isUploadModalOpen && (
         <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-6">
           <div className="bg-white border border-gray-200 rounded-xl shadow-sm w-full max-w-lg overflow-hidden animate-in fade-in-50 zoom-in-95 duration-150">

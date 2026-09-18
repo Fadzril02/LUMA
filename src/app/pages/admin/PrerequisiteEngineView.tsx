@@ -4,17 +4,17 @@ import { Card, CardContent, CardHeader, CardTitle, Button, Badge } from "../../c
 
 // Mock Data: Master Course List
 const ALL_COURSES = [
-  { id: "SECJ1013", name: "Programming Technique I" },
-  { id: "SECJ1023", name: "Programming Technique II" },
-  { id: "SECJ2013", name: "Data Structures and Algorithms" },
-  { id: "SECP1513", name: "Technology & Information System" },
-  { id: "SECR2043", name: "Operating Systems" }
+  { id: "CS101", name: "Introduction to Computer Science" },
+  { id: "CS102", name: "Programming Fundamentals" },
+  { id: "CS201", name: "Data Structures and Algorithms" },
+  { id: "SWE300", name: "Software Engineering Principles" },
+  { id: "SYS204", name: "Operating Systems" }
 ];
 
 // Mock Data: Existing Dependency Links
 const INITIAL_LINKS = [
-  { target: "SECJ1023", requires: "SECJ1013" },
-  { target: "SECJ2013", requires: "SECJ1023" },
+  { target: "CS102", requires: "CS101" },
+  { target: "CS201", requires: "CS102" },
 ];
 
 export function PrerequisiteEngineView() {

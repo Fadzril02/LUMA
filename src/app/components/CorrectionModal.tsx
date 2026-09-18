@@ -51,7 +51,7 @@ export function CorrectionModal({ isOpen, onClose, onSubmit }: CorrectionModalPr
                 <Label htmlFor="course">Course Code</Label>
                 <Input
                   id="course"
-                  placeholder="e.g., SECJ1013"
+                  placeholder="e.g., CS101"
                   value={formData.course}
                   onChange={(e) => setFormData({ ...formData, course: e.target.value })}
                 />

@@ -53,7 +53,7 @@ export function AdvisorLogin() {
   };
 
   const handleQuickDemo = () => {
-    setEmail('advisor@utm.my');
+    setEmail('advisor@university.edu');
     setPassword('LumaAdvisor2026!');
   };
 

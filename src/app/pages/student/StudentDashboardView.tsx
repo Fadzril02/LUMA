@@ -9,7 +9,7 @@ export function StudentDashboardView({ stats, creditProgress }: { stats?: any, c
   const displayStats = stats || {
     cgpa: "0.00",
     earned: 0,
-    required: 130
+    required: 120
   };
 
   const displayProgress = creditProgress && creditProgress.length > 0 ? creditProgress : [];

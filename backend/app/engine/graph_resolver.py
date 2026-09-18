@@ -98,7 +98,7 @@ class PrerequisiteGraphResolver:
     def audit_student_records(
         records: List[ParsedLineItem],
         course_catalog: Dict[str, Dict[str, Any]],
-        total_required_credits: int = 130,
+        total_required_credits: int = 0,
         min_cgpa_threshold: float = 2.00
     ) -> tuple[List[CourseAuditResult], AuditSummary]:
         """

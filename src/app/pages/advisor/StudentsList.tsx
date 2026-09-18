@@ -25,7 +25,7 @@ export function StudentsList() {
 useEffect(() => {
   const fetchStudents = async () => {
     try {
-      let query = db.from('students').select('*').order('name', { ascending: true });
+      let query = db.from('students').select('*, cohorts(template_id, degree_templates(total_credits_required))').order('name', { ascending: true });
       if (currentAdvisorId) {
         query = query.eq('advisor_staff_id', currentAdvisorId);
       }
@@ -168,8 +168,16 @@ useEffect(() => {
               ) : (
                 filteredRoster.map((student) => {
                   const isAtRisk = ["At-Risk", "Probation"].includes(student.academic_status);
+                  const requiredCredits =
+                    student.total_credits_required ||
+                    student.cohorts?.degree_templates?.total_credits_required ||
+                    student.required_credits ||
+                    120;
                   // Mocking credits visually based on CGPA just so the UI bar doesn't break
-                  const visualCredits = student.credits || Math.min(Math.floor(Number(student.cgpa) * 30), 130) || 90;
+                  const visualCredits =
+                    student.credits ||
+                    Math.min(Math.floor(Number(student.cgpa) * 30), requiredCredits) ||
+                    Math.round(requiredCredits * 0.7);
 
                   return (
                     <tr key={student.matric_no} className="hover:bg-gray-50/50 transition-colors group">
@@ -201,11 +209,11 @@ useEffect(() => {
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-600 font-medium">{visualCredits} / 130</div>
+                        <div className="text-sm text-gray-600 font-medium">{visualCredits} / {requiredCredits}</div>
                         <div className="w-24 bg-gray-100 h-1.5 rounded-full mt-1.5 overflow-hidden">
                           <div 
                             className={`h-full rounded-full transition-all duration-1000 ${isAtRisk ? 'bg-amber-400' : 'bg-emerald-500'}`} 
-                            style={{ width: `${(visualCredits / 130) * 100}%` }}
+                            style={{ width: `${Math.min(100, (visualCredits / requiredCredits) * 100)}%` }}
                           />
                         </div>
                       </td>

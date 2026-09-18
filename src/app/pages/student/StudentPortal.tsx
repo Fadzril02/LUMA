@@ -31,7 +31,7 @@ export function StudentPortal() {
   
   const [courseHistory, setCourseHistory] = useState<any[]>([]);
   const [creditProgress, setCreditProgress] = useState<any[]>([]);
-  const [stats, setStats] = useState({ cgpa: "0.00", earned: 0, required: 130 });
+  const [stats, setStats] = useState({ cgpa: "0.00", earned: 0, required: 120 });
   const [loadingData, setLoadingData] = useState(true);
 
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -143,13 +143,30 @@ export function StudentPortal() {
         const calculatedCgpa =
           gradedCredits > 0 ? (totalPoints / gradedCredits).toFixed(2) : "0.00";
 
-        setStats({ cgpa: calculatedCgpa, earned: totalEarnedCredits, required: 130 });
+        // ── Fetch dynamic required credits via cohort & degree template ──
+        let dynamicRequiredCredits = 120;
+        try {
+          const { data: studentRecord } = await db
+            .from("students")
+            .select("cohort_id, cohorts(template_id, degree_templates(total_credits_required))")
+            .eq("matric_no", profile.matric_no)
+            .maybeSingle();
+
+          const tmplCredits = (studentRecord as any)?.cohorts?.degree_templates?.total_credits_required;
+          if (tmplCredits && typeof tmplCredits === "number") {
+            dynamicRequiredCredits = tmplCredits;
+          }
+        } catch (creditErr) {
+          console.warn("[StudentPortal] Dynamic credit fetch warning:", creditErr);
+        }
+
+        setStats({ cgpa: calculatedCgpa, earned: totalEarnedCredits, required: dynamicRequiredCredits });
         setCreditProgress([
-          { name: "Syllabus Total", earned: totalEarnedCredits, total: 130 },
+          { name: "Syllabus Total", earned: totalEarnedCredits, total: dynamicRequiredCredits },
           {
             name: "Core Modules",
             earned: historyMapped.filter((c) => c.status === "Passed" || c.status === "Pass").length * 3,
-            total: 90,
+            total: Math.round(dynamicRequiredCredits * 0.7),
           },
         ]);
       } catch (err) {
@@ -550,7 +567,7 @@ export function StudentPortal() {
                     </div>
                   ) : (
                     <div className="space-y-2">
-                      <p className="text-xs text-gray-600">Select your official UTM academic slip PDF</p>
+                      <p className="text-xs text-gray-600">Select your official academic transcript or slip</p>
                       <Button 
                         type="button"
                         disabled={isProcessing}

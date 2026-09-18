@@ -175,3 +175,62 @@ SECJ3032,Final Year Project 1,2,Core,SECJ2203 AND SECJ2013 min_credits: 80
     c4 = [c for c in courses if c["code"] == "SECJ3032"][0]
     assert c4["prerequisites"]["min_credits"] == 80
     assert "SECJ2203" in c4["prerequisites"]["courses"]
+
+
+def test_international_course_codes_and_semesters():
+    try:
+        from app.engine.parsers.malaysian_regex import MalaysianTranscriptParser, COURSE_PATTERN, SEMESTER_PATTERN
+        from app.engine.parsers.csv_course_parser import CSVCourseParser
+    except ImportError:
+        from backend.app.engine.parsers.malaysian_regex import MalaysianTranscriptParser, COURSE_PATTERN, SEMESTER_PATTERN
+        from backend.app.engine.parsers.csv_course_parser import CSVCourseParser
+
+    # Test international course codes matching (2-6 letters, optional hyphens/spaces, 3-5 digits, optional trailing letter)
+    test_lines = [
+        "FALL TERM 2024",
+        "CS-101 Introduction to Computing 3 A 4.00",
+        "ENG101A Academic Writing 3 B+ 3.33",
+        "SPRING TERM 2025",
+        "COMP30001 Advanced Algorithms 4 A- 3.67",
+        "SEMESTER 1 2024/2025",
+        "SECJ1013 Programming Technique I 3 A 4.00"
+    ]
+    meta, parsed, unparsed = MalaysianTranscriptParser.parse_transcript_lines(test_lines)
+    parsed_codes = [p.course_code for p in parsed]
+    assert "CS-101" in parsed_codes or "CS101" in parsed_codes
+    assert "ENG101A" in parsed_codes
+    assert "COMP30001" in parsed_codes
+    assert "SECJ1013" in parsed_codes
+    assert len(parsed) == 4
+
+    # Test international semester pattern
+    assert SEMESTER_PATTERN.search("FALL TERM 2024") is not None
+    assert SEMESTER_PATTERN.search("SPRING SEM 2025") is not None
+    assert SEMESTER_PATTERN.search("TERM 2 2024/2025") is not None
+    assert SEMESTER_PATTERN.search("TRIMESTER 1 2023/2024") is not None
+    assert SEMESTER_PATTERN.search("QUARTER 3 2024") is not None
+
+    # Test CSV parser with relaxed codes
+    prereqs = CSVCourseParser.parse_prerequisite_string("CS-101 AND ENG101A OR COMP30001")
+    assert "CS-101" in prereqs["courses"] or "CS101" in prereqs["courses"]
+    assert "ENG101A" in prereqs["courses"]
+    assert "COMP30001" in prereqs["courses"]
+
+
+def test_dynamic_credits_in_graph_resolver():
+    try:
+        from app.engine.graph_resolver import PrerequisiteGraphResolver
+        from app.schemas.audit import ParsedLineItem
+    except ImportError:
+        from backend.app.engine.graph_resolver import PrerequisiteGraphResolver
+        from backend.app.schemas.audit import ParsedLineItem
+
+    catalog = {}
+    records = [
+        ParsedLineItem(course_code="CS101", course_name="Intro", credits=3, grade="A", grade_point=4.0, semester="Fall 2024", status="Passed")
+    ]
+    # Test explicit dynamic credits passed (e.g. 128 instead of hardcoded 130)
+    results, summary = PrerequisiteGraphResolver.audit_student_records(records, catalog, total_required_credits=128)
+    assert summary.total_credits_required == 128
+    assert summary.total_credits_earned == 3
+

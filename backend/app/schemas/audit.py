@@ -16,8 +16,9 @@ class StorageAuditRequest(BaseModel):
     advisor_id: str = Field(..., description="UUID of authenticated advisor")
     university_id: str = Field(..., description="UUID of the university")
     matric_number: Optional[str] = Field(None, description="Student matric number if known upfront")
-    curriculum_year: Optional[str] = Field("2023/2024", description="Curriculum intake year")
-    program_code: Optional[str] = Field("SECJ", description="Program code, e.g. SECJ")
+    curriculum_year: Optional[str] = Field(None, description="Curriculum intake year")
+    program_code: Optional[str] = Field(None, description="Program code")
+    cohort_id: Optional[str] = Field(None, description="UUID of student's cohort")
 
 
 class ExtractPDFRequest(BaseModel):
@@ -58,7 +59,7 @@ class CourseAuditResult(BaseModel):
 
 
 class AuditSummary(BaseModel):
-    total_credits_required: int = 130
+    total_credits_required: int = 0
     total_credits_earned: int = 0
     cgpa: float = 0.00
     overall_traffic_light: str = "GREEN"  # 'GREEN', 'YELLOW', 'RED'
@@ -105,10 +106,11 @@ class FinalizeApprovalRequest(BaseModel):
     document_id: str = Field(..., description="UUID of document in uploaded_documents table")
     matric_number: str = Field(..., description="Student matric number")
     student_name: Optional[str] = None
-    advisor_id: Optional[str] = "STAFF-LIYANA"
+    advisor_id: Optional[str] = None
     university_id: Optional[str] = ""
-    curriculum_year: Optional[str] = "2023/2024"
-    program_code: Optional[str] = "SECJ"
+    curriculum_year: Optional[str] = None
+    program_code: Optional[str] = None
+    cohort_id: Optional[str] = Field(None, description="UUID of student's cohort")
     academic_session: Optional[str] = "2024/2025"
     semester: Optional[Any] = 1
     courses: List[ExtractedCourseItem] = []
