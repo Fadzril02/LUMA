@@ -1,33 +1,15 @@
 -- ==============================================================================
--- Migration: Curriculum Seed Remediation + Founding Advisor Flag
--- Version: 11_remediation_curriculum_seed.sql
+-- Migration: Draft Seed UTM SECJ Curriculum Payload
+-- Version: 12_seed_utm_secj_draft.sql
 -- Description:
---   1. Applies the is_founding_advisor flag to the advisors table (idempotent,
---      mirrors intent of migration 10 which targets the live advisors schema).
---   2. Ensures the 'courses' table exists per 01_schema.sql blueprint.
---   3. Seeds the full UTM Software Engineering (SECJ) curriculum with explicit
---      min_grade = 'C' on all prerequisite edges (JSONB format).
--- 
---   NOTE: The live 'advisors' table (multi-tenant Phase 0 pivot) differs from
---   the 01_schema.sql design. This migration targets the ACTUAL live columns.
+--   Draft Payload for UAT Validation.
+--   Curriculum data seed for UTM Software Engineering (SECJ).
+--   CAUTION: Contains uniform min_grade='C' prerequisites requiring explicit 
+--   validation by Advisor #1 against the UTM academic handbook prior to production use.
 -- ==============================================================================
 
 -- ===========================================================================
--- PART 1: Add is_founding_advisor to the LIVE advisors table
---         (The live table uses staff_id PK, not UUID id)
--- ===========================================================================
-ALTER TABLE advisors
-  ADD COLUMN IF NOT EXISTS is_founding_advisor BOOLEAN NOT NULL DEFAULT false;
-
-CREATE INDEX IF NOT EXISTS idx_advisors_founding
-  ON advisors(is_founding_advisor)
-  WHERE is_founding_advisor = true;
-
-COMMENT ON COLUMN advisors.is_founding_advisor IS
-  'Flags founding advisors during Phase 1 UAT Pilot (capped at 5). Grants permanently free, full access across all platform capabilities.';
-
--- ===========================================================================
--- PART 2: Ensure universities table has UTM seed row (prerequisite for courses)
+-- PART 1: Ensure universities table has UTM seed row (prerequisite for courses)
 -- ===========================================================================
 INSERT INTO universities (id, name, code, grading_scale, min_cgpa_good_standing)
 VALUES (
@@ -49,7 +31,7 @@ ON CONFLICT (code) DO UPDATE SET
     min_cgpa_good_standing = EXCLUDED.min_cgpa_good_standing;
 
 -- ===========================================================================
--- PART 3: Seed Full UTM SECJ Course Catalog with explicit min_grade = 'C'
+-- PART 2: Seed Full UTM SECJ Course Catalog with explicit min_grade = 'C'
 --         on all prerequisite edges. 
 --         Table: courses (UUID-based, per 01_schema.sql)
 -- ===========================================================================
@@ -130,7 +112,7 @@ ON CONFLICT (university_id, code) DO UPDATE SET
     prerequisites = EXCLUDED.prerequisites;
 
 -- ===========================================================================
--- PART 4: Ensure Software Engineering Project I (SECP2243) is seeded
+-- PART 3: Software Engineering Project I (SECP2243)
 -- ===========================================================================
 INSERT INTO courses (university_id, code, name, credits, category, prerequisites)
 VALUES
