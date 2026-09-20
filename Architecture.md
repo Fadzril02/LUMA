@@ -85,8 +85,9 @@ The core architectural breakthrough in LUMA is the **Multi-Tenant Blueprint Arch
 erDiagram
     degree_templates ||--o{ template_courses : "contains syllabus"
     degree_templates ||--o{ cohorts : "instantiated as"
+    degree_templates ||--o{ students : "direct single-player bind (future B2C)"
     advisors ||--o{ cohorts : "owns and manages"
-    cohorts ||--o{ students : "enrolls"
+    cohorts ||--o{ students : "enrolls (cohort-linked B2B)"
     advisors ||--o{ students : "advises"
     students ||--o{ academic_records : "has transcript"
     students ||--o{ uploaded_documents : "uploads"
@@ -129,7 +130,8 @@ erDiagram
         varchar name
         varchar institutional_email
         varchar advisor_staff_id FK
-        uuid cohort_id FK
+        uuid cohort_id FK "Door 1: Inherits cohort.template_id"
+        uuid template_id FK "Door 2: Direct Single-Player bind"
         varchar program
         varchar syllabus_type
         timestamptz created_at
@@ -141,6 +143,7 @@ erDiagram
         varchar name
         varchar institutional_email UK
         varchar faculty
+        boolean is_founding_advisor "Phase 1 UAT Pilot Flag"
     }
 
     academic_records {
@@ -285,6 +288,43 @@ CREATE INDEX idx_registration_disputes_advisor ON registration_disputes(advisor_
 
 ---
 
+### 2.2 The "Two Doors, One House" Dual-Ingress Architecture (B2B2C Model)
+
+LUMA is engineered around a unified **"Two Doors, One House"** dual-ingress data architecture. This model enables seamless coexistence between institutional, cohort-led advising (B2B) and direct student self-serve progression auditing (B2C) without duplicating graduation audit logic or database structures.
+
+```mermaid
+graph TD
+    subgraph "Door 1: Cohort-Linked Ingress (B2B Institutional)"
+        ADV[Academic Advisor] -->|Creates & Manages| COH[cohorts]
+        COH -->|Foreign Key template_id| DT[degree_templates]
+        STU1[Cohort Student] -->|Enrolls with cohort_code| COH
+        STU1 -.->|Inherits: cohort.template_id| DT
+    end
+
+    subgraph "Door 2: Single-Player Direct Ingress (B2C Self-Serve - Future)"
+        STU2[Single-Player Student] -->|Direct Onboarding| STU_ROW[students]
+        STU_ROW -->|Direct Foreign Key template_id| DT
+    end
+
+    subgraph "The One House (Core Analytical & Persistence Engine)"
+        DT --> TC[template_courses: Universal Syllabus Standards]
+        STU1 --> AR[academic_records]
+        STU2 --> AR
+        AR --> DAG[Prerequisite DAG Graph Resolver]
+        DAG --> DA[degree_audits Snapshot & Traffic Light Matrix]
+    end
+```
+
+#### Dual-Ingress Specifications
+
+| Ingress Path | Target Persona | Blueprint Resolution Mechanism | Governance & Access Control |
+| :--- | :--- | :--- | :--- |
+| **Door 1: Cohort-Linked (B2B)** | Advisees assigned to an official university lecturer. | **Indirect Inheritance:** Student record stores `cohort_id`. The degree blueprint is resolved via `cohorts.template_id` (`students.cohort_id -> cohorts.id -> cohorts.template_id`). | The cohort's advisor controls registration capacity, lock toggles (`is_locked`), student surveillance, and transcript approval queues. |
+| **Door 2: Single-Player (B2C - Roadmap)** | Independent students using LUMA for self-guided degree audits. | **Direct Binding:** Student record stores a nullable direct foreign key `students.template_id REFERENCES degree_templates(id)`. | Self-serve access governed directly by student auth, without advisor gatekeeping or cohort lock constraints. |
+| **The One House** | Both Student Categories | **Shared Analytical Core:** Both ingress doors converge into the identical prerequisite DAG engine, Malaysian transcript regex parser, PyMuPDF extraction, and forensic tamper provenance tracking. | Zero duplicate schemas. Both doors write to `academic_records` and generate identical `degree_audits` snapshots. |
+
+---
+
 ## 3. Security Architecture & Boundary Verification
 
 ### 3.1 Supabase Row Level Security (RLS) Boundaries
@@ -319,60 +359,100 @@ graph TD
 
 ---
 
-### 3.2 Asymmetric ES256 JWT Verification (`backend/app/core/auth.py`)
+### 3.2 Strict JWT Signature Verification Linked to DB Constraints (`backend/app/core/auth.py`)
 
-The FastAPI backend does **not** share an insecure static secret with the frontend. Instead, it cryptographically validates user session tokens against Supabase's live JSON Web Key Set (JWKS) using the Elliptic Curve `ES256` asymmetric algorithm.
+To guarantee zero-trust identity isolation across microservices, the FastAPI analytical backend does **not** rely on static shared secrets (HS256). Instead, it implements **strict JWT signature verification linked to DB constraints** using the Elliptic Curve `ES256` asymmetric algorithm and live cryptographic key sets.
 
-#### In-Process JWKS Cache Engine
-```python
-# In-process JWKS cache — one fetch per cold start, refreshed every 3600 seconds
-_jwks_cache: list = []
-_jwks_fetched_at: float = 0.0
-_jwks_lock = threading.Lock()
-_JWKS_TTL_SECONDS = 3600
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Advisor as Client Browser
+    participant API as FastAPI Backend (/finalize-approval)
+    participant JWKS as Supabase JWKS Endpoint
+    participant DB as Supabase PostgreSQL
 
-def _get_jwks() -> list:
-    global _jwks_cache, _jwks_fetched_at
-    with _jwks_lock:
-        if _jwks_cache and (time.monotonic() - _jwks_fetched_at) < _JWKS_TTL_SECONDS:
-            return _jwks_cache
-        try:
-            resp = httpx.get(JWKS_URL, timeout=5.0)
-            resp.raise_for_status()
-            _jwks_cache = resp.json().get("keys", [])
-            _jwks_fetched_at = time.monotonic()
-            return _jwks_cache
-        except Exception as e:
-            if _jwks_cache:
-                # Outage resilience: serve stale cache during transient JWKS failures
-                return _jwks_cache
-            raise HTTPException(status_code=503, detail="JWKS keys unavailable")
+    Advisor->>API: POST /finalize-approval + Bearer <ES256_JWT> + Body {advisor_id: "STAFF-LIYANA"}
+    API->>JWKS: Fetch Public Keys (cached in-process, TTL 3600s)
+    API->>API: Cryptographically verify ES256 signature & expiration
+    alt Signature Invalid or Garbage JWT
+        API-->>Advisor: 401 Unauthorized ("Token signature verification failed")
+    else Signature Valid
+        API->>DB: Query advisors WHERE institutional_email = jwt.email
+        alt Advisor Record Missing or Mismatch
+            API-->>Advisor: 403 Forbidden ("Advisor identity mismatch")
+        else Advisor Verified (staff_id matches payload advisor_id)
+            API->>DB: Execute DAG Audit & Commit to academic_records
+            API-->>Advisor: 200 OK (Audit Finalized)
+        end
+    end
 ```
 
-#### Advisor Cross-Referencing Check (`_check_advisor_identity`)
-Even if an incoming JWT is cryptographically valid, a rogue advisor could theoretically submit mutations on behalf of another lecturer. LUMA enforces strict identity cross-referencing on every mutating endpoint:
-
-```python
-def _check_advisor_identity(jwt_payload: dict, claimed_advisor_id: str) -> None:
-    jwt_email = (jwt_payload.get("email") or "").strip().lower()
-    res = supabase_svc.client.table("advisors") \
-        .select("staff_id") \
-        .eq("institutional_email", jwt_email) \
-        .maybe_single() \
-        .execute()
-
-    if not res.data:
-        raise HTTPException(status_code=403, detail="JWT identity is not an advisor.")
-    
-    actual_staff_id = res.data.get("staff_id")
-    if actual_staff_id != claimed_advisor_id:
-        # Cross-reference failure: token identity does not match payload claimed ID
-        raise HTTPException(status_code=403, detail="Advisor identity mismatch.")
+#### 1. Asymmetric ES256 JWKS Verification
+Session tokens issued by Supabase Auth are signed with project-specific asymmetric private keys. The backend verifies incoming tokens against the public JSON Web Key Set at:
 ```
+https://<project-ref>.supabase.co/auth/v1/.well-known/jwks.json
+```
+Tokens with invalid crypto padding, altered payloads, or expired signatures are rejected immediately with `401 Unauthorized` before any application logic or database queries execute.
+
+#### 2. Database Identity Linkage (`_check_advisor_identity`)
+Cryptographic validity alone does not prevent parameter tampering (e.g. Lecturer A using their valid token to submit approvals for Lecturer B's advisees). On every mutating request:
+1. The backend extracts `jwt_payload["email"]`.
+2. It queries `public.advisors` to verify the staff record:
+   ```python
+   res = supabase_svc.client.table("advisors") \
+       .select("staff_id") \
+       .eq("institutional_email", jwt_email) \
+       .maybe_single() \
+       .execute()
+   ```
+3. It asserts `actual_staff_id == claimed_advisor_id`. If an impersonation attempt is detected, the request is rejected with `403 Forbidden ("Advisor identity mismatch")`.
 
 ---
 
-### 3.3 Atomic Registration RPC (`register_student_into_cohort`)
+### 3.3 Hard Client-Side Session Invalidation Encompassing Storage and Cookies
+
+In multi-user campus environments (shared computer lab terminals, advisor department workstations), client-side session termination must be absolute to prevent session replay and token leakage.
+
+LUMA implements **hard client-side session invalidation encompassing storage and cookies** across five sequential enforcement steps in [`AuthContext.tsx`](file:///d:/smart-aa-system/src/context/AuthContext.tsx):
+
+```typescript
+const signOut = async () => {
+  try {
+    setIsLoading(true);
+    // 1. Invalidate Supabase GoTrue Auth Session on Server
+    await supabase.auth.signOut();
+  } catch (err) {
+    console.error('[AuthContext] SignOut error:', err);
+  } finally {
+    // 2. Hard Purge ALL Local Storage (JWTs, cached profiles, role state)
+    localStorage.clear();
+
+    // 3. Hard Purge ALL Session Storage (in-flight staging data, transient keys)
+    sessionStorage.clear();
+
+    // 4. Hard Expire and Purge ALL Accessible Browser Cookies
+    document.cookie.split(";").forEach((c) => {
+      document.cookie = c
+        .replace(/^ +/, "")
+        .replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+    });
+
+    setIsLoading(false);
+
+    // 5. Hard Navigation Redirect to flush in-memory JavaScript/React state
+    window.location.href = '/';
+  }
+};
+```
+
+This ensures that:
+- Stored session tokens cannot be retrieved via browser inspection or script injection after logout.
+- In-flight form state and staging caches are purged from volatile memory.
+- A full window reload flushes React component state machines, preventing back-navigation leakage.
+
+---
+
+### 3.4 Atomic Registration RPC (`register_student_into_cohort`)
 
 To prevent registration race conditions where multiple students oversubscribe a cohort or claim duplicate matric numbers concurrently, student enrollment is handled via an atomic PostgreSQL function executing with `SECURITY DEFINER`:
 

@@ -87,6 +87,7 @@ graph LR
 
 ### 3.2 Academic Advisor Persona
 * **Profile:** Faculty lecturer responsible for academic guidance, student progression tracking, and official transcript verification.
+* **Founding Advisor Entitlement:** During Phase 1 UAT Pilot, up to 5 Founding Advisors are onboarded. Flagging an advisor with `is_founding_advisor = true` in `public.advisors` grants permanently free, full access across all platform capabilities without monthly audit quotas or subscription tier limits.
 * **Objectives:**
   * Maintain active advising cohorts with instant registration code generation and manual lock toggles.
   * Rapidly audit student-submitted transcripts against original source PDFs.
@@ -296,3 +297,53 @@ stateDiagram-v2
 | **Reliability** | JWKS Stale Cache Resilience | Transient JWKS network outages must serve cached public keys (TTL: 1 hour) without dropping live requests. |
 | **Auditing** | Audit Trail Integrity | Provenance fields (`is_altered`, `ai_grade`) cannot be wiped or bypassed by client-side requests. |
 | **Accessibility & Design** | Institutional UI Standards | Strict Academic Minimalist interface adhering to high-contrast WCAG AA standards. |
+
+---
+
+## 6. Product Roadmap & Phased Rollout Strategy
+
+LUMA is developed and released in four distinct phases to ensure uncompromising data integrity, security validation, and controlled institutional adoption.
+
+```mermaid
+timeline
+    title LUMA Phased Rollout Roadmap
+    Phase 0 (Pre-Launch Gate) : Schema Migrations (10_add_founding_advisor_flag) : DAG Prerequisite Depth & min_grade Check : Live ES256 JWT & RLS Security Verification : Documentation Sync
+    Phase 1 (UAT Pilot) : Cap at 5 Founding Advisors : is_founding_advisor=true Permanent Free Access : UTM Software Engineering Pilot (Advisor #1) : Zero-Waste In-Memory Transcript OCR : Forensic Tamper Trap
+    Phase 2 (Commercial Self-Serve) : Stripe Billing & Subscriptions : Single-Player B2C Mode (students.template_id) : Multi-Cohort Archival : Department Audit Analytics
+    Phase 3 (Enterprise Governance) : Curriculum Heatmaps & Failure Density : Predictive Attrition & Early Warning System : LMS API Sync (Canvas/Moodle/Blackboard) : University Central Administration
+```
+
+### Phase 0: Pre-Launch Gate & Infrastructure Hardening (Current)
+* **Objective:** Establish unbreakable baseline security, schema version control, and prerequisite data integrity prior to exposing the platform to external users.
+* **Key Deliverables:**
+  1. **Idempotent Schema Versioning:** Database migration `10_add_founding_advisor_flag.sql` adding `is_founding_advisor BOOLEAN DEFAULT false` to `advisors`.
+  2. **Curriculum Integrity Gate:** Verification script [`verify_phase0_curriculum.py`](file:///d:/smart-aa-system/scripts/verify_phase0_curriculum.py) enforcing graph depth and eliminating false-GREEN risks by asserting explicit `min_grade >= 'C'`.
+  3. **Security Gate Proof:** Live execution of asymmetric ES256 JWT verification (`401/403` rejection logs) and 2x2 multi-tenant RLS isolation proving zero cross-tenant data leakage.
+  4. **Documentation Sync:** Technical formalization of "Two Doors, One House" B2B2C ingress, hard client-side session invalidation, and strict JWT signature verification.
+
+### Phase 1: UAT Pilot (Advisor #1 Launch)
+* **Objective:** Execute real-world User Acceptance Testing (UAT) with our target launch cohort (Advisor #1: UTM Faculty of Computing, Software Engineering).
+* **Cap & Eligibility:** Strictly capped at **maximum 5 Founding Advisors**.
+* **Founding Advisor Privileges:** Every pilot advisor is designated with `is_founding_advisor = true` in `public.advisors`. This flag grants **permanently free, full access** across all current and future platform features without monthly audit quotas or subscription tier limits.
+* **Target Feature Scope:**
+  * Cohort Gatekeeper with 6-character alphanumeric lockable codes.
+  * In-memory PyMuPDF transcript extraction with zero-temperature LLM fallback.
+  * Forensic Tamper Trap (`is_altered`, `ai_grade`) and Advisor Corrections Queue.
+  * Loose Admission Safety Net with matric format enforcement, collision contestation, and one-click privileged revocation.
+
+### Phase 2: Commercial Self-Serve & Advisor Pro
+* **Objective:** Transition from controlled pilot to self-sustaining Product-Led Growth (PLG) and individual advisor subscriptions.
+* **Target Features:**
+  * **Stripe Billing Integration:** Tiered self-service subscriptions (Freemium vs Advisor Pro vs Department Tier).
+  * **Single-Player Mode (Door 2):** Direct student registration bound to degree blueprints via `students.template_id`, bypassing cohort dependencies.
+  * **Advanced Cohort Management:** Multi-cohort scheduling, intake archival, and bulk document purge upon advisor sign-off.
+  * **Email Notification Queues:** Background email dispatch for dispute resolutions and cohort invitations.
+
+### Phase 3: Enterprise & Institutional Governance
+* **Objective:** University-wide campus deployment and central academic administration.
+* **Features Deferred to Phase 3:**
+  * **Curriculum Heatmaps:** Aggregated multi-cohort bottleneck visualization, prerequisite failure density maps, and syllabus drop-off heatmaps identifying systemic academic hurdles across departments.
+  * **Predictive Attrition & Early Warning System (EWS):** Probabilistic machine learning models evaluating student CGPA velocity, prerequisite retakes, and credit completion pace to forecast at-risk students before semester final exams.
+  * **LMS API Synchronization:** Deep bidirectional integration (LTI 1.3 / REST) with university Learning Management Systems (Canvas, Blackboard, Moodle) to automatically ingest exam slips and synchronize verified audit reports.
+  * **Dean & Registrar Portals:** Centralized university governance, multi-department faculty audits, and institutional accreditation compliance reporting.
+
