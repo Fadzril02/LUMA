@@ -126,6 +126,7 @@ class FinalizeApprovalResponse(BaseModel):
     records_saved_count: int
     processing_status: str = "Approved"
     records: List[CourseAuditResult]
+    storage_purged: bool = False
 
 
 class PurgeDocumentRequest(BaseModel):

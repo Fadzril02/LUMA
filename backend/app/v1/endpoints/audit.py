@@ -337,6 +337,22 @@ async def finalize_approval(
     except Exception as doc_update_err:
         print(f"[Document Status Update Warning] {doc_update_err}")
 
+    # 6. Automatic Storage Purge on Advisor Approval (Zero-Waste Data Retention)
+    # The approval-only gate is strictly enforced inside purge_uploaded_document_file:
+    # it verifies that uploaded_documents.processing_status == 'Approved' before deleting.
+    purge_successful = False
+    try:
+        if supabase_svc.client and request.document_id:
+            purge_res = supabase_svc.purge_uploaded_document_file(
+                document_id=request.document_id,
+                matric_no=matric_number,
+                admin_staff_id=advisor_id or "ADMIN"
+            )
+            purge_successful = purge_res.get("success", False)
+            print(f"[Automatic Purge] Document '{request.document_id}' purged successfully.")
+    except Exception as purge_err:
+        print(f"[Automatic Purge Warning] Could not purge document '{request.document_id}': {purge_err}")
+
     return FinalizeApprovalResponse(
         success=True,
         audit_id=audit_id,
@@ -346,7 +362,8 @@ async def finalize_approval(
         summary=summary,
         records_saved_count=len(audited_records),
         processing_status="Approved",
-        records=audited_records
+        records=audited_records,
+        storage_purged=purge_successful
     )
 
 
