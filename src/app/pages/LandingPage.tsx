@@ -13,7 +13,8 @@ import {
   Lock,
   Hash,
   Mail,
-  Loader2
+  Loader2,
+  FileText
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { supabase } from "../../lib/supabase";
@@ -624,7 +625,7 @@ export function LandingPage() {
 
               <div className="space-y-1.5">
                 <Label htmlFor="loginEmail" className="text-xs font-semibold text-gray-700">
-                  {loginRole === "student" ? "Institutional Email or Matric Number" : "Institutional Email or Staff ID"}
+                  {loginRole === "student" ? "Institutional Email" : "Institutional Email"}
                 </Label>
                 <Input
                   id="loginEmail"
@@ -938,36 +939,38 @@ export function LandingPage() {
           )}
         </div>
 
-        {/* Institutional Pillars / Value Propositions */}
-        <div className="max-w-4xl w-full mx-auto mt-14 grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
-            <div className="w-9 h-9 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-900 mb-3">
-              <CheckCircle2 className="w-5 h-5" />
+        {/* Core Engineered Capabilities (Patient Zero Pilot) */}
+        <div className="max-w-3xl w-full mx-auto mt-12 grid grid-cols-1 sm:grid-cols-2 gap-5">
+          <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-xs flex flex-col justify-between">
+            <div>
+              <div className="w-9 h-9 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-900 mb-3 shadow-xs">
+                <FileText className="w-5 h-5" />
+              </div>
+              <h3 className="text-sm font-bold text-gray-900 mb-1.5">Zero-Waste PDF Extraction</h3>
+              <p className="text-xs text-gray-600 leading-relaxed">
+                Ephemeral in-memory transcript parsing with automated binary purging immediately post-approval. Zero persistent file storage liability, eliminating data leaks and protecting student privacy.
+              </p>
             </div>
-            <h3 className="text-sm font-bold text-gray-900 mb-1">Prerequisite Verification</h3>
-            <p className="text-xs text-gray-600 leading-relaxed">
-              Automated directed acyclic graph validation ensuring accurate course sequence progression and graduation eligibility.
-            </p>
+            <div className="mt-4 pt-3 border-t border-gray-100 flex items-center gap-1.5 text-[11px] font-mono text-blue-900 font-semibold">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+              <span>Purge-on-Approval Active</span>
+            </div>
           </div>
 
-          <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
-            <div className="w-9 h-9 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-900 mb-3">
-              <Users className="w-5 h-5" />
+          <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-xs flex flex-col justify-between">
+            <div>
+              <div className="w-9 h-9 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-900 mb-3 shadow-xs">
+                <CheckCircle2 className="w-5 h-5" />
+              </div>
+              <h3 className="text-sm font-bold text-gray-900 mb-1.5">Prerequisite DAG Auditing</h3>
+              <p className="text-xs text-gray-600 leading-relaxed">
+                Deterministic Directed Acyclic Graph (DAG) validation ensuring prerequisite compliance, detecting standing anomalies, and mathematically verifying degree blueprint graduation eligibility.
+              </p>
             </div>
-            <h3 className="text-sm font-bold text-gray-900 mb-1">Advisor Roster Diagnostics</h3>
-            <p className="text-xs text-gray-600 leading-relaxed">
-              Real-time cohort monitoring with GPA distribution metrics, credit accumulation flags, and standing alerts.
-            </p>
-          </div>
-
-          <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
-            <div className="w-9 h-9 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-900 mb-3">
-              <ShieldCheck className="w-5 h-5" />
+            <div className="mt-4 pt-3 border-t border-gray-100 flex items-center gap-1.5 text-[11px] font-mono text-blue-900 font-semibold">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+              <span>DAG Engine Active</span>
             </div>
-            <h3 className="text-sm font-bold text-gray-900 mb-1">Institutional Integrity</h3>
-            <p className="text-xs text-gray-600 leading-relaxed">
-              Role-governed audit trails and cryptographic session verification aligned with university curriculum standards.
-            </p>
           </div>
         </div>
       </main>
@@ -978,16 +981,6 @@ export function LandingPage() {
           <div className="flex items-center space-x-2">
             <GraduationCap className="w-4 h-4 text-blue-900" />
             <span className="font-semibold text-gray-800">LUMA Academic Advising Platform</span>
-            <span className="text-gray-300">|</span>
-            <span>Curriculum Syllabus 2024/2025</span>
-          </div>
-
-          <div className="flex items-center space-x-4">
-            <Link to="/showcase" className="text-blue-900 hover:underline font-medium">
-              Architecture &amp; Showcase
-            </Link>
-            <span className="text-gray-300">•</span>
-            <span>Universiti Teknologi Malaysia</span>
           </div>
         </div>
       </footer>

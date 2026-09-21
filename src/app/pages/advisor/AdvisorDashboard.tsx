@@ -464,33 +464,70 @@ export function AdvisorDashboard() {
             </p>
           </div>
 
-          {/* Prominent Header Action: Create Cohort Button */}
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              id="create-cohort-header-btn"
-              onClick={handleOpenCreateCohort}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-900 hover:bg-blue-800 text-white text-xs font-semibold shadow-sm hover:shadow transition-all cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Create Cohort</span>
-            </button>
-          </div>
+          {/* Header Action: Create Cohort Button (Rendered ONLY when cohorts exist) */}
+          {cohorts.length > 0 && (
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                id="create-cohort-header-btn"
+                onClick={handleOpenCreateCohort}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-900 hover:bg-blue-800 text-white text-xs font-semibold shadow-sm hover:shadow transition-all cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Create Cohort</span>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Cohorts List */}
         <div className="space-y-3">
           {cohorts.length === 0 ? (
-            <div className="text-center py-12 px-6 bg-gradient-to-b from-blue-50/40 to-gray-50/60 rounded-xl border-2 border-dashed border-blue-200/80 flex flex-col items-center justify-center space-y-4">
+            <div className="text-center py-12 px-6 bg-gradient-to-b from-blue-50/40 to-gray-50/60 rounded-xl border-2 border-dashed border-blue-200/80 flex flex-col items-center justify-center space-y-5">
               <div className="w-14 h-14 rounded-2xl bg-blue-900 text-white flex items-center justify-center shadow-md shadow-blue-900/10">
                 <Users className="w-7 h-7" />
               </div>
-              <div className="max-w-md text-center space-y-1">
-                <h4 className="text-base font-bold text-gray-900">No Active Cohorts Yet</h4>
-                <p className="text-xs text-gray-600 leading-relaxed">
-                  You have not set up any student cohorts. Create a cohort to generate an institutional 6-character invite code and link your advisees directly to degree blueprints.
+              
+              <div className="max-w-md text-center space-y-1.5">
+                <h4 className="text-base font-bold text-gray-900">
+                  Setup Your Advising Environment
+                </h4>
+                <p className="text-xs text-gray-600 leading-relaxed font-medium">
+                  Follow these two steps to begin auditing student transcripts:
                 </p>
               </div>
+
+              {/* Two-Step Chronological Onboarding List */}
+              <div className="w-full max-w-md bg-white border border-blue-100 rounded-xl p-4 text-left shadow-xs space-y-3">
+                <div className="flex items-start gap-3">
+                  <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-900 flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">
+                    1
+                  </div>
+                  <div>
+                    <span className="text-xs font-bold text-gray-900 block">
+                      Upload Curriculum
+                    </span>
+                    <p className="text-[11px] text-gray-600 leading-relaxed mt-0.5">
+                      Scroll down to 'Curriculum Management' and upload your course syllabus CSV to populate the prerequisite rules.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3 pt-2 border-t border-gray-100">
+                  <div className="w-6 h-6 rounded-full bg-blue-900 text-white flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">
+                    2
+                  </div>
+                  <div>
+                    <span className="text-xs font-bold text-gray-900 block">
+                      Create Cohort
+                    </span>
+                    <p className="text-[11px] text-gray-600 leading-relaxed mt-0.5">
+                      Generate your 6-character cohort code to invite your students.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
               <button
                 type="button"
                 id="create-cohort-empty-state-btn"
@@ -652,7 +689,7 @@ export function AdvisorDashboard() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* Action 1: Download Template */}
+          {/* Action 1: Download Template (Secondary / Outline) */}
           <div className="bg-gray-50/60 border border-gray-200 rounded-xl p-6 flex flex-col justify-between hover:border-gray-300 transition-colors">
             <div className="space-y-2">
               <div className="w-9 h-9 rounded-lg bg-white border border-gray-200 text-blue-900 flex items-center justify-center shadow-xs">
@@ -665,34 +702,39 @@ export function AdvisorDashboard() {
             </div>
             <button
               onClick={handleDownloadTemplate}
-              className="mt-6 w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-white border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-colors shadow-sm"
+              className="mt-6 w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-white border border-gray-300 text-xs font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition-colors shadow-xs cursor-pointer"
             >
               <Download className="w-3.5 h-3.5 text-gray-500" />
               <span>Download CSV Template</span>
             </button>
           </div>
 
-          {/* Action 2: Upload Course Structure */}
-          <div className="bg-gray-50/60 border border-gray-200 rounded-xl p-6 flex flex-col justify-between hover:border-gray-300 transition-colors">
+          {/* Action 2: Upload Course Structure (PRIMARY CHRONOLOGICAL ACTION) */}
+          <div className="bg-blue-50/30 border-2 border-blue-200 rounded-xl p-6 flex flex-col justify-between hover:border-blue-300 transition-all shadow-xs relative">
             <div className="space-y-2">
-              <div className="w-9 h-9 rounded-lg bg-white border border-gray-200 text-blue-900 flex items-center justify-center shadow-xs">
-                <Upload className="w-4 h-4" />
+              <div className="flex items-center justify-between">
+                <div className="w-9 h-9 rounded-lg bg-blue-900 text-white flex items-center justify-center shadow-xs">
+                  <Upload className="w-4 h-4" />
+                </div>
+                <span className="text-[10px] uppercase font-mono font-bold tracking-wider px-2 py-0.5 rounded-md bg-blue-100 text-blue-900 border border-blue-200">
+                  Step 1 Action
+                </span>
               </div>
-              <h4 className="text-sm font-semibold text-gray-900">Upload Course Structure</h4>
+              <h4 className="text-sm font-bold text-gray-900">Upload Course Structure</h4>
               <p className="text-sm text-gray-600 leading-relaxed">
                 Import and ingest an updated curriculum syllabus matrix to sync prerequisite rules with the degree audit engine.
               </p>
             </div>
             <button
               onClick={() => setIsUploadModalOpen(true)}
-              className="mt-6 w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-blue-900 text-xs font-semibold text-white hover:bg-blue-800 transition-colors shadow-sm"
+              className="mt-6 w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-blue-900 text-xs font-bold text-white hover:bg-blue-800 shadow-md hover:shadow-lg transition-all cursor-pointer"
             >
               <FileUp className="w-3.5 h-3.5" />
               <span>Upload Syllabus Matrix</span>
             </button>
           </div>
 
-          {/* Action 3: Google Form Integration */}
+          {/* Action 3: Google Form Integration (Secondary / Outline) */}
           <div className="bg-gray-50/60 border border-gray-200 rounded-xl p-6 flex flex-col justify-between hover:border-gray-300 transition-colors">
             <div className="space-y-2">
               <div className="w-9 h-9 rounded-lg bg-white border border-gray-200 text-emerald-700 flex items-center justify-center shadow-xs">
@@ -707,7 +749,7 @@ export function AdvisorDashboard() {
               href="https://forms.gle/utm-academic-petition"
               target="_blank"
               rel="noopener noreferrer"
-              className="mt-6 w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-white border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-colors shadow-sm"
+              className="mt-6 w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-white border border-gray-300 text-xs font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition-colors shadow-xs cursor-pointer"
             >
               <ExternalLink className="w-3.5 h-3.5 text-gray-400" />
               <span>Open Petition Form</span>
