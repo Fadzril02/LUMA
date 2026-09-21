@@ -20,36 +20,41 @@ export function StudentsList() {
   // Track who advisor clicked on
   const [selectedStudent, setSelectedStudent] = useState<any | null>(null);
 
-  const currentAdvisorId = (profile as any)?.staff_id || "";
+  const currentAdvisorId = (profile as any)?.staff_id || (user as any)?.user_metadata?.staff_id || "";
 
-useEffect(() => {
-  const fetchStudents = async () => {
-    try {
-      let query = db.from('students').select('*, cohorts(template_id, degree_templates(total_credits_required))').order('name', { ascending: true });
-      if (currentAdvisorId) {
-        query = query.eq('advisor_staff_id', currentAdvisorId);
+  useEffect(() => {
+    const fetchStudents = async () => {
+      if (!currentAdvisorId) {
+        setIsLoading(false);
+        return;
       }
+      try {
+        const query = db
+          .from('students')
+          .select('*, cohorts(template_id, degree_templates(total_credits_required))')
+          .eq('advisor_staff_id', currentAdvisorId)
+          .order('name', { ascending: true });
 
-      const { data, error } = await query; 
+        const { data, error } = await query; 
 
-      if (error) {
-        setDbError(error.message);
-        throw error;
+        if (error) {
+          setDbError(error.message);
+          throw error;
+        }
+        
+        if (data) {
+          setRoster(data);
+          setDbError(null);
+        }
+      } catch (error: any) {
+        console.error("Error fetching students:", error);
+      } finally {
+        setIsLoading(false);
       }
-      
-      if (data) {
-        setRoster(data);
-        setDbError(null);
-      }
-    } catch (error: any) {
-      console.error("Error fetching students:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    };
 
-  fetchStudents();
-}, []);
+    fetchStudents();
+  }, [currentAdvisorId]);
 
   // 🔍 Dynamic Filtering Logic (Mapped to Supabase columns)
   const filteredRoster = roster.filter((student) => {

@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { 
   Users, 
   CheckSquare, 
@@ -7,9 +8,11 @@ import {
   X, 
   LayoutDashboard, 
   ChevronRight,
-  GraduationCap
+  GraduationCap,
+  Loader2
 } from "lucide-react";
 import { useAuth } from "../../../context/AuthContext";
+import { supabase } from "../../../lib/supabase";
 
 interface AdvisorLayoutProps {
   activeTab: string;
@@ -27,8 +30,34 @@ export function AdvisorLayout({
   children,
   badgeCounts = {}
 }: AdvisorLayoutProps) {
-  const { profile, user, logout } = useAuth();
+  const navigate = useNavigate();
+  const { profile, user, signOut } = useAuth();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  const handleLogout = async () => {
+    setIsLoggingOut(true);
+    try {
+      // 1. Terminate session on Supabase server
+      await supabase.auth.signOut();
+    } catch (error) {
+      console.warn("[AdvisorLayout] Supabase auth signOut error:", error);
+    } finally {
+      // 2. Explicitly clear React AuthContext state (user, profile, advisor)
+      await signOut();
+
+      // 3. Clear any stale local storage and session variables
+      try {
+        localStorage.clear();
+        sessionStorage.clear();
+      } catch (storageErr) {
+        console.warn("[AdvisorLayout] Storage clear error:", storageErr);
+      }
+
+      // 4. Use React Router's useNavigate to immediately redirect to /login
+      navigate("/login", { replace: true });
+    }
+  };
 
   const advisorName = (profile as any)?.name || (profile as any)?.full_name || "Faculty Advisor";
   const advisorEmail = (profile as any)?.institutional_email || (profile as any)?.email || "";
@@ -174,11 +203,16 @@ export function AdvisorLayout({
           </div>
 
           <button
-            onClick={logout}
-            className="w-full flex items-center justify-center space-x-2 px-3 py-2 rounded-lg text-xs font-medium text-gray-600 hover:text-red-700 hover:bg-red-50 hover:border-red-200 border border-transparent transition-colors"
+            onClick={handleLogout}
+            disabled={isLoggingOut}
+            className="w-full flex items-center justify-center space-x-2 px-3 py-2 rounded-lg text-xs font-medium text-gray-600 hover:text-red-700 hover:bg-red-50 hover:border-red-200 border border-transparent transition-colors disabled:opacity-50 cursor-pointer"
           >
-            <LogOut className="w-4 h-4" />
-            <span>Sign Out Platform</span>
+            {isLoggingOut ? (
+              <Loader2 className="w-4 h-4 animate-spin text-red-600" />
+            ) : (
+              <LogOut className="w-4 h-4" />
+            )}
+            <span>{isLoggingOut ? "Signing Out..." : "Sign Out Platform"}</span>
           </button>
         </div>
       </aside>

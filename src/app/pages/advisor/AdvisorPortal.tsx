@@ -17,31 +17,44 @@ export function AdvisorPortal() {
   const [auditQueue, setAuditQueue] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const advisorStaffId = (profile as any)?.staff_id || "";
+  const advisorStaffId = (profile as any)?.staff_id || (user as any)?.user_metadata?.staff_id || "";
 
   useEffect(() => {
     const fetchAdvisorData = async () => {
+      // Security Check: Guard to ensure advisor context is loaded before querying
+      if (!advisorStaffId) {
+        setIsLoading(false);
+        return;
+      }
+
       try {
         setIsLoading(true);
 
-        // 1. Fetch uploaded documents queue
-        const { data: queueData } = await db
+        // 1. Fetch assigned students strictly filtered by advisor_staff_id
+        const { data: studentsData } = await db
+          .from("students")
+          .select("*")
+          .eq("advisor_staff_id", advisorStaffId);
+
+        const adviseeMatricNos = (studentsData || []).map((s: any) => s.matric_no).filter(Boolean);
+
+        // 2. Fetch uploaded documents queue for this advisor's advisees
+        let queueQuery = db
           .from("uploaded_documents")
           .select("*")
           .order("uploaded_at", { ascending: false });
+        if (adviseeMatricNos.length > 0) {
+          queueQuery = queueQuery.in("matric_no", adviseeMatricNos);
+        }
+        const { data: queueData } = await queueQuery;
         if (queueData) setAuditQueue(queueData);
 
-        // 2. Fetch assigned students
-        let studentsQuery = db.from("students").select("*");
-        if (advisorStaffId) {
-          studentsQuery = studentsQuery.eq("advisor_staff_id", advisorStaffId);
+        // 3. Fetch academic records strictly for this advisor's advisees
+        let recordsQuery = db.from("academic_records").select("*");
+        if (adviseeMatricNos.length > 0) {
+          recordsQuery = recordsQuery.in("matric_no", adviseeMatricNos);
         }
-        const { data: studentsData } = await studentsQuery;
-
-        // 3. Fetch academic records
-        const { data: recordsData } = await db
-          .from("academic_records")
-          .select("*");
+        const { data: recordsData } = await recordsQuery;
 
         if (studentsData) {
           const liveRoster = studentsData.map((student: any) => {

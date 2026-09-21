@@ -495,24 +495,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // 1. Clear React State
       setUser(null);
       setProfile(null);
+      setSession(null);
+      setAuthError(null);
 
       // 2. Nuke ALL Local Storage (not just sb- keys)
-      localStorage.clear();
+      try {
+        localStorage.clear();
+      } catch (_) {}
 
       // 3. Nuke ALL Session Storage
-      sessionStorage.clear();
+      try {
+        sessionStorage.clear();
+      } catch (_) {}
 
       // 4. Nuke ALL Accessible Cookies
-      document.cookie.split(";").forEach((c) => {
-        document.cookie = c
-          .replace(/^ +/, "")
-          .replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
-      });
+      try {
+        document.cookie.split(";").forEach((c) => {
+          document.cookie = c
+            .replace(/^ +/, "")
+            .replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+        });
+      } catch (_) {}
 
       setIsLoading(false);
-
-      // 5. Hard redirect to flush memory
-      window.location.href = '/';
     }
   };
 

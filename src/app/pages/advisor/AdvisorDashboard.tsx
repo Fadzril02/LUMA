@@ -13,7 +13,7 @@ import {
   ExternalLink, 
   CheckCircle2, 
   FileUp, 
-  X,
+  X, 
   AlertCircle,
   BookOpen,
   RotateCw,
@@ -22,10 +22,13 @@ import {
   KeyRound,
   ShieldCheck,
   ShieldAlert,
-  Trash2
+  Trash2,
+  Plus,
+  RefreshCw,
+  GraduationCap
 } from "lucide-react";
 import { toast } from "sonner";
-import { db } from "../../../lib/supabase"; 
+import { db, supabase } from "../../../lib/supabase"; 
 import { useAuth } from "../../../context/AuthContext";
 import { Switch } from "../../components/ui/switch";
 
@@ -35,14 +38,16 @@ export function AdvisorDashboard() {
   const [queue, setQueue] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-// Cohort Management State (Multi-Tenant Blueprint Architecture)
+  // Cohort Management State (Multi-Tenant Blueprint Architecture)
   interface AdvisorCohort {
     id: string;
     cohort_name: string;
+    name?: string;
     cohort_code: string;
     is_locked: boolean;
     advisor_staff_id: string;
     template_id: string;
+    degree_template_id?: string;
     degree_templates?: {
       program_code?: string;
       program_name?: string;
@@ -54,9 +59,28 @@ export function AdvisorDashboard() {
     }[];
   }
 
+  interface DegreeTemplate {
+    id: string;
+    university_name: string;
+    program_code: string;
+    program_name: string;
+    syllabus_year: string;
+    total_credits_required?: number;
+  }
+
   const [cohorts, setCohorts] = useState<AdvisorCohort[]>([]);
+  const [degreeTemplates, setDegreeTemplates] = useState<DegreeTemplate[]>([]);
   const [togglingCohortId, setTogglingCohortId] = useState<string | null>(null);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+
+  // Create Cohort Modal State
+  const [isCreateCohortOpen, setIsCreateCohortOpen] = useState(false);
+  const [cohortName, setCohortName] = useState("");
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [generatedCode, setGeneratedCode] = useState("");
+  const [isCreatingCohort, setIsCreatingCohort] = useState(false);
+  const [createdCohortResult, setCreatedCohortResult] = useState<AdvisorCohort | null>(null);
+  const [copiedNewCode, setCopiedNewCode] = useState(false);
 
   // Recent Enrollments State (Loose Admission Safety Net)
   interface RecentEnrollment {
@@ -65,7 +89,7 @@ export function AdvisorDashboard() {
     name: string;
     institutional_email: string;
     cohort_id: string | null;
-    created_at: string;
+    created_at?: string;
   }
   const [recentEnrollments, setRecentEnrollments] = useState<RecentEnrollment[]>([]);
   const [isRevoking, setIsRevoking] = useState<string | null>(null); // stores matric_no being revoked
@@ -76,23 +100,46 @@ export function AdvisorDashboard() {
   const [uploadStatus, setUploadStatus] = useState<"idle" | "uploading" | "success" | "error">("idle");
   const [uploadMessage, setUploadMessage] = useState<string>("");
 
-  const advisorStaffId = (profile as any)?.staff_id || "";
+  const advisorStaffId = (profile as any)?.staff_id || (user as any)?.user_metadata?.staff_id || "";
+
+  // Helper: Generate random 6-character alphanumeric cohort_code (e.g. "SECJ99")
+  const generateCohortCode = (programCode: string = "SECJ"): string => {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    const prefix = programCode ? programCode.replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 4) : "SECJ";
+    const needed = Math.max(0, 6 - prefix.length);
+    let suffix = "";
+    for (let i = 0; i < needed; i++) {
+      suffix += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return `${prefix}${suffix}`.slice(0, 6);
+  };
 
   useEffect(() => {
     const fetchData = async () => {
+      // Security Check: Guard to ensure advisor context is loaded before querying
+      if (!advisorStaffId) {
+        setIsLoading(false);
+        return;
+      }
+
       setIsLoading(true);
       try {
-        // Step 1: Fetch recent enrollments — specific columns, desc by created_at
-        let studentQuery = db
-          .from("students")
-          .select("matric_no, user_id, name, institutional_email, cohort_id, created_at")
-          .order("created_at", { ascending: false });
-        if (advisorStaffId) {
-          studentQuery = studentQuery.eq("advisor_staff_id", advisorStaffId);
-        }
+        // 1. Fetch degree templates for the Create Cohort modal
+        const templatesQuery = db
+          .from("degree_templates")
+          .select("id, university_name, program_code, program_name, syllabus_year, total_credits_required")
+          .order("program_code", { ascending: true });
 
-        // Fetch all cohorts belonging to this advisor with blueprint details
-        let cohortsQuery = db
+        // 2. Fetch students strictly chained with advisor_staff_id to respect RLS
+        // Note: 'created_at' does not exist on students table; order by name to avoid 400 Bad Request
+        const studentQuery = db
+          .from("students")
+          .select("matric_no, user_id, name, institutional_email, cohort_id, cgpa, academic_status, program")
+          .eq("advisor_staff_id", advisorStaffId)
+          .order("name", { ascending: true });
+
+        // 3. Fetch all cohorts strictly belonging to this advisor with blueprint details
+        const cohortsQuery = db
           .from("cohorts")
           .select(`
             id,
@@ -106,16 +153,18 @@ export function AdvisorDashboard() {
               program_name,
               syllabus_year
             )
-          `);
+          `)
+          .eq("advisor_staff_id", advisorStaffId)
+          .order("created_at", { ascending: false });
 
-        if (advisorStaffId) {
-          cohortsQuery = cohortsQuery.eq("advisor_staff_id", advisorStaffId);
-        }
+        // 4. Fetch correction requests
+        const queueQuery = db.from("correction_requests").select("*");
 
-        const [studentsRes, queueRes, cohortsRes] = await Promise.all([
+        const [studentsRes, queueRes, cohortsRes, templatesRes] = await Promise.all([
           studentQuery,
-          db.from("correction_requests").select("*"),
-          cohortsQuery
+          queueQuery,
+          cohortsQuery,
+          templatesQuery
         ]);
 
         if (studentsRes.data) {
@@ -125,6 +174,15 @@ export function AdvisorDashboard() {
         if (queueRes.data) setQueue(queueRes.data);
         if (cohortsRes.data) {
           setCohorts(cohortsRes.data as AdvisorCohort[]);
+        }
+        if (templatesRes.data && templatesRes.data.length > 0) {
+          setDegreeTemplates(templatesRes.data);
+          if (!selectedTemplateId) {
+            const firstTmpl = templatesRes.data[0];
+            setSelectedTemplateId(firstTmpl.id);
+            setGeneratedCode(generateCohortCode(firstTmpl.program_code));
+            setCohortName(`${firstTmpl.program_code} ${firstTmpl.syllabus_year || "2024/2025"}`);
+          }
         }
       } catch (error) {
         console.error("Failed to load dashboard data:", error);
@@ -198,6 +256,107 @@ export function AdvisorDashboard() {
       setCopiedCode(code);
       toast.success(`Cohort code "${code}" copied to clipboard!`);
       setTimeout(() => setCopiedCode(null), 2500);
+    } catch (err) {
+      console.error("Failed to copy code:", err);
+      toast.error("Failed to copy code to clipboard.");
+    }
+  };
+
+  // Open Create Cohort Modal
+  const handleOpenCreateCohort = () => {
+    setCreatedCohortResult(null);
+    setCopiedNewCode(false);
+    const tmpl = degreeTemplates.find((t) => t.id === selectedTemplateId) || degreeTemplates[0];
+    if (tmpl) {
+      setSelectedTemplateId(tmpl.id);
+      setGeneratedCode(generateCohortCode(tmpl.program_code));
+      setCohortName(`${tmpl.program_code} ${tmpl.syllabus_year || "2024/2025"}`);
+    } else {
+      setGeneratedCode(generateCohortCode("SECJ"));
+      setCohortName("SECJ 2024/2025");
+    }
+    setIsCreateCohortOpen(true);
+  };
+
+  // Change Template selection
+  const handleTemplateChange = (templateId: string) => {
+    setSelectedTemplateId(templateId);
+    const tmpl = degreeTemplates.find((t) => t.id === templateId);
+    if (tmpl) {
+      const code = generateCohortCode(tmpl.program_code);
+      setGeneratedCode(code);
+      setCohortName(`${tmpl.program_code} ${tmpl.syllabus_year || "2024/2025"}`);
+    }
+  };
+
+  // Create Cohort Handler: direct Supabase insert into cohorts table respecting RLS
+  const handleCreateCohort = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!advisorStaffId) {
+      toast.error("Advisor session error: staff_id missing. Please re-login.");
+      return;
+    }
+    if (!selectedTemplateId) {
+      toast.error("Please select a degree template.");
+      return;
+    }
+    if (!cohortName.trim()) {
+      toast.error("Please enter a cohort name.");
+      return;
+    }
+
+    const codeToInsert = generatedCode || generateCohortCode();
+    setIsCreatingCohort(true);
+
+    try {
+      const { data, error } = await db
+        .from("cohorts")
+        .insert({
+          cohort_name: cohortName.trim(),
+          advisor_staff_id: advisorStaffId,
+          template_id: selectedTemplateId,
+          cohort_code: codeToInsert,
+          is_locked: false,
+        })
+        .select(`
+          id,
+          cohort_name,
+          cohort_code,
+          is_locked,
+          advisor_staff_id,
+          template_id,
+          degree_templates (
+            program_code,
+            program_name,
+            syllabus_year
+          )
+        `)
+        .single();
+
+      if (error) throw error;
+
+      const createdCohort = data as AdvisorCohort;
+
+      // Update UI state immediately
+      setCohorts((prev) => [createdCohort, ...prev]);
+      setCreatedCohortResult(createdCohort);
+      toast.success(`Cohort "${createdCohort.cohort_name}" created successfully!`);
+    } catch (err: any) {
+      console.error("Failed to insert cohort:", err);
+      toast.error(err.message || "Failed to create cohort in Supabase.");
+    } finally {
+      setIsCreatingCohort(false);
+    }
+  };
+
+  // Copy newly created cohort code
+  const handleCopyNewCohortCode = async (code: string) => {
+    if (!code) return;
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopiedNewCode(true);
+      toast.success(`Cohort code "${code}" copied to clipboard!`);
+      setTimeout(() => setCopiedNewCode(false), 2500);
     } catch (err) {
       console.error("Failed to copy code:", err);
       toast.error("Failed to copy code to clipboard.");
@@ -304,13 +463,43 @@ export function AdvisorDashboard() {
               Distribute cohort codes to your advisees. Students enter the code during registration to join your cohort roster with degree blueprints automatically assigned.
             </p>
           </div>
+
+          {/* Prominent Header Action: Create Cohort Button */}
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              id="create-cohort-header-btn"
+              onClick={handleOpenCreateCohort}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-900 hover:bg-blue-800 text-white text-xs font-semibold shadow-sm hover:shadow transition-all cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Create Cohort</span>
+            </button>
+          </div>
         </div>
 
         {/* Cohorts List */}
         <div className="space-y-3">
           {cohorts.length === 0 ? (
-            <div className="text-center py-8 bg-gray-50 rounded-lg border border-dashed border-gray-300">
-              <p className="text-xs font-mono uppercase text-gray-500">No active cohorts found</p>
+            <div className="text-center py-12 px-6 bg-gradient-to-b from-blue-50/40 to-gray-50/60 rounded-xl border-2 border-dashed border-blue-200/80 flex flex-col items-center justify-center space-y-4">
+              <div className="w-14 h-14 rounded-2xl bg-blue-900 text-white flex items-center justify-center shadow-md shadow-blue-900/10">
+                <Users className="w-7 h-7" />
+              </div>
+              <div className="max-w-md text-center space-y-1">
+                <h4 className="text-base font-bold text-gray-900">No Active Cohorts Yet</h4>
+                <p className="text-xs text-gray-600 leading-relaxed">
+                  You have not set up any student cohorts. Create a cohort to generate an institutional 6-character invite code and link your advisees directly to degree blueprints.
+                </p>
+              </div>
+              <button
+                type="button"
+                id="create-cohort-empty-state-btn"
+                onClick={handleOpenCreateCohort}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-900 hover:bg-blue-800 text-white text-xs font-semibold shadow-sm hover:shadow transition-all cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Create Cohort</span>
+              </button>
             </div>
           ) : (
             cohorts.map((cohort) => {
@@ -818,6 +1007,198 @@ export function AdvisorDashboard() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* 7. CREATE COHORT MODAL */}
+      {isCreateCohortOpen && (
+        <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
+          <div className="bg-white border border-gray-200 rounded-2xl shadow-xl w-full max-w-lg overflow-hidden animate-in fade-in-50 zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gray-50/70">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-8 h-8 rounded-lg bg-blue-900 text-white flex items-center justify-center shadow-xs">
+                  <KeyRound className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-gray-900">
+                    {createdCohortResult ? "Cohort Ready!" : "Create Advisee Cohort"}
+                  </h3>
+                  <p className="text-[11px] text-gray-500">
+                    {createdCohortResult ? "Invite code generated" : "Link cohort to institutional degree blueprint"}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCreateCohortOpen(false);
+                  setCreatedCohortResult(null);
+                }}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {createdCohortResult ? (
+              /* Success / Copy Code Screen */
+              <div className="p-6 space-y-6">
+                <div className="text-center space-y-2">
+                  <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto">
+                    <CheckCircle2 className="w-6 h-6" />
+                  </div>
+                  <h4 className="text-base font-bold text-gray-900">
+                    Cohort Created Successfully
+                  </h4>
+                  <p className="text-xs text-gray-600 max-w-xs mx-auto">
+                    "{createdCohortResult.cohort_name}" is now active in your dashboard.
+                  </p>
+                </div>
+
+                {/* Prominent 6-Character Code Display */}
+                <div className="bg-gradient-to-br from-blue-50/80 to-indigo-50/80 border border-blue-200 rounded-xl p-5 text-center space-y-3">
+                  <span className="text-[10px] font-mono text-blue-900 uppercase font-semibold tracking-wider block">
+                    Student Registration Code
+                  </span>
+                  <div className="font-mono text-3xl font-extrabold tracking-widest text-blue-950">
+                    {createdCohortResult.cohort_code}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyNewCohortCode(createdCohortResult.cohort_code)}
+                    className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer mx-auto ${
+                      copiedNewCode
+                        ? "bg-emerald-700 text-white hover:bg-emerald-800"
+                        : "bg-blue-900 hover:bg-blue-800 text-white"
+                    }`}
+                  >
+                    {copiedNewCode ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                    <span>{copiedNewCode ? "Code Copied to Clipboard!" : "Copy Cohort Code"}</span>
+                  </button>
+                </div>
+
+                <div className="bg-amber-50/80 border border-amber-200 rounded-lg p-3 text-xs text-amber-900 flex items-start space-x-2">
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <p className="text-[11px] text-amber-800 leading-relaxed">
+                    Distribute this 6-character code to your incoming students. Entering this code during registration will automatically bind them to your advisee roster with the selected degree blueprint.
+                  </p>
+                </div>
+
+                <div className="flex justify-end pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsCreateCohortOpen(false);
+                      setCreatedCohortResult(null);
+                    }}
+                    className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-blue-900 hover:bg-blue-800 text-white text-xs font-semibold shadow-sm transition-colors cursor-pointer"
+                  >
+                    Done &amp; View Cohort
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* Creation Form */
+              <form onSubmit={handleCreateCohort} className="p-6 space-y-5">
+                {/* 1. Degree Template Selection */}
+                <div className="space-y-1.5">
+                  <label htmlFor="degree-template-select" className="text-xs font-semibold text-gray-800 flex items-center justify-between">
+                    <span>Degree Template Blueprint *</span>
+                    <span className="text-[10px] text-gray-400 font-normal">Institutional</span>
+                  </label>
+                  <select
+                    id="degree-template-select"
+                    value={selectedTemplateId}
+                    onChange={(e) => handleTemplateChange(e.target.value)}
+                    required
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-300 text-xs text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-900/20 focus:border-blue-900 transition-colors cursor-pointer"
+                  >
+                    {degreeTemplates.length === 0 ? (
+                      <option value="">Loading templates...</option>
+                    ) : (
+                      degreeTemplates.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.university_name} — {t.program_code} ({t.program_name}, {t.syllabus_year})
+                        </option>
+                      ))
+                    )}
+                  </select>
+                  <p className="text-[11px] text-gray-500">
+                    Defines the core curriculum, required credits, and prerequisites for this intake.
+                  </p>
+                </div>
+
+                {/* 2. Cohort Name Input */}
+                <div className="space-y-1.5">
+                  <label htmlFor="cohort-name-input" className="text-xs font-semibold text-gray-800 block">
+                    Cohort Name *
+                  </label>
+                  <input
+                    type="text"
+                    id="cohort-name-input"
+                    value={cohortName}
+                    onChange={(e) => setCohortName(e.target.value)}
+                    placeholder="e.g., SECJ 2024/2025"
+                    required
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-300 text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-900/20 focus:border-blue-900 transition-colors"
+                  />
+                  <p className="text-[11px] text-gray-500">
+                    Human-readable label shown on student dashboards and reports.
+                  </p>
+                </div>
+
+                {/* 3. Generated 6-Character Code Preview */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-gray-800 flex items-center justify-between">
+                    <span>Generated 6-Character Cohort Code</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const currentTmpl = degreeTemplates.find(t => t.id === selectedTemplateId);
+                        setGeneratedCode(generateCohortCode(currentTmpl?.program_code || "SECJ"));
+                      }}
+                      className="text-[11px] text-blue-900 hover:text-blue-700 flex items-center gap-1 cursor-pointer font-medium"
+                    >
+                      <RefreshCw className="w-3 h-3" />
+                      <span>Re-roll Code</span>
+                    </button>
+                  </label>
+                  <div className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-xl p-3">
+                    <div className="font-mono text-xl font-bold tracking-widest text-blue-950 px-2 py-1 bg-white border border-gray-300 rounded-lg">
+                      {generatedCode || "SECJ99"}
+                    </div>
+                    <span className="text-[11px] text-gray-500 leading-tight">
+                      Random alphanumeric code assigned to advisees upon registration.
+                    </span>
+                  </div>
+                </div>
+
+                {/* Modal Actions */}
+                <div className="flex items-center justify-end space-x-3 pt-3 border-t border-gray-100">
+                  <button
+                    type="button"
+                    onClick={() => setIsCreateCohortOpen(false)}
+                    className="px-4 py-2.5 rounded-xl border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isCreatingCohort || !selectedTemplateId || !cohortName.trim()}
+                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-900 hover:bg-blue-800 text-white text-xs font-semibold shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    {isCreatingCohort ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Plus className="w-4 h-4" />
+                    )}
+                    <span>{isCreatingCohort ? "Creating Cohort..." : "Create Cohort"}</span>
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}

@@ -63,6 +63,21 @@ export function AdvisorDashboard() {
   const { advisor, user, signOut } = useAuth();
   const universityId = advisor?.university_id || '00000000-0000-0000-0000-000000000001';
 
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.warn('[AdvisorDashboard] Logout error:', err);
+    } finally {
+      await signOut();
+      try {
+        localStorage.clear();
+        sessionStorage.clear();
+      } catch (_) {}
+      navigate('/login', { replace: true });
+    }
+  };
+
   // Cohort Selection & Data State
   const [cohorts, setCohorts] = useState<Cohort[]>([]);
   const [selectedCohortId, setSelectedCohortId] = useState<string>('ALL');
@@ -84,24 +99,27 @@ export function AdvisorDashboard() {
   const loadData = async () => {
     setIsLoading(true);
     try {
-      // 1. Fetch Cohorts
-      const { data: cohortsData } = await supabase
+      // 1. Fetch Cohorts strictly for this advisor
+      const advisorStaffId = (advisor as any)?.staff_id || '';
+      let cohortsQuery = supabase
         .from('cohorts')
         .select('*')
         .order('created_at', { ascending: false });
+      if (advisorStaffId) {
+        cohortsQuery = cohortsQuery.eq('advisor_staff_id', advisorStaffId);
+      }
+      const { data: cohortsData } = await cohortsQuery;
 
       setCohorts(cohortsData || []);
 
       // 2. Fetch Students and their latest Degree Audits & Academic Records
-      const { data: studentsData } = await supabase
+      let studentsQuery = supabase
         .from('students')
         .select(`
-          id,
-          matric_number,
-          full_name,
+          matric_no,
+          name,
           cohort_id,
           cgpa,
-          total_credits_earned,
           academic_status,
           cohorts (
             template_id,
@@ -128,6 +146,10 @@ export function AdvisorDashboard() {
             is_ai_parsed
           )
         `);
+      if (advisorStaffId) {
+        studentsQuery = studentsQuery.eq('advisor_staff_id', advisorStaffId);
+      }
+      const { data: studentsData } = await studentsQuery;
 
       if (studentsData) {
         const formattedStudents: StudentRosterItem[] = studentsData.map((s: any) => {
@@ -160,13 +182,15 @@ export function AdvisorDashboard() {
             };
           });
 
+          const earnedCreds = formattedRecords.reduce((sum, r) => sum + (r.grade !== 'F' && r.grade !== 'Fail' ? Number(r.credits) || 0 : 0), 0);
+
           return {
-            id: s.id,
-            matric_number: s.matric_number,
-            full_name: s.full_name,
+            id: s.matric_no,
+            matric_number: s.matric_no,
+            full_name: s.name,
             cohort_id: s.cohort_id || 'unassigned',
             cgpa: Number(s.cgpa) || 0.0,
-            total_credits_earned: s.total_credits_earned || 0,
+            total_credits_earned: earnedCreds,
             total_credits_required: reqCredits,
             academic_status: s.academic_status || 'Good Standing',
             traffic_light: rawTrafficLight,
@@ -345,9 +369,9 @@ export function AdvisorDashboard() {
             </div>
 
             <button
-              onClick={signOut}
+              onClick={handleLogout}
               title="Sign Out"
-              className="p-2 rounded-xl text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+              className="p-2 rounded-xl text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
             >
               <LogOut className="w-4 h-4" />
             </button>
