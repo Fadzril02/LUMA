@@ -1,0 +1,4 @@
+course_code,course_name,credits,category,prerequisites
+SECJ1013,Programming Technique I,3,Core,None
+SECJ1023,Programming Technique II,3,Core,SECJ1013
+SECJ2013,Data Structures and Algorithms,3,Core,SECJ1023
