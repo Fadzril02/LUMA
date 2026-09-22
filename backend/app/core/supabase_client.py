@@ -60,13 +60,7 @@ class SupabaseService:
         catalog: Dict[str, Dict[str, Any]] = {}
         
         try:
-            query = self.client.table("course").select("*")
-            if university_id:
-                try:
-                    query = query.eq("university_id", university_id)
-                except Exception:
-                    pass
-            res = query.execute()
+            res = self.client.table("course").select("*").execute()
             for row in res.data or []:
                 raw_code = row.get("course_code") or row.get("code") or ""
                 code = raw_code.replace(" ", "").upper()
