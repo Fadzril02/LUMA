@@ -32,12 +32,14 @@ import { db, supabase } from "../../../lib/supabase";
 import { useAuth } from "../../../context/AuthContext";
 import { api } from "../../../lib/api";
 import { Switch } from "../../components/ui/switch";
+import { TrafficLightGrid, CourseAuditItem } from "../../../components/advisor/TrafficLightGrid";
 
 export function AdvisorDashboard() {
   const { profile, user } = useAuth();
   const [roster, setRoster] = useState<any[]>([]);
   const [queue, setQueue] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [activeStudent, setActiveStudent] = useState<any | null>(null);
 
   // Cohort Management State (Multi-Tenant Blueprint Architecture)
   interface AdvisorCohort {
@@ -132,10 +134,29 @@ export function AdvisorDashboard() {
           .order("program_code", { ascending: true });
 
         // 2. Fetch students strictly chained with advisor_staff_id to respect RLS
-        // Note: 'created_at' does not exist on students table; order by name to avoid 400 Bad Request
         const studentQuery = db
           .from("students")
-          .select("matric_no, user_id, name, institutional_email, cohort_id, cgpa, academic_status, program")
+          .select(`
+            matric_no, user_id, name, institutional_email, cohort_id, cgpa, academic_status, program,
+            degree_audits (
+              traffic_light_status,
+              unmet_prerequisites_count,
+              failed_courses_count,
+              audit_summary
+            ),
+            academic_records (
+              course_code,
+              course_name,
+              credits,
+              grade,
+              grade_point,
+              semester,
+              status,
+              prerequisite_met,
+              missing_prerequisites,
+              is_ai_parsed
+            )
+          `)
           .eq("advisor_staff_id", advisorStaffId)
           .order("name", { ascending: true });
 
@@ -169,8 +190,33 @@ export function AdvisorDashboard() {
         ]);
 
         if (studentsRes.data) {
-          setRoster(studentsRes.data);
-          setRecentEnrollments(studentsRes.data as RecentEnrollment[]);
+          const formatted = studentsRes.data.map((s: any) => {
+            const latestAudit = s.degree_audits?.[0];
+            const hasUnmetPrereq = (s.academic_records || []).some((r: any) => r.prerequisite_met === false);
+            const trafficLight: 'RED' | 'YELLOW' | 'GREEN' = latestAudit?.traffic_light_status || (hasUnmetPrereq || Number(s.cgpa) < 2.0 ? 'RED' : 'GREEN');
+            const formattedRecords: CourseAuditItem[] = (s.academic_records || []).map((r: any) => ({
+              course_code: r.course_code,
+              course_name: r.course_name || r.course_code,
+              credits: r.credits || 3,
+              grade: r.grade,
+              grade_point: Number(r.grade_point) || 0.0,
+              semester: r.semester || 'Sem 1',
+              status: r.status,
+              traffic_light: (r.status === 'Failed' || !r.prerequisite_met ? 'RED' : (r.status === 'In-Progress' ? 'YELLOW' : 'GREEN')),
+              prerequisite_met: r.prerequisite_met,
+              missing_prerequisites: r.missing_prerequisites || [],
+              is_ai_parsed: r.is_ai_parsed
+            }));
+            return {
+              ...s,
+              traffic_light: trafficLight,
+              records: formattedRecords,
+              unmet_prereq_count: latestAudit?.unmet_prerequisites_count ?? (hasUnmetPrereq ? 1 : 0),
+              audit_summary: latestAudit?.audit_summary
+            };
+          });
+          setRoster(formatted);
+          setRecentEnrollments(formatted as RecentEnrollment[]);
         }
         if (queueRes.data) setQueue(queueRes.data);
         if (cohortsRes.data) {
@@ -815,21 +861,42 @@ export function AdvisorDashboard() {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="text-xs font-semibold text-gray-500 uppercase tracking-wider bg-gray-50/50 border-b border-gray-200">
+                  <th className="py-3 px-6">Risk Tier</th>
                   <th className="py-3 px-6">Student Name</th>
                   <th className="py-3 px-6">Matric No</th>
                   <th className="py-3 px-6">Program</th>
                   <th className="py-3 px-6">Cumulative GPA</th>
                   <th className="py-3 px-6">Academic Status</th>
+                  <th className="py-3 px-6 text-right">Audit Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {sortedRoster.map((student) => {
-                  const isAtRisk = ["At-Risk", "Probation"].includes(student.academic_status) || Number(student.cgpa || 0) < 2.50;
+                  const isRed = student.traffic_light === "RED";
                   return (
                     <tr
                       key={student.matric_no}
-                      className="hover:bg-gray-50 transition-colors duration-200 ease-in-out cursor-default"
+                      onClick={() => setActiveStudent(student)}
+                      className={`hover:bg-gray-50 transition-colors duration-200 ease-in-out cursor-pointer ${
+                        isRed ? "bg-rose-50/30 hover:bg-rose-50/60" : ""
+                      }`}
                     >
+                      <td className="py-4 px-6">
+                        <span
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-black border ${
+                            isRed
+                              ? "bg-rose-100 text-rose-800 border-rose-300"
+                              : "bg-emerald-100 text-emerald-800 border-emerald-300"
+                          }`}
+                        >
+                          <span
+                            className={`w-2 h-2 rounded-full ${
+                              isRed ? "bg-rose-600 animate-pulse" : "bg-emerald-600"
+                            }`}
+                          />
+                          <span>{isRed ? "RED ALERT" : "GREEN"}</span>
+                        </span>
+                      </td>
                       <td className="py-4 px-6 text-sm font-semibold text-gray-900">
                         {student.name || "Student"}
                       </td>
@@ -843,15 +910,31 @@ export function AdvisorDashboard() {
                         {Number(student.cgpa || 0).toFixed(2)}
                       </td>
                       <td className="py-4 px-6 text-sm">
-                        {isAtRisk ? (
+                        {isRed ? (
                           <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-rose-50 text-rose-700 border border-rose-200">
-                            {student.academic_status || "At-Risk"}
+                            Unmet Prerequisite
                           </span>
                         ) : (
                           <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
-                            {student.academic_status || "Good Standing"}
+                            Good Standing
                           </span>
                         )}
+                      </td>
+                      <td className="py-4 px-6 text-right">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveStudent(student);
+                          }}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer ${
+                            isRed
+                              ? "bg-rose-600 hover:bg-rose-700 text-white"
+                              : "bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-300"
+                          }`}
+                        >
+                          Inspect Audit
+                        </button>
                       </td>
                     </tr>
                   );
@@ -861,6 +944,77 @@ export function AdvisorDashboard() {
           </div>
         )}
       </div>
+
+      {/* Student Audit Inspection Modal */}
+      {activeStudent && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-4xl w-full my-8 p-6 sm:p-8 shadow-2xl border border-slate-100 max-h-[90vh] overflow-y-auto space-y-6">
+            {/* Header */}
+            <div className="flex items-start justify-between border-b border-slate-100 pb-4">
+              <div className="flex items-center gap-3">
+                <div
+                  className={`p-3 rounded-2xl ${
+                    activeStudent.traffic_light === "RED"
+                      ? "bg-rose-100 text-rose-700"
+                      : "bg-emerald-100 text-emerald-700"
+                  }`}
+                >
+                  <GraduationCap className="w-7 h-7" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-lg font-black text-slate-900">{activeStudent.name}</h2>
+                    <span
+                      className={`px-2.5 py-0.5 rounded-full text-xs font-black ${
+                        activeStudent.traffic_light === "RED"
+                          ? "bg-rose-600 text-white"
+                          : "bg-emerald-600 text-white"
+                      }`}
+                    >
+                      {activeStudent.traffic_light} STATUS
+                    </span>
+                  </div>
+                  <p className="font-mono text-xs text-slate-500 mt-0.5">
+                    Matric: {activeStudent.matric_no} | Standing: {activeStudent.academic_status}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setActiveStudent(null)}
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Prerequisite Matrix & Traffic Light Grid */}
+            <div className="space-y-3 pt-2">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                  <BookOpen className="w-4 h-4 text-blue-900" />
+                  <span>Transcript Course Prerequisite Matrix</span>
+                </h3>
+              </div>
+
+              <TrafficLightGrid
+                records={activeStudent.records || []}
+                canOverride={false}
+              />
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-end pt-4 border-t border-slate-100">
+              <button
+                onClick={() => setActiveStudent(null)}
+                className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-black text-white font-bold text-xs shadow-md transition-all cursor-pointer"
+              >
+                Close Audit Inspection
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 5. RECENT ENROLLMENTS SURVEILLANCE PANEL (Loose Admission Safety Net) */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
