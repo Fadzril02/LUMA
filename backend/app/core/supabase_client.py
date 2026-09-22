@@ -14,28 +14,52 @@ except ImportError:
 
 def get_supabase_client() -> Optional[Client]:
     """
-    Creates and returns a Supabase client instance using Service Role Key
-    or Anon Key from centralized settings.
+    Creates and returns a Supabase client instance using Service Role Key.
+    Refuses to silently fall back to Anon Key. Fails loudly with detailed diagnostics.
     """
-    url = settings.SUPABASE_URL
-    key = settings.SUPABASE_SERVICE_ROLE_KEY or settings.SUPABASE_ANON_KEY
-    if not url or not key:
-        return None
-    return create_client(url, key)
+    url = (settings.SUPABASE_URL or "").strip()
+    sr_key = (settings.SUPABASE_SERVICE_ROLE_KEY or "").strip()
+    anon_key = (settings.SUPABASE_ANON_KEY or "").strip()
+
+    if not url:
+        raise RuntimeError("CRITICAL: SUPABASE_URL is missing or empty in backend environment.")
+
+    if not sr_key:
+        raise RuntimeError(
+            "CRITICAL: SUPABASE_SERVICE_ROLE_KEY is missing or empty in backend environment. "
+            "Backend strictly requires privileged service_role credentials to bypass RLS and execute audits."
+        )
+
+    if anon_key and sr_key == anon_key:
+        raise RuntimeError(
+            "CRITICAL: SUPABASE_SERVICE_ROLE_KEY is identical to SUPABASE_ANON_KEY. "
+            "The anon key cannot bypass RLS for administrative operations. Supply the real service_role key."
+        )
+
+    return create_client(url, sr_key)
 
 
 class SupabaseService:
     def __init__(self):
-        self.client: Optional[Client] = get_supabase_client()
+        self.init_error: Optional[str] = None
+        try:
+            self.client: Optional[Client] = get_supabase_client()
+        except RuntimeError as err:
+            self.client = None
+            self.init_error = str(err)
+            print(f"[FATAL CONFIGURATION ERROR] {err}", flush=True)
+
+    def _ensure_ready(self):
         if not self.client:
-            print("[Warning] Supabase URL or Key not configured in environment.")
+            raise RuntimeError(
+                f"FATAL BACKEND CONFIGURATION ERROR: Supabase Service Role client is uninitialized: {self.init_error}"
+            )
 
     def download_transcript_bytes(self, storage_path: str) -> bytes:
         """
         Downloads PDF bytes from private 'transcripts' / 'academic-slips' bucket using Service Role privileges.
         """
-        if not self.client:
-            raise ValueError("Supabase client is uninitialized.")
+        self._ensure_ready()
         
         # storage_path may be 'transcripts/advisor_id/filename.pdf' or 'academic-slips/filename.pdf'
         clean_path = storage_path.removeprefix("transcripts/").removeprefix("academic-slips/").removeprefix("/")
@@ -54,9 +78,7 @@ class SupabaseService:
         Fetches all courses and prerequisites for a given university.
         Returns dict: course_code -> course_data
         """
-        if not self.client:
-            return {}
-        
+        self._ensure_ready()
         catalog: Dict[str, Dict[str, Any]] = {}
         
         try:
@@ -103,7 +125,8 @@ class SupabaseService:
         """
         Bulk upserts parsed courses into the database for the given university.
         """
-        if not self.client or not courses:
+        self._ensure_ready()
+        if not courses:
             return 0
         
         # 1. Upsert into canonical 'course' table
@@ -226,8 +249,7 @@ class SupabaseService:
         if not target_matric or target_matric == "00000000-0000-0000-0000-000000000000":
             raise ValueError("Valid student matric_no is required to persist audit results. Placeholder UUIDs are forbidden.")
 
-        if not self.client:
-            return "mock-audit-id"
+        self._ensure_ready()
 
         try:
             # 1. Clear previous records for this student to ensure idempotency
@@ -312,8 +334,7 @@ class SupabaseService:
         
         Note: Automatic purge-on-approval is the intended production behavior for Phase 2.
         """
-        if not self.client:
-            raise ValueError("Supabase client is uninitialized.")
+        self._ensure_ready()
 
         if not document_id and not matric_no:
             raise ValueError("Must provide either document_id or matric_no to purge.")
@@ -415,8 +436,7 @@ class SupabaseService:
         Falls back to matching program_code/curriculum_year in degree_templates,
         or default_credits.
         """
-        if not self.client:
-            return default_credits
+        self._ensure_ready()
 
         resolved_cohort_id = cohort_id
 

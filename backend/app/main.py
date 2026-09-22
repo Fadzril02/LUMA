@@ -36,6 +36,23 @@ from fastapi.responses import JSONResponse
 
 logger = logging.getLogger("uvicorn.error")
 
+# Startup validation for critical environment variables
+sr_key = settings.SUPABASE_SERVICE_ROLE_KEY or ""
+anon_key = settings.SUPABASE_ANON_KEY or ""
+if not sr_key or sr_key == anon_key:
+    logger.critical(
+        "[FATAL CONFIGURATION WARNING] SUPABASE_SERVICE_ROLE_KEY is missing or identical to SUPABASE_ANON_KEY. "
+        "Mutating operations requiring RLS bypass (audits, curriculum ingestion, storage) will fail loudly with 500/503."
+    )
+    sys.stderr.write(
+        "\n================================================================================\n"
+        "[FATAL CONFIGURATION WARNING] SUPABASE_SERVICE_ROLE_KEY IS NOT CONFIGURED PROPERLY!\n"
+        f"SUPABASE_SERVICE_ROLE_KEY present: {bool(sr_key)} | Is Anon Key: {bool(sr_key and sr_key == anon_key)}\n"
+        "All admin operations requiring RLS bypass will refuse to serve.\n"
+        "================================================================================\n\n"
+    )
+    sys.stderr.flush()
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     tb = traceback.format_exc()
