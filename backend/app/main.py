@@ -28,6 +28,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from fastapi import Request
+from fastapi.responses import JSONResponse
+import traceback
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    tb = traceback.format_exc()
+    print(f"[Unhandled Server Error] {exc}\n{tb}")
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": str(exc),
+            "type": exc.__class__.__name__,
+            "traceback": tb
+        }
+    )
+
 # Mount API Routers
 app.include_router(api_router, prefix=settings.API_V1_STR)
 

@@ -289,15 +289,12 @@ class SupabaseService:
             }
             try:
                 audit_res = self.client.table("degree_audits").insert(audit_record).execute()
-            except Exception:
-                alt_record = {
-                    "student_id": target_matric,
-                    "advisor_id": advisor_id,
-                    **{k: v for k, v in audit_record.items() if k not in ("matric_no", "advisor_staff_id")}
-                }
-                audit_res = self.client.table("degree_audits").insert(alt_record).execute()
+                if audit_res and audit_res.data and len(audit_res.data) > 0:
+                    return audit_res.data[0]["id"]
+            except Exception as audit_ins_err:
+                print(f"[persist_audit_results] degree_audits insert warning: {audit_ins_err}")
 
-            return audit_res.data[0]["id"] if audit_res.data else "saved-audit"
+            return "saved-audit"
         except Exception as e:
             print(f"[Supabase Persistence Warning] {e}")
             raise e

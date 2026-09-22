@@ -87,19 +87,23 @@ def _check_advisor_identity(jwt_payload: dict, claimed_advisor_id: str) -> None:
             detail="Database client unavailable.",
         )
 
-    res = supabase_svc.client.table("advisors") \
-        .select("staff_id") \
-        .eq("institutional_email", jwt_email) \
-        .maybe_single() \
-        .execute()
+    try:
+        res = supabase_svc.client.table("advisors") \
+            .select("staff_id") \
+            .eq("institutional_email", jwt_email) \
+            .execute()
+        rows = res.data or []
+    except Exception as e:
+        print(f"[_check_advisor_identity] Query error: {e}")
+        rows = []
 
-    if not res.data:
+    if not rows:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"JWT identity '{jwt_email}' is not a registered advisor.",
         )
 
-    actual_staff_id = res.data["staff_id"]
+    actual_staff_id = rows[0]["staff_id"]
     if actual_staff_id != claimed_advisor_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
