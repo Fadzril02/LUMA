@@ -28,19 +28,29 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+import logging
+import sys
+import traceback
 from fastapi import Request
 from fastapi.responses import JSONResponse
-import traceback
+
+logger = logging.getLogger("uvicorn.error")
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     tb = traceback.format_exc()
-    print(f"[Unhandled Server Error] {exc}\n{tb}")
+    logger.error(
+        f"[CRITICAL UNHANDLED ERROR] {request.method} {request.url.path} - Exception: {exc.__class__.__name__}: {exc}\n{tb}",
+        exc_info=True
+    )
+    sys.stderr.flush()
+    sys.stdout.flush()
     return JSONResponse(
         status_code=500,
         content={
             "error": str(exc),
             "type": exc.__class__.__name__,
+            "path": request.url.path,
             "traceback": tb
         }
     )
