@@ -30,6 +30,7 @@ import {
 import { toast } from "sonner";
 import { db, supabase } from "../../../lib/supabase"; 
 import { useAuth } from "../../../context/AuthContext";
+import { api } from "../../../lib/api";
 import { Switch } from "../../components/ui/switch";
 
 export function AdvisorDashboard() {
@@ -401,21 +402,31 @@ export function AdvisorDashboard() {
     if (!selectedFile) return;
 
     setUploadStatus("uploading");
-    setUploadMessage("Parsing and validating curriculum structure matrix...");
+    setUploadMessage("Uploading & parsing curriculum via FastAPI prerequisite engine...");
 
-    // Simulate matrix parsing and local schema validation
-    setTimeout(() => {
+    try {
+      const universityId = (profile as any)?.university_id || "00000000-0000-0000-0000-000000000001";
+      const result = await api.uploadCoursesCSV(selectedFile, universityId);
+      const insertedCount = result.total_inserted ?? result.total_parsed ?? 0;
+
       setUploadStatus("success");
-      setUploadMessage(`UAT Sandbox Mode: CSV structure validated locally (${selectedFile.name}). Database saving disabled for this pilot.`);
-      toast.info("UAT Sandbox Mode: CSV structure validated locally. Database saving disabled for this pilot.", {
-        duration: 6000
+      setUploadMessage(`Successfully parsed & ingested ${insertedCount} courses into university prerequisite engine.`);
+      toast.success(`Ingested ${insertedCount} courses into catalog.`, {
+        duration: 5000
       });
       setTimeout(() => {
         setIsUploadModalOpen(false);
         setSelectedFile(null);
         setUploadStatus("idle");
-      }, 3500);
-    }, 1200);
+      }, 2500);
+    } catch (err: any) {
+      setUploadStatus("error");
+      const detail = err?.response?.data?.detail || err?.message || "Failed to parse and upload course CSV.";
+      setUploadMessage(detail);
+      toast.error(`Upload failed: ${detail}`, {
+        duration: 7000
+      });
+    }
   };
 
   if (isLoading) {
@@ -1018,16 +1029,25 @@ export function AdvisorDashboard() {
               )}
 
               {uploadStatus === "success" && (
-                <div className="space-y-2 p-3.5 rounded-lg bg-amber-50/90 border border-amber-300 text-amber-900 text-xs">
-                  <div className="flex items-center space-x-2 font-semibold text-amber-900">
+                <div className="space-y-1.5 p-3.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs">
+                  <div className="flex items-center space-x-2 font-semibold text-emerald-800">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                    <span>CSV Structure Validated</span>
-                    <span className="ml-auto inline-flex items-center px-2 py-0.5 rounded-md bg-amber-200/80 border border-amber-400 text-amber-900 text-[10px] font-mono">
-                      UAT Sandbox Mode
-                    </span>
+                    <span>Curriculum Ingested Successfully</span>
                   </div>
-                  <p className="text-[11px] text-amber-850 leading-relaxed font-medium">
-                    UAT Sandbox Mode: CSV structure validated locally. Database saving disabled for this pilot.
+                  <p className="text-[11px] text-emerald-700 leading-relaxed font-medium">
+                    {uploadMessage}
+                  </p>
+                </div>
+              )}
+
+              {uploadStatus === "error" && (
+                <div className="space-y-1.5 p-3.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-900 text-xs">
+                  <div className="flex items-center space-x-2 font-semibold text-rose-800">
+                    <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0" />
+                    <span>Upload Failed</span>
+                  </div>
+                  <p className="text-[11px] text-rose-700 leading-relaxed font-medium">
+                    {uploadMessage}
                   </p>
                 </div>
               )}

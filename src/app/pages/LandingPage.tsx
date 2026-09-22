@@ -334,13 +334,6 @@ export function LandingPage() {
               <span className="w-2 h-2 rounded-full bg-emerald-600" />
               <span>System Operational</span>
             </div>
-            <Link
-              to="/showcase"
-              className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-900 hover:text-blue-800 px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-colors"
-            >
-              <span>Architecture</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
           </div>
         </div>
       </header>
@@ -357,7 +350,7 @@ export function LandingPage() {
           <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-blue-900">
             LUMA Academic Advising
           </h1>
-
+-
           <p className="text-lg text-gray-600 mt-4 max-w-2xl mx-auto leading-relaxed">
             Streamlining curriculum tracking and prerequisite validation for university faculty and students.
           </p>
@@ -632,7 +625,7 @@ export function LandingPage() {
                   type="text"
                   value={loginEmail}
                   onChange={(e) => setLoginEmail(e.target.value)}
-                  placeholder={loginRole === "student" ? "e.g. student@university.edu.my or A24CS0001" : "e.g. advisor@university.edu or STAFF-8842"}
+                  placeholder={loginRole === "student" ? "e.g. student@university.edu.my" : "e.g. advisor@university.edu"}
                   required
                   className="bg-gray-50 border-gray-200 focus:ring-2 focus:ring-blue-900 focus:border-transparent text-gray-900 h-10 text-sm"
                 />

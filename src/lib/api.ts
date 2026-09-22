@@ -92,11 +92,7 @@ export const api = {
     formData.append('file', file);
     formData.append('university_id', universityId);
 
-    const res = await apiClient.post('/api/v1/courses/upload-csv', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
+    const res = await apiClient.post('/api/v1/courses/upload-csv', formData);
     return res.data;
   },
 
