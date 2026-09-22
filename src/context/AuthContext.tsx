@@ -101,6 +101,7 @@ export const extractMatricFromEmail = (email: string): string => {
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const isRegistering = useRef(false);
+  const [isInitializing, setIsInitializing] = useState(true);
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile>(null);
@@ -215,20 +216,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
-    // Initial session check
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchUserProfile(session.user).finally(() => setIsLoading(false));
-      } else {
-        setIsLoading(false);
+    let isMounted = true;
+
+    const initializeAuth = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!isMounted) return;
+
+        setSession(session);
+        setUser(session?.user ?? null);
+        if (session?.user) {
+          await fetchUserProfile(session.user);
+        }
+      } catch (err) {
+        console.error('[AuthContext] Session initialization error:', err);
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+          setIsInitializing(false);
+        }
       }
-    });
+    };
+
+    initializeAuth();
 
     // Listen for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        if (!isMounted) return;
+
         if (event === 'SIGNED_OUT' || !session?.user) {
           setSession(null);
           setUser(null);
@@ -245,6 +261,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     );
 
     return () => {
+      isMounted = false;
       subscription.unsubscribe();
     };
   }, []);
@@ -411,8 +428,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         };
       }
 
-      // 7. Re-fetch profile now that user_id and row are anchored in students
-      await fetchUserProfile(authData.user);
+      // 7. Explicitly sign out to decouple registration from auto-login
+      await supabase.auth.signOut();
+      setUser(null);
+      setSession(null);
+      setProfile(null);
       return { error: null };
     } catch (err: any) {
       console.error('[signUpStudent] Unexpected registration failure:', err);
@@ -480,7 +500,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       };
     }
 
-    await fetchUserProfile(authData.user);
+    // Explicitly sign out to decouple registration from auto-login
+    await supabase.auth.signOut();
+    setUser(null);
+    setSession(null);
+    setProfile(null);
     setIsLoading(false);
     return { error: null };
   };
@@ -530,6 +554,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const currentRole: UserRole = profile?.role ?? null;
   const advisorProfile = profile?.role === 'advisor' ? (profile as AdvisorProfile) : null;
   const studentProfile = profile?.role === 'student' ? (profile as StudentProfile) : null;
+
+  if (isInitializing) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-slate-300">
+        <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4" />
+        <span className="text-xs font-mono tracking-widest text-slate-400 uppercase">
+          Initializing L.U.M.A. Secure Session...
+        </span>
+      </div>
+    );
+  }
 
   return (
     <AuthContext.Provider

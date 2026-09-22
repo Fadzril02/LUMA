@@ -130,11 +130,39 @@ export function AdvisorDashboard() {
 
       setIsLoading(true);
       try {
-        // 1. Fetch degree templates for the Create Cohort modal
-        const templatesQuery = db
-          .from("degree_templates")
-          .select("id, university_name, program_code, program_name, syllabus_year, total_credits_required")
-          .order("program_code", { ascending: true });
+        // 1. Fetch degree templates for the Create Cohort modal (with sessionStorage caching)
+        let templatesQuery: Promise<{ data: DegreeTemplate[] | null; error: any }>;
+        const cachedTemplates = sessionStorage.getItem("luma_degree_templates");
+
+        if (cachedTemplates) {
+          try {
+            const parsed = JSON.parse(cachedTemplates);
+            templatesQuery = Promise.resolve({ data: parsed, error: null });
+          } catch (parseErr) {
+            sessionStorage.removeItem("luma_degree_templates");
+            templatesQuery = db
+              .from("degree_templates")
+              .select("id, university_name, program_code, program_name, syllabus_year, total_credits_required")
+              .order("program_code", { ascending: true })
+              .then((res) => {
+                if (res.data) {
+                  sessionStorage.setItem("luma_degree_templates", JSON.stringify(res.data));
+                }
+                return res;
+              });
+          }
+        } else {
+          templatesQuery = db
+            .from("degree_templates")
+            .select("id, university_name, program_code, program_name, syllabus_year, total_credits_required")
+            .order("program_code", { ascending: true })
+            .then((res) => {
+              if (res.data) {
+                sessionStorage.setItem("luma_degree_templates", JSON.stringify(res.data));
+              }
+              return res;
+            });
+        }
 
         // 2. Fetch students strictly chained with advisor_staff_id to respect RLS
         const studentQuery = db
@@ -464,13 +492,17 @@ export function AdvisorDashboard() {
       );
       const insertedCount = result.total_inserted ?? result.total_parsed ?? 0;
 
-      // Refresh degree templates in dropdown immediately
+      // Invalidate sessionStorage cache after successful upload so fresh templates are loaded
+      sessionStorage.removeItem("luma_degree_templates");
+
+      // Refresh degree templates in dropdown immediately in an isolated try/catch block
       try {
         const { data: updatedTemplates } = await db
           .from("degree_templates")
           .select("id, university_name, program_code, program_name, syllabus_year, total_credits_required")
           .order("program_code", { ascending: true });
         if (updatedTemplates) {
+          sessionStorage.setItem("luma_degree_templates", JSON.stringify(updatedTemplates));
           setDegreeTemplates(updatedTemplates);
         }
       } catch (refreshErr) {
@@ -482,14 +514,6 @@ export function AdvisorDashboard() {
       toast.success(`Ingested ${insertedCount} courses and created template "${templateName}".`, {
         duration: 5000
       });
-      setTimeout(() => {
-        setIsUploadModalOpen(false);
-        setSelectedFile(null);
-        setTemplateName("");
-        setProgramCode("");
-        setTotalCredits(130);
-        setUploadStatus("idle");
-      }, 2500);
     } catch (err: any) {
       setUploadStatus("error");
       const detail = err?.response?.data?.detail || err?.message || "Failed to parse and upload course CSV.";
@@ -497,6 +521,15 @@ export function AdvisorDashboard() {
       toast.error(`Upload failed: ${detail}`, {
         duration: 7000
       });
+    } finally {
+      // Move UI state resets into finally block to guarantee the loading spinner terminates under all conditions
+      setUploadStatus("idle");
+      setIsUploadModalOpen(false);
+      setSelectedFile(null);
+      setTemplateName("");
+      setProgramCode("");
+      setTotalCredits(130);
+      setUploadMessage("");
     }
   };
 

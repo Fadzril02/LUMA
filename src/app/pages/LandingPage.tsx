@@ -189,11 +189,16 @@ export function LandingPage() {
 
         if (error) throw error;
 
-        toast.success("Account created successfully! Redirecting to Student Portal...");
-        setSuccessMessage("Account created successfully. Redirecting to Student Portal...");
-        setTimeout(() => {
-          navigate("/student");
-        }, 900);
+        toast.success("Registration successful. Please log in with your new credentials.");
+        setStudentFullName("");
+        setStudentEmail("");
+        setStudentMatric("");
+        setStudentPassword("");
+        setCohortCode("");
+        setLoginEmail(sanitizedEmail);
+        setLoginRole("student");
+        setAuthMode("login");
+        resetFormFeedback();
       } catch (err: any) {
         let friendlyError = err.message || "Student registration failed. Please verify your details.";
         if (friendlyError.toLowerCase().includes("already registered")) {
@@ -245,11 +250,15 @@ export function LandingPage() {
 
         if (error) throw error;
 
-        toast.success("Advisor account created successfully! Redirecting to Advisor Portal...");
-        setSuccessMessage("Account created successfully. Redirecting to Advisor Portal...");
-        setTimeout(() => {
-          navigate("/advisor");
-        }, 900);
+        toast.success("Registration successful. Please log in with your new credentials.");
+        setAdvisorFullName("");
+        setAdvisorEmail("");
+        setAdvisorStaffId("");
+        setAdvisorPassword("");
+        setLoginEmail(sanitizedEmail);
+        setLoginRole("advisor");
+        setAuthMode("login");
+        resetFormFeedback();
       } catch (err: any) {
         let friendlyError = err.message || "Advisor registration failed. Please verify your details.";
         if (friendlyError.includes("already registered")) {
