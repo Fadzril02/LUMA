@@ -492,7 +492,7 @@ export function AdvisorDashboard() {
       );
       const insertedCount = result.total_inserted ?? result.total_parsed ?? 0;
 
-      // Invalidate sessionStorage cache after successful upload so fresh templates are loaded
+      // Invalidate sessionStorage cache after successful upload
       sessionStorage.removeItem("luma_degree_templates");
 
       // Refresh degree templates in dropdown immediately in an isolated try/catch block
@@ -509,11 +509,24 @@ export function AdvisorDashboard() {
         console.warn("Could not refresh degree templates list:", refreshErr);
       }
 
+      // Set success state and show feedback toast
       setUploadStatus("success");
       setUploadMessage(`Successfully parsed & ingested ${insertedCount} courses into university prerequisite engine.`);
       toast.success(`Ingested ${insertedCount} courses and created template "${templateName}".`, {
         duration: 5000
       });
+
+      // Delay closing modal and resetting idle status so user can see success feedback
+      setTimeout(() => {
+        setIsUploadModalOpen(false);
+        setSelectedFile(null);
+        setTemplateName("");
+        setProgramCode("");
+        setTotalCredits(130);
+        setUploadMessage("");
+        setUploadStatus("idle");
+      }, 2500);
+
     } catch (err: any) {
       setUploadStatus("error");
       const detail = err?.response?.data?.detail || err?.message || "Failed to parse and upload course CSV.";
@@ -521,15 +534,6 @@ export function AdvisorDashboard() {
       toast.error(`Upload failed: ${detail}`, {
         duration: 7000
       });
-    } finally {
-      // Move UI state resets into finally block to guarantee the loading spinner terminates under all conditions
-      setUploadStatus("idle");
-      setIsUploadModalOpen(false);
-      setSelectedFile(null);
-      setTemplateName("");
-      setProgramCode("");
-      setTotalCredits(130);
-      setUploadMessage("");
     }
   };
 
