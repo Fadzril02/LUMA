@@ -87,10 +87,19 @@ export const api = {
   },
 
   // Upload Course Structure CSV
-  uploadCoursesCSV: async (file: File, universityId: string) => {
+  uploadCoursesCSV: async (
+    file: File,
+    universityId: string,
+    templateName: string,
+    programCode: string,
+    totalCredits: number
+  ) => {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('university_id', universityId);
+    formData.append('template_name', templateName);
+    formData.append('program_code', programCode);
+    formData.append('total_credits', String(totalCredits));
 
     const res = await apiClient.post('/api/v1/courses/upload-csv', formData);
     return res.data;

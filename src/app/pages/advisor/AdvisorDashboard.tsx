@@ -102,6 +102,9 @@ export function AdvisorDashboard() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadStatus, setUploadStatus] = useState<"idle" | "uploading" | "success" | "error">("idle");
   const [uploadMessage, setUploadMessage] = useState<string>("");
+  const [templateName, setTemplateName] = useState<string>("");
+  const [programCode, setProgramCode] = useState<string>("");
+  const [totalCredits, setTotalCredits] = useState<number>(130);
 
   const advisorStaffId = (profile as any)?.staff_id || (user as any)?.user_metadata?.staff_id || "";
 
@@ -452,17 +455,39 @@ export function AdvisorDashboard() {
 
     try {
       const universityId = (profile as any)?.university_id || "00000000-0000-0000-0000-000000000001";
-      const result = await api.uploadCoursesCSV(selectedFile, universityId);
+      const result = await api.uploadCoursesCSV(
+        selectedFile,
+        universityId,
+        templateName,
+        programCode,
+        totalCredits
+      );
       const insertedCount = result.total_inserted ?? result.total_parsed ?? 0;
+
+      // Refresh degree templates in dropdown immediately
+      try {
+        const { data: updatedTemplates } = await db
+          .from("degree_templates")
+          .select("id, university_name, program_code, program_name, syllabus_year, total_credits_required")
+          .order("program_code", { ascending: true });
+        if (updatedTemplates) {
+          setDegreeTemplates(updatedTemplates);
+        }
+      } catch (refreshErr) {
+        console.warn("Could not refresh degree templates list:", refreshErr);
+      }
 
       setUploadStatus("success");
       setUploadMessage(`Successfully parsed & ingested ${insertedCount} courses into university prerequisite engine.`);
-      toast.success(`Ingested ${insertedCount} courses into catalog.`, {
+      toast.success(`Ingested ${insertedCount} courses and created template "${templateName}".`, {
         duration: 5000
       });
       setTimeout(() => {
         setIsUploadModalOpen(false);
         setSelectedFile(null);
+        setTemplateName("");
+        setProgramCode("");
+        setTotalCredits(130);
         setUploadStatus("idle");
       }, 2500);
     } catch (err: any) {
@@ -1149,9 +1174,52 @@ export function AdvisorDashboard() {
                 </div>
               </div>
 
-              <p className="text-sm text-gray-600 leading-relaxed">
-                Select a completed curriculum matrix file (.csv or .xlsx). The system will automatically validate course codes, credit hour assignments, and prerequisite rule logic.
-              </p>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Degree Template Name <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={templateName}
+                    onChange={(e) => setTemplateName(e.target.value)}
+                    placeholder="e.g. Software Engineering 2026"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Program Code <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={programCode}
+                      onChange={(e) => setProgramCode(e.target.value)}
+                      placeholder="e.g. SECJ"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Total Credits <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      required
+                      min={1}
+                      value={totalCredits}
+                      onChange={(e) => setTotalCredits(Number(e.target.value))}
+                      placeholder="e.g. 130"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                    />
+                  </div>
+                </div>
+              </div>
 
               <div className="border-2 border-dashed border-gray-200 hover:border-blue-300 rounded-xl p-6 text-center bg-gray-50/50 transition-colors">
                 <input

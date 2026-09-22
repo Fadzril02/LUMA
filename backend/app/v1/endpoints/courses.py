@@ -38,7 +38,10 @@ SECJ4044,Final Year Project 2,4,Core,SECJ3032 min_credits: 90
 )
 async def upload_courses_csv(
     file: UploadFile = File(..., description="CSV file containing curriculum definitions"),
-    university_id: str = Form(..., description="Target University UUID")
+    university_id: str = Form(..., description="Target University UUID"),
+    template_name: str = Form(..., description="Degree template display name"),
+    program_code: str = Form(..., description="Program Code (e.g. SECJ)"),
+    total_credits: int = Form(..., description="Total required credits for degree template")
 ):
     """
     Parses curriculum CSV and inserts prerequisite rules directly into the university catalog.
@@ -48,6 +51,28 @@ async def upload_courses_csv(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid file format. Please upload a standard CSV file."
+        )
+
+    # Pre-Parsing Database Injection
+    supabase_svc = SupabaseService()
+    try:
+        try:
+            supabase_svc.client.table("degree_templates").insert({
+                "template_name": template_name,
+                "program_code": program_code,
+                "total_credits_required": total_credits
+            }).execute()
+        except Exception:
+            supabase_svc.client.table("degree_templates").insert({
+                "program_name": template_name,
+                "program_code": program_code,
+                "total_credits_required": total_credits,
+                "syllabus_year": "2024/2025"
+            }).execute()
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create degree template: {str(e)}"
         )
 
     try:
