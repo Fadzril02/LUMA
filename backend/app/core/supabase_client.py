@@ -112,6 +112,41 @@ class SupabaseService:
         if not self.client or not courses:
             return 0
         
+        # 1. Upsert into canonical 'course' table
+        course_records = [
+            {
+                "course_code": c["code"],
+                "course_name": c["name"],
+                "credit_hour": c["credits"],
+                "course_type": (c.get("category") or "core").lower() if (c.get("category") or "core").lower() in ["core", "elective", "general"] else "core",
+                "syllabus_type": "SECJ"
+            }
+            for c in courses
+        ]
+        try:
+            self.client.table("course").upsert(course_records, on_conflict="course_code").execute()
+        except Exception:
+            pass
+
+        # 2. Upsert prerequisite relationships into 'course_prerequisite' table
+        prereq_records = []
+        for c in courses:
+            prereqs = c.get("prerequisites", {})
+            prereq_codes = prereqs.get("courses", []) if isinstance(prereqs, dict) else []
+            for p in prereq_codes:
+                p_code = p if isinstance(p, str) else p.get("course_code")
+                if p_code:
+                    prereq_records.append({
+                        "course_code": c["code"],
+                        "prereq_code": p_code
+                    })
+        if prereq_records:
+            try:
+                self.client.table("course_prerequisite").upsert(prereq_records, on_conflict="course_code,prereq_code").execute()
+            except Exception:
+                pass
+
+        # 3. Attempt upsert into multi-tenant 'courses' table if present
         records = [
             {
                 "university_id": university_id,
@@ -123,7 +158,6 @@ class SupabaseService:
             }
             for c in courses
         ]
-        
         try:
             res = self.client.table("courses").upsert(
                 records,
