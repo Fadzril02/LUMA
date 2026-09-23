@@ -164,32 +164,12 @@ export function AdvisorDashboard() {
             });
         }
 
-        // 2. Fetch students strictly chained with advisor_staff_id to respect RLS
+        // 2. Fetch advisee roster summary via pre-aggregated SQL view (prevents N+1 queries)
         const studentQuery = db
-          .from("students")
-          .select(`
-            matric_no, user_id, name, institutional_email, cohort_id, cgpa, academic_status, program,
-            degree_audits (
-              traffic_light_status,
-              unmet_prerequisites_count,
-              failed_courses_count,
-              audit_summary
-            ),
-            academic_records (
-              course_code,
-              course_name,
-              credits,
-              grade,
-              grade_point,
-              semester,
-              status,
-              prerequisite_met,
-              missing_prerequisites,
-              is_ai_parsed
-            )
-          `)
+          .from("advisee_roster_summary")
+          .select("*")
           .eq("advisor_staff_id", advisorStaffId)
-          .order("name", { ascending: true });
+          .order("student_name", { ascending: true });
 
         // 3. Fetch all cohorts strictly belonging to this advisor with blueprint details
         const cohortsQuery = db
@@ -220,32 +200,31 @@ export function AdvisorDashboard() {
           templatesQuery
         ]);
 
-        if (studentsRes.data) {
-          const formatted = studentsRes.data.map((s: any) => {
-            const latestAudit = s.degree_audits?.[0];
-            const hasUnmetPrereq = (s.academic_records || []).some((r: any) => r.prerequisite_met === false);
-            const trafficLight: 'RED' | 'YELLOW' | 'GREEN' = latestAudit?.traffic_light_status || (hasUnmetPrereq || Number(s.cgpa) < 2.0 ? 'RED' : 'GREEN');
-            const formattedRecords: CourseAuditItem[] = (s.academic_records || []).map((r: any) => ({
-              course_code: r.course_code,
-              course_name: r.course_name || r.course_code,
-              credits: r.credits || 3,
-              grade: r.grade,
-              grade_point: Number(r.grade_point) || 0.0,
-              semester: r.semester || 'Sem 1',
-              status: r.status,
-              traffic_light: (r.status === 'Failed' || !r.prerequisite_met ? 'RED' : (r.status === 'In-Progress' ? 'YELLOW' : 'GREEN')),
-              prerequisite_met: r.prerequisite_met,
-              missing_prerequisites: r.missing_prerequisites || [],
-              is_ai_parsed: r.is_ai_parsed
-            }));
-            return {
-              ...s,
-              traffic_light: trafficLight,
-              records: formattedRecords,
-              unmet_prereq_count: latestAudit?.unmet_prerequisites_count ?? (hasUnmetPrereq ? 1 : 0),
-              audit_summary: latestAudit?.audit_summary
-            };
-          });
+        let rosterData = studentsRes.data;
+        // Fallback to students table if SQL view has not yet been executed in Supabase
+        if (studentsRes.error || !rosterData) {
+          console.warn("[AdvisorDashboard] advisee_roster_summary query notice:", studentsRes.error?.message || "empty response");
+          const fallbackRes = await db
+            .from("students")
+            .select("matric_no, user_id, name, institutional_email, cohort_id, cgpa, academic_status, program, advisor_staff_id")
+            .eq("advisor_staff_id", advisorStaffId)
+            .order("name", { ascending: true });
+          rosterData = fallbackRes.data || [];
+        }
+
+        if (rosterData) {
+          const formatted = rosterData.map((s: any) => ({
+            ...s,
+            id: s.matric_no,
+            name: s.student_name || s.name || s.matric_no,
+            cgpa: Number(s.current_cgpa ?? s.cgpa ?? 0),
+            traffic_light: (s.traffic_light_status || s.traffic_light || (Number(s.cgpa) < 2.0 ? "RED" : "GREEN")) as "RED" | "YELLOW" | "GREEN",
+            traffic_light_status: s.traffic_light_status || s.traffic_light || "GREEN",
+            total_earned_credits: Number(s.total_earned_credits ?? 0),
+            academic_status: s.academic_status || "Good Standing",
+            unmet_prereq_count: Number(s.unmet_prerequisites_count ?? 0),
+            records: s.records || []
+          }));
           setRoster(formatted);
           setRecentEnrollments(formatted as RecentEnrollment[]);
         }
@@ -296,6 +275,37 @@ export function AdvisorDashboard() {
       toast.error(err.message || "Failed to update cohort lock status.");
     } finally {
       setTogglingCohortId(null);
+    }
+  };
+
+  const handleInspectStudent = async (student: any) => {
+    setActiveStudent(student);
+    if (!student.records || student.records.length === 0) {
+      try {
+        const { data: recs } = await db
+          .from("academic_records")
+          .select("*")
+          .eq("matric_no", student.matric_no)
+          .order("semester", { ascending: true });
+        if (recs && recs.length > 0) {
+          const formattedRecords: CourseAuditItem[] = recs.map((r: any) => ({
+            course_code: r.course_code,
+            course_name: r.course_name || r.course_code,
+            credits: r.credits || 3,
+            grade: r.grade,
+            grade_point: Number(r.grade_point) || 0.0,
+            semester: r.semester || "Sem 1",
+            status: r.status,
+            traffic_light: (r.status === "Failed" || !r.prerequisite_met ? "RED" : (r.status === "In-Progress" ? "YELLOW" : "GREEN")),
+            prerequisite_met: r.prerequisite_met,
+            missing_prerequisites: r.missing_prerequisites || [],
+            is_ai_parsed: r.is_ai_parsed
+          }));
+          setActiveStudent((prev: any) => prev && prev.matric_no === student.matric_no ? { ...prev, records: formattedRecords } : prev);
+        }
+      } catch (err) {
+        console.warn("[AdvisorDashboard] Lazy fetch academic_records failed:", err);
+      }
     }
   };
 
@@ -938,7 +948,7 @@ export function AdvisorDashboard() {
                   return (
                     <tr
                       key={student.matric_no}
-                      onClick={() => setActiveStudent(student)}
+                      onClick={() => handleInspectStudent(student)}
                       className={`hover:bg-gray-50 transition-colors duration-200 ease-in-out cursor-pointer ${
                         isRed ? "bg-rose-50/30 hover:bg-rose-50/60" : ""
                       }`}
@@ -987,7 +997,7 @@ export function AdvisorDashboard() {
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            setActiveStudent(student);
+                            handleInspectStudent(student);
                           }}
                           className={`px-3 py-1.5 rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer ${
                             isRed

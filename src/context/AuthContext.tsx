@@ -510,38 +510,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signOut = async () => {
+    // 1. Synchronously nuke ALL Local Storage (including auth tokens & degree templates)
     try {
-      setIsLoading(true);
+      localStorage.clear();
+    } catch (_) {}
+
+    // 2. Synchronously nuke ALL Session Storage (including luma_degree_templates cache)
+    try {
+      sessionStorage.removeItem("luma_degree_templates");
+      sessionStorage.clear();
+    } catch (_) {}
+
+    // 3. Synchronously nuke ALL accessible cookies
+    try {
+      document.cookie.split(";").forEach((c) => {
+        document.cookie = c
+          .replace(/^ +/, "")
+          .replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+      });
+    } catch (_) {}
+
+    // 4. Immediately flip React State BEFORE awaiting network call to prevent sluggish UX
+    setUser(null);
+    setSession(null);
+    setProfile(null);
+    setAuthError(null);
+    setIsLoading(false);
+
+    // 5. Fire-and-await server-side logout without blocking UI transition
+    try {
       await supabase.auth.signOut();
     } catch (error) {
-      console.warn("[AuthContext] Server-side logout failed, forcing local wipe:", error);
-    } finally {
-      // 1. Clear React State
-      setUser(null);
-      setProfile(null);
-      setSession(null);
-      setAuthError(null);
-
-      // 2. Nuke ALL Local Storage (not just sb- keys)
-      try {
-        localStorage.clear();
-      } catch (_) {}
-
-      // 3. Nuke ALL Session Storage
-      try {
-        sessionStorage.clear();
-      } catch (_) {}
-
-      // 4. Nuke ALL Accessible Cookies
-      try {
-        document.cookie.split(";").forEach((c) => {
-          document.cookie = c
-            .replace(/^ +/, "")
-            .replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
-        });
-      } catch (_) {}
-
-      setIsLoading(false);
+      console.warn("[AuthContext] Server-side logout failed:", error);
     }
   };
 

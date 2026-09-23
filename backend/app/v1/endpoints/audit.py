@@ -243,16 +243,36 @@ async def finalize_approval(
     5. Updates student CGPA & academic standing in 'students'.
     6. Updates uploaded_documents row to processing_status = 'Approved'.
     """
-    advisor_id = (request.advisor_id or "").strip()
+    # Stop trusting frontend for advisor identity. Extract advisor_id strictly from verified JWT payload.
+    advisor_id = (
+        jwt_payload.get("user_metadata", {}).get("staff_id") or
+        jwt_payload.get("staff_id")
+    )
+    if not advisor_id:
+        jwt_email = (jwt_payload.get("email") or "").strip().lower()
+        jwt_sub = jwt_payload.get("sub")
+        if supabase_svc.client and (jwt_email or jwt_sub):
+            try:
+                query = supabase_svc.client.table("advisors").select("staff_id")
+                if jwt_email:
+                    res = query.eq("institutional_email", jwt_email).limit(1).execute()
+                else:
+                    res = query.eq("user_id", jwt_sub).limit(1).execute()
+                if res.data and len(res.data) > 0:
+                    advisor_id = res.data[0]["staff_id"]
+            except Exception as e:
+                print(f"[finalize_approval] Advisor staff_id lookup error: {e}")
+
+    if not advisor_id:
+        advisor_id = jwt_payload.get("sub")
+
     if not advisor_id:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="advisor_id is required."
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Unauthorized: Valid advisor identity (staff_id) could not be resolved from JWT session."
         )
 
-    # Cross-reference: JWT email must own the claimed advisor_id
-    _check_advisor_identity(jwt_payload, advisor_id)
-
+    # Validate that courses array is not empty
     if not request.courses:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

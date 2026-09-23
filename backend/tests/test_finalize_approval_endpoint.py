@@ -127,12 +127,13 @@ def test_finalize_approval_fastapi_endpoint_flow():
         mock_supabase.table().update.assert_called_with({"processing_status": "Approved"})
 
 
-def test_finalize_approval_missing_advisor_id_400():
-    """Test that omitting advisor_id returns 400 Bad Request."""
+def test_finalize_approval_missing_jwt_advisor_id_401():
+    """Test that a JWT lacking advisor identity returns 401 Unauthorized."""
+    # Temporarily override JWT dependency to return an empty dict (no advisor identity)
+    app.dependency_overrides[verify_advisor_jwt] = lambda: {}
     payload = {
         "document_id": "99999999-9999-9999-9999-999999999999",
         "matric_number": "TEST-SE24-FINAL",
-        "advisor_id": "",
         "courses": [
             {
                 "course_code": "SECJ1013",
@@ -140,9 +141,16 @@ def test_finalize_approval_missing_advisor_id_400():
             }
         ]
     }
-    response = client.post("/api/v1/audit/finalize-approval", json=payload, headers=AUTH_HEADERS)
-    assert response.status_code == 400
-    assert "advisor_id is required" in response.json()["detail"]
+    try:
+        response = client.post("/api/v1/audit/finalize-approval", json=payload, headers=AUTH_HEADERS)
+        assert response.status_code == 401
+        assert "Valid advisor identity" in response.json()["detail"]
+    finally:
+        # Restore mock advisor JWT
+        app.dependency_overrides[verify_advisor_jwt] = lambda: {
+            "email": "advisor@university.edu.my",
+            "sub": "mock-advisor-uid"
+        }
 
 
 def test_finalize_approval_empty_courses_error():

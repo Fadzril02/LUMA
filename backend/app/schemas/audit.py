@@ -106,7 +106,7 @@ class FinalizeApprovalRequest(BaseModel):
     document_id: str = Field(..., description="UUID of document in uploaded_documents table")
     matric_number: str = Field(..., description="Student matric number")
     student_name: Optional[str] = None
-    advisor_id: Optional[str] = None
+    advisor_id: Optional[str] = Field(None, description="Advisor staff ID (extracted server-side from JWT)")
     university_id: Optional[str] = ""
     curriculum_year: Optional[str] = None
     program_code: Optional[str] = None
