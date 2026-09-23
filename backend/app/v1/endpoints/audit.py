@@ -264,9 +264,6 @@ async def finalize_approval(
                 print(f"[finalize_approval] Advisor staff_id lookup error: {e}")
 
     if not advisor_id:
-        advisor_id = jwt_payload.get("sub")
-
-    if not advisor_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Unauthorized: Valid advisor identity (staff_id) could not be resolved from JWT session."

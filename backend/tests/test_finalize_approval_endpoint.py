@@ -26,7 +26,8 @@ client = TestClient(app)
 # Override JWT verification for test client
 app.dependency_overrides[verify_advisor_jwt] = lambda: {
     "email": "advisor@university.edu.my",
-    "sub": "mock-advisor-uid"
+    "sub": "mock-advisor-uid",
+    "user_metadata": {"staff_id": "STAFF-001"}
 }
 
 AUTH_HEADERS = {"Authorization": "Bearer mock-test-token"}
@@ -149,7 +150,8 @@ def test_finalize_approval_missing_jwt_advisor_id_401():
         # Restore mock advisor JWT
         app.dependency_overrides[verify_advisor_jwt] = lambda: {
             "email": "advisor@university.edu.my",
-            "sub": "mock-advisor-uid"
+            "sub": "mock-advisor-uid",
+            "user_metadata": {"staff_id": "STAFF-001"}
         }
 
 
