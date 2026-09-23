@@ -244,6 +244,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         if (!isMounted) return;
+        if (isRegistering.current) return;
 
         if (event === 'SIGNED_OUT' || !session?.user) {
           setSession(null);
@@ -316,32 +317,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signUpStudent = async (data: StudentRegistrationData) => {
     isRegistering.current = true;
     setIsLoading(true);
-    const matricNo = data.matricNo.trim().toUpperCase();
-
-    const matricRegex = /^[A-Z0-9]{5,15}$/i;
-    if (!matricRegex.test(matricNo)) {
-      isRegistering.current = false;
-      setIsLoading(false);
-      return { error: new Error("Invalid matric format. Expected format: 5-15 letters and numbers") };
-    }
-
-    const rawEmail = (data.institutionalEmail || data.email || '').trim().toLowerCase();
-    if (!rawEmail || !rawEmail.includes('@')) {
-      isRegistering.current = false;
-      setIsLoading(false);
-      return { error: new Error("Institutional email is required and must be a valid email address.") };
-    }
-    const finalEmail = rawEmail;
-    const providedCode = (data.cohortCode || data.registrationCode || data.advisorId || '').trim().toUpperCase();
-
-    // Validate that a cohort code was provided
-    if (!providedCode) {
-      isRegistering.current = false;
-      setIsLoading(false);
-      return { error: new Error("Please enter your 6-character Cohort Code.") };
-    }
 
     try {
+      const matricNo = data.matricNo.trim().toUpperCase();
+
+      const matricRegex = /^[A-Z0-9]{5,15}$/i;
+      if (!matricRegex.test(matricNo)) {
+        return { error: new Error("Invalid matric format. Expected format: 5-15 letters and numbers") };
+      }
+
+      const rawEmail = (data.institutionalEmail || data.email || '').trim().toLowerCase();
+      if (!rawEmail || !rawEmail.includes('@')) {
+        return { error: new Error("Institutional email is required and must be a valid email address.") };
+      }
+      const finalEmail = rawEmail;
+      const providedCode = (data.cohortCode || data.registrationCode || data.advisorId || '').trim().toUpperCase();
+
+      // Validate that a cohort code was provided
+      if (!providedCode) {
+        return { error: new Error("Please enter your 6-character Cohort Code.") };
+      }
+
       // 1. Validation Update: Query cohorts table JOIN degree_templates where cohort_code = providedCode
       const { data: cohortRow, error: cohortLookupError } = await supabase
         .from('cohorts')
@@ -458,55 +454,66 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     universityId?: string;
     department?: string;
   }) => {
+    isRegistering.current = true;
     setIsLoading(true);
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-      email: data.email.trim().toLowerCase(),
-      password: data.password,
-      options: {
-        data: {
-          role: 'advisor',
-          staff_id: data.staffId,
-          full_name: data.fullName,
+
+    try {
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: data.email.trim().toLowerCase(),
+        password: data.password,
+        options: {
+          data: {
+            role: 'advisor',
+            staff_id: data.staffId,
+            full_name: data.fullName,
+          },
         },
-      },
-    });
+      });
 
-    if (authError || !authData.user) {
-      setIsLoading(false);
-      return { error: authError };
-    }
+      if (authError || !authData.user) {
+        return { error: authError ?? new Error('Advisor sign-up failed: no user returned.') };
+      }
 
-    // Insert/Upsert Advisor Profile in advisors table
-    // NOTE: The advisors table RLS has no insert policy for self-registration.
-    // We use service_role bypass is not available here, so we attempt the upsert
-    // and explicitly return the error if it fails (not swallowed silently).
-    const { error: dbError } = await supabase.from('advisors').upsert({
-      staff_id: data.staffId,
-      name: data.fullName,
-      institutional_email: data.email.trim().toLowerCase(),
-      department: data.department || 'Computer Science',
-    }, { onConflict: 'staff_id' });
+      // Insert/Upsert Advisor Profile in advisors table
+      const { error: dbError } = await supabase.from('advisors').upsert({
+        staff_id: data.staffId,
+        name: data.fullName,
+        institutional_email: data.email.trim().toLowerCase(),
+        department: data.department || 'Computer Science',
+      }, { onConflict: 'staff_id' });
 
-    if (dbError) {
-      console.error('[signUpAdvisor] DB upsert failed:', dbError.message);
-      // Auth user was created but DB row failed — sign out to avoid orphan session
+      if (dbError) {
+        console.error('[signUpAdvisor] DB upsert failed:', dbError.message);
+        // Auth user was created but DB row failed — sign out to avoid orphan session
+        await supabase.auth.signOut();
+        return {
+          error: new Error(
+            `Account created but profile could not be saved: ${dbError.message}. ` +
+            `Please contact your administrator.`
+          ),
+        };
+      }
+
+      // Explicitly sign out to decouple registration from auto-login
       await supabase.auth.signOut();
-      setIsLoading(false);
+      setUser(null);
+      setSession(null);
+      setProfile(null);
+      return { error: null };
+    } catch (err: any) {
+      console.error('[signUpAdvisor] Unexpected registration failure:', err);
+      try {
+        await supabase.auth.signOut();
+      } catch (signOutErr) {
+        console.error('[signUpAdvisor] Cleanup signOut failed:', signOutErr);
+      }
       return {
-        error: new Error(
-          `Account created but profile could not be saved: ${dbError.message}. ` +
-          `Please contact your administrator.`
-        ),
+        error: err instanceof Error ? err : new Error(err?.message || 'Unexpected advisor sign-up failure.'),
       };
+    } finally {
+      isRegistering.current = false;
+      setIsLoading(false);
     }
-
-    // Explicitly sign out to decouple registration from auto-login
-    await supabase.auth.signOut();
-    setUser(null);
-    setSession(null);
-    setProfile(null);
-    setIsLoading(false);
-    return { error: null };
   };
 
   const signOut = async () => {

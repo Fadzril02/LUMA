@@ -130,48 +130,84 @@ export function AdvisorDashboard() {
 
       setIsLoading(true);
       try {
-        // 1. Fetch degree templates for the Create Cohort modal (with sessionStorage caching)
-        let templatesQuery: Promise<{ data: DegreeTemplate[] | null; error: any }>;
+        // 1. Fetch degree templates for Create Cohort modal (strictly check sessionStorage first)
+        let templatesData: DegreeTemplate[] = [];
         const cachedTemplates = sessionStorage.getItem("luma_degree_templates");
 
         if (cachedTemplates) {
           try {
             const parsed = JSON.parse(cachedTemplates);
-            templatesQuery = Promise.resolve({ data: parsed, error: null });
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              templatesData = parsed;
+            } else {
+              sessionStorage.removeItem("luma_degree_templates");
+            }
           } catch (parseErr) {
             sessionStorage.removeItem("luma_degree_templates");
-            templatesQuery = db
-              .from("degree_templates")
-              .select("id, university_name, program_code, program_name, syllabus_year, total_credits_required")
-              .order("program_code", { ascending: true })
-              .then((res) => {
-                if (res.data) {
-                  sessionStorage.setItem("luma_degree_templates", JSON.stringify(res.data));
-                }
-                return res;
-              });
           }
-        } else {
-          templatesQuery = db
-            .from("degree_templates")
-            .select("id, university_name, program_code, program_name, syllabus_year, total_credits_required")
-            .order("program_code", { ascending: true })
-            .then((res) => {
-              if (res.data) {
-                sessionStorage.setItem("luma_degree_templates", JSON.stringify(res.data));
-              }
-              return res;
-            });
         }
 
-        // 2. Fetch advisee roster summary via pre-aggregated SQL view (prevents N+1 queries)
-        const studentQuery = db
-          .from("advisee_roster_summary")
-          .select("*")
-          .eq("advisor_staff_id", advisorStaffId)
-          .order("student_name", { ascending: true });
+        // If sessionStorage is empty or invalid, trigger a fresh network request
+        if (templatesData.length === 0) {
+          const { data: tmplData, error: tmplError } = await db
+            .from("degree_templates")
+            .select("id, university_name, program_code, program_name, syllabus_year, total_credits_required")
+            .order("program_code", { ascending: true });
 
-        // 3. Fetch all cohorts strictly belonging to this advisor with blueprint details
+          if (!tmplError && tmplData && Array.isArray(tmplData)) {
+            templatesData = tmplData;
+            if (tmplData.length > 0) {
+              sessionStorage.setItem("luma_degree_templates", JSON.stringify(tmplData));
+            }
+          } else {
+            templatesData = [];
+          }
+        }
+
+        // 2. Fetch advisee roster summary (strictly check sessionStorage first)
+        const rosterCacheKey = `luma_advisee_roster_${advisorStaffId}`;
+        const cachedRoster = sessionStorage.getItem(rosterCacheKey);
+        let rawRosterData: any[] | null = null;
+
+        if (cachedRoster) {
+          try {
+            const parsed = JSON.parse(cachedRoster);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              rawRosterData = parsed;
+            } else {
+              sessionStorage.removeItem(rosterCacheKey);
+            }
+          } catch (e) {
+            sessionStorage.removeItem(rosterCacheKey);
+          }
+        }
+
+        // If sessionStorage is empty or invalid, trigger a fresh network request
+        if (!rawRosterData) {
+          const studentsRes = await db
+            .from("advisee_roster_summary")
+            .select("*")
+            .eq("advisor_staff_id", advisorStaffId)
+            .order("student_name", { ascending: true });
+
+          if (!studentsRes.error && studentsRes.data && Array.isArray(studentsRes.data)) {
+            rawRosterData = studentsRes.data;
+            if (studentsRes.data.length > 0) {
+              sessionStorage.setItem(rosterCacheKey, JSON.stringify(studentsRes.data));
+            }
+          } else {
+            // Fallback to students table if SQL view has not yet been executed in Supabase
+            console.warn("[AdvisorDashboard] advisee_roster_summary query notice:", studentsRes.error?.message || "empty response");
+            const fallbackRes = await db
+              .from("students")
+              .select("matric_no, user_id, name, institutional_email, cohort_id, cgpa, academic_status, program, advisor_staff_id")
+              .eq("advisor_staff_id", advisorStaffId)
+              .order("name", { ascending: true });
+            rawRosterData = (fallbackRes.data && Array.isArray(fallbackRes.data)) ? fallbackRes.data : [];
+          }
+        }
+
+        // 3. Fetch cohorts and correction requests in parallel
         const cohortsQuery = db
           .from("cohorts")
           .select(`
@@ -190,30 +226,13 @@ export function AdvisorDashboard() {
           .eq("advisor_staff_id", advisorStaffId)
           .order("created_at", { ascending: false });
 
-        // 4. Fetch correction requests
         const queueQuery = db.from("correction_requests").select("*");
 
-        const [studentsRes, queueRes, cohortsRes, templatesRes] = await Promise.all([
-          studentQuery,
-          queueQuery,
-          cohortsQuery,
-          templatesQuery
-        ]);
+        const [cohortsRes, queueRes] = await Promise.all([cohortsQuery, queueQuery]);
 
-        let rosterData = studentsRes.data;
-        // Fallback to students table if SQL view has not yet been executed in Supabase
-        if (studentsRes.error || !rosterData) {
-          console.warn("[AdvisorDashboard] advisee_roster_summary query notice:", studentsRes.error?.message || "empty response");
-          const fallbackRes = await db
-            .from("students")
-            .select("matric_no, user_id, name, institutional_email, cohort_id, cgpa, academic_status, program, advisor_staff_id")
-            .eq("advisor_staff_id", advisorStaffId)
-            .order("name", { ascending: true });
-          rosterData = fallbackRes.data || [];
-        }
-
-        if (rosterData) {
-          const formatted = rosterData.map((s: any) => ({
+        // Bind roster (clean empty array if no advisees, zero mock fallbacks)
+        if (rawRosterData && rawRosterData.length > 0) {
+          const formatted = rawRosterData.map((s: any) => ({
             ...s,
             id: s.matric_no,
             name: s.student_name || s.name || s.matric_no,
@@ -227,19 +246,26 @@ export function AdvisorDashboard() {
           }));
           setRoster(formatted);
           setRecentEnrollments(formatted as RecentEnrollment[]);
+        } else {
+          setRoster([]);
+          setRecentEnrollments([]);
         }
-        if (queueRes.data) setQueue(queueRes.data);
-        if (cohortsRes.data) {
-          setCohorts(cohortsRes.data as AdvisorCohort[]);
-        }
-        if (templatesRes.data && templatesRes.data.length > 0) {
-          setDegreeTemplates(templatesRes.data);
+
+        // Bind queues and cohorts (clean empty arrays if empty)
+        setQueue((queueRes.data && Array.isArray(queueRes.data)) ? queueRes.data : []);
+        setCohorts((cohortsRes.data && Array.isArray(cohortsRes.data)) ? (cohortsRes.data as AdvisorCohort[]) : []);
+
+        // Bind degree templates (clean empty array if empty)
+        if (templatesData && templatesData.length > 0) {
+          setDegreeTemplates(templatesData);
           if (!selectedTemplateId) {
-            const firstTmpl = templatesRes.data[0];
+            const firstTmpl = templatesData[0];
             setSelectedTemplateId(firstTmpl.id);
             setGeneratedCode(generateCohortCode(firstTmpl.program_code));
             setCohortName(`${firstTmpl.program_code} ${firstTmpl.syllabus_year || "2024/2025"}`);
           }
+        } else {
+          setDegreeTemplates([]);
         }
       } catch (error) {
         console.error("Failed to load dashboard data:", error);

@@ -99,6 +99,53 @@ export function StudentPortal() {
           // uploaded_documents table may not exist; lockout defaults to false
         }
 
+        // ── Query students table for cgpa & degree template required credits ──
+        let studentCgpa: string = "0.00";
+        let studentEarnedCredits = 0;
+        let dynamicRequiredCredits = 120;
+
+        try {
+          const { data: studentRecord } = await db
+            .from("students")
+            .select("cgpa, cohort_id, cohorts(template_id, degree_templates(total_credits_required))")
+            .eq("matric_no", profile.matric_no)
+            .maybeSingle();
+
+          if (studentRecord) {
+            if (studentRecord.cgpa !== null && studentRecord.cgpa !== undefined) {
+              studentCgpa = Number(studentRecord.cgpa).toFixed(2);
+            }
+            const tmplCredits = (studentRecord as any)?.cohorts?.degree_templates?.total_credits_required;
+            if (tmplCredits && typeof tmplCredits === "number") {
+              dynamicRequiredCredits = tmplCredits;
+            }
+          }
+        } catch (creditErr) {
+          console.warn("[StudentPortal] Student record fetch warning:", creditErr);
+        }
+
+        // ── Query degree_audits table snapshot for official total_credits_earned ──
+        try {
+          const { data: auditDoc } = await db
+            .from("degree_audits")
+            .select("total_credits_earned, total_credits_required")
+            .eq("matric_no", profile.matric_no)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (auditDoc) {
+            if (auditDoc.total_credits_earned) {
+              studentEarnedCredits = Number(auditDoc.total_credits_earned) || 0;
+            }
+            if (auditDoc.total_credits_required) {
+              dynamicRequiredCredits = Number(auditDoc.total_credits_required) || 120;
+            }
+          }
+        } catch (auditErr) {
+          console.warn("[StudentPortal] degree_audits query warning:", auditErr);
+        }
+
         // ── Query academic_records ──────────────────────────────────────────
         const { data: resultsData, error: resultsError } = await db
           .from("academic_records")
@@ -115,10 +162,10 @@ export function StudentPortal() {
         const historyMapped = (resultsData || []).map((row: any) => ({
           code: row.course_code,
           name: row.course_name || "Unknown Module",
-          credits: row.credits || 0,
+          credits: Number(row.credits) || 0,
           grade: row.grade || "N/A",
           status: row.status,
-          pointValue: row.grade_point || 0,
+          pointValue: Number(row.grade_point) || 0,
           session_semester: row.semester,
         }));
 
@@ -129,7 +176,12 @@ export function StudentPortal() {
         let totalEarnedCredits = 0;
 
         historyMapped.forEach((item) => {
-          const passed = item.status === "Passed" || item.status === "Pass";
+          const passed =
+            item.status === "Passed" ||
+            item.status === "Pass" ||
+            item.status === "Pass/Approved" ||
+            item.status === "Approved";
+
           if (passed) {
             totalEarnedCredits += item.credits;
             // Exempt courses (HL grade) do not contribute to GPA
@@ -143,30 +195,21 @@ export function StudentPortal() {
         const calculatedCgpa =
           gradedCredits > 0 ? (totalPoints / gradedCredits).toFixed(2) : "0.00";
 
-        // ── Fetch dynamic required credits via cohort & degree template ──
-        let dynamicRequiredCredits = 120;
-        try {
-          const { data: studentRecord } = await db
-            .from("students")
-            .select("cohort_id, cohorts(template_id, degree_templates(total_credits_required))")
-            .eq("matric_no", profile.matric_no)
-            .maybeSingle();
+        const liveEarned = studentEarnedCredits > 0 ? studentEarnedCredits : totalEarnedCredits;
+        const liveCgpa = Number(studentCgpa) > 0 ? studentCgpa : calculatedCgpa;
 
-          const tmplCredits = (studentRecord as any)?.cohorts?.degree_templates?.total_credits_required;
-          if (tmplCredits && typeof tmplCredits === "number") {
-            dynamicRequiredCredits = tmplCredits;
-          }
-        } catch (creditErr) {
-          console.warn("[StudentPortal] Dynamic credit fetch warning:", creditErr);
-        }
+        setStats({ cgpa: liveCgpa, earned: liveEarned, required: dynamicRequiredCredits });
 
-        setStats({ cgpa: calculatedCgpa, earned: totalEarnedCredits, required: dynamicRequiredCredits });
+        const coreCredits = historyMapped
+          .filter((c) => /^(SCSE|SECJ|SCS|SE|CS|SEC)/i.test(c.code) && (c.status === "Passed" || c.status === "Pass" || c.status === "Pass/Approved" || c.status === "Approved"))
+          .reduce((sum, c) => sum + (c.credits || 0), 0);
+
         setCreditProgress([
-          { name: "Syllabus Total", earned: totalEarnedCredits, total: dynamicRequiredCredits },
+          { name: "Syllabus Total", earned: liveEarned, total: dynamicRequiredCredits },
           {
             name: "Core Modules",
-            earned: historyMapped.filter((c) => c.status === "Passed" || c.status === "Pass").length * 3,
-            total: Math.round(dynamicRequiredCredits * 0.7),
+            earned: coreCredits,
+            total: Math.round(dynamicRequiredCredits * 0.65),
           },
         ]);
       } catch (err) {
@@ -476,8 +519,23 @@ export function StudentPortal() {
             >
               {activeTab === "dashboard" && <StudentDashboardView stats={stats} creditProgress={creditProgress} />}
               {activeTab === "history" && <AcademicHistoryView courseHistory={courseHistory} />}
-              {activeTab === "audit" && <DegreeAuditView />}
-              {activeTab === "whatif" && <CgpaCalculatorView />}
+              {activeTab === "audit" && (
+                <DegreeAuditView 
+                  cgpa={stats.cgpa} 
+                  earnedCredits={stats.earned} 
+                  totalRequiredCredits={stats.required} 
+                  courses={courseHistory} 
+                  matricNo={studentMatric}
+                />
+              )}
+              {activeTab === "whatif" && (
+                <CgpaCalculatorView 
+                  currentCgpa={Number(stats.cgpa || 0)} 
+                  earnedCredits={Number(stats.earned || 0)} 
+                  currentCredits={Number(stats.earned || 0)}
+                  matricNo={studentMatric}
+                />
+              )}
             </motion.div>
           </AnimatePresence>
         </main>

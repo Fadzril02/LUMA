@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { Target, Plus, Trash2, Calculator, Sparkles, TrendingUp, TrendingDown, BookOpen } from "lucide-react";
-import { Button, Input } from "../../components/ui";
-import { db } from "../../../lib/supabase";
-import { useAuth } from "../../../context/AuthContext";
+import { Button, Input } from "../../app/components/ui";
+import { db } from "../../lib/supabase";
+import { useAuth } from "../../context/AuthContext";
 
-export interface CgpaCalculatorViewProps {
+export interface GradePredictorProps {
   currentCgpa?: number | string;
   earnedCredits?: number;
   currentCredits?: number;
@@ -26,14 +26,14 @@ interface HypotheticalCourse {
   expectedGrade: string;
 }
 
-export function CgpaCalculatorView({
+export function GradePredictor({
   currentCgpa: propCgpa,
   earnedCredits: propEarnedCredits,
   currentCredits: propCurrentCredits,
   total_credits_earned: propTotalCredits,
   matricNo: propMatric,
   student,
-}: CgpaCalculatorViewProps) {
+}: GradePredictorProps) {
   const { profile, user } = useAuth();
 
   // Store only the fetched database values in state
@@ -127,7 +127,7 @@ export function CgpaCalculatorView({
           }
         } else if (summaryErr) {
           // Graceful fallback to students table if SQL view is still being migrated
-          console.warn("[CgpaCalculatorView] advisee_roster_summary notice:", summaryErr.message);
+          console.warn("[GradePredictor] advisee_roster_summary notice:", summaryErr.message);
           const { data: stData } = await db
             .from("students")
             .select("cgpa")
@@ -139,7 +139,7 @@ export function CgpaCalculatorView({
           }
         }
       } catch (err) {
-        console.error("[CgpaCalculatorView] Error fetching baseline from advisee_roster_summary:", err);
+        console.error("[GradePredictor] Error fetching baseline from advisee_roster_summary:", err);
       } finally {
         if (isMounted) setIsLoading(false);
       }
@@ -348,4 +348,5 @@ export function CgpaCalculatorView({
   );
 }
 
-export { CgpaCalculatorView as GradePredictor };
+// Re-export for seamless interchangeable usage
+export { GradePredictor as CgpaCalculatorView };
