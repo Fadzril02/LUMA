@@ -960,6 +960,7 @@ export function AdvisorDashboard() {
                   <th className="py-3 px-6">Matric No</th>
                   <th className="py-3 px-6">Program</th>
                   <th className="py-3 px-6">Cumulative GPA</th>
+                  <th className="py-3 px-6">Earned Credits</th>
                   <th className="py-3 px-6">Academic Status</th>
                   <th className="py-3 px-6 text-right">Audit Action</th>
                 </tr>
@@ -1002,6 +1003,9 @@ export function AdvisorDashboard() {
                       </td>
                       <td className="py-4 px-6 text-sm font-mono font-bold text-gray-900">
                         {Number(student.cgpa || 0).toFixed(2)}
+                      </td>
+                      <td className="py-4 px-6 text-sm font-mono text-gray-700">
+                        {student.total_earned_credits} / 130
                       </td>
                       <td className="py-4 px-6 text-sm">
                         {isRed ? (
