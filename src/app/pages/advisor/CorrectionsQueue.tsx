@@ -31,8 +31,16 @@ export function CorrectionsQueue({ queue, roster }: CorrectionsQueueProps) {
   const approvedCount = liveQueue.filter((item) => item.processing_status === "Approved").length;
 
   const handleOpenAudit = async (doc: any) => {
-    const { data } = db.storage.from("academic-slips").getPublicUrl(doc.file_path);
-    setPdfUrl(data.publicUrl);
+    // Security: Use signed URL (1-hour expiry) instead of public URL.
+    // Advisor boundary is enforced upstream — AdvisorPortal.tsx filters the queue
+    // to only include documents whose matric_no belongs to this advisor's students.
+    const { data, error } = await db.storage.from("academic-slips").createSignedUrl(doc.file_path, 3600);
+    if (error || !data?.signedUrl) {
+      console.error("Failed to create signed URL:", error);
+      alert("Unable to load document. The file may not exist or you may not have access.");
+      return;
+    }
+    setPdfUrl(data.signedUrl);
     setActiveAuditDoc(doc);
     const courses = doc.extracted_data?.courses || [];
     setStagedCourses([...courses]);
@@ -80,17 +88,23 @@ export function CorrectionsQueue({ queue, roster }: CorrectionsQueueProps) {
       alert("No course records provided for approval. Please add courses manually before approving.");
       return;
     }
+
+    // Capture doc reference before async gap to prevent stale-closure crash
+    // if user closes the modal while the API call is in-flight.
+    const docId = activeAuditDoc.id;
+    const docMatricNo = activeAuditDoc.matric_no;
+    const studentData = activeAuditDoc.extracted_data;
+
     setIsSaving(true);
     
     try {
-      const studentData = activeAuditDoc.extracted_data;
-      const matchingStudent = roster.find((s) => s.id === activeAuditDoc.matric_no || s.matric_no === activeAuditDoc.matric_no);
+      const matchingStudent = roster.find((s) => s.id === docMatricNo || s.matric_no === docMatricNo);
       
       // Route through FastAPI Zero-Waste engine for DAG verification & persistence into academic_records.
       // Note: advisor_id is strictly derived from the verified JWT payload on the backend.
       await api.finalizeApproval({
-        document_id: activeAuditDoc.id,
-        matric_number: activeAuditDoc.matric_no,
+        document_id: docId,
+        matric_number: docMatricNo,
         student_name: matchingStudent ? matchingStudent.name : studentData.student_name,
         academic_session: studentData.academic_session || "2024/2025",
         semester: studentData.semester || 1,
@@ -104,7 +118,8 @@ export function CorrectionsQueue({ queue, roster }: CorrectionsQueueProps) {
         }))
       });
 
-      setLiveQueue(prev => prev.map(item => item.id === activeAuditDoc.id ? { ...item, processing_status: "Approved" } : item));
+      // Post-success: actively remove the processed document from the local state array
+      setLiveQueue(prev => (prev || []).filter(item => item.id !== docId));
       setActiveAuditDoc(null);
 
     } catch (err: any) {
@@ -112,6 +127,7 @@ export function CorrectionsQueue({ queue, roster }: CorrectionsQueueProps) {
       const errMsg = err?.response?.data?.detail || err?.message || "Failed to commit verified records.";
       alert(`Approval Failed: ${errMsg}`);
     } finally {
+      // Ensure loading spinner is disabled so the UI never permanently hangs
       setIsSaving(false);
     }
   };
@@ -181,7 +197,7 @@ export function CorrectionsQueue({ queue, roster }: CorrectionsQueueProps) {
                 <h3 className="text-lg font-bold text-gray-900">Document Audit</h3>
                 <p className="text-sm text-gray-500">Student: {activeAuditDoc.matric_no}</p>
               </div>
-              <button onClick={() => setActiveAuditDoc(null)}><X className="w-6 h-6 text-gray-500 hover:text-gray-800" /></button>
+              <button onClick={() => !isSaving && setActiveAuditDoc(null)} disabled={isSaving}><X className={`w-6 h-6 ${isSaving ? "text-gray-300 cursor-not-allowed" : "text-gray-500 hover:text-gray-800"}`} /></button>
             </div>
             
             {/* THE MASSIVE FRAUD ALERT BANNER */}

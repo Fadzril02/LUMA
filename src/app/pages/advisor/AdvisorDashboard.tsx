@@ -164,26 +164,18 @@ export function AdvisorDashboard() {
           }
         }
 
-        // 2. Fetch advisee roster summary (strictly check sessionStorage first)
+        // 2. Fetch advisee roster summary — ALWAYS fetch fresh data.
+        // Bug fix: sessionStorage was serving stale roster from previous sessions
+        // (e.g., 106 phantom students from old test data) without TTL or invalidation.
+        // The cache key is now only written for cross-component hydration within the
+        // same page session, never read as a substitute for the initial fetch.
         const rosterCacheKey = `luma_advisee_roster_${advisorStaffId}`;
-        const cachedRoster = sessionStorage.getItem(rosterCacheKey);
         let rawRosterData: any[] | null = null;
 
-        if (cachedRoster) {
-          try {
-            const parsed = JSON.parse(cachedRoster);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              rawRosterData = parsed;
-            } else {
-              sessionStorage.removeItem(rosterCacheKey);
-            }
-          } catch (e) {
-            sessionStorage.removeItem(rosterCacheKey);
-          }
-        }
+        // Clear any stale cache on dashboard mount to prevent phantom data
+        sessionStorage.removeItem(rosterCacheKey);
 
-        // If sessionStorage is empty or invalid, trigger a fresh network request
-        if (!rawRosterData) {
+        {
           const studentsRes = await db
             .from("advisee_roster_summary")
             .select("*")
@@ -584,6 +576,10 @@ export function AdvisorDashboard() {
 
   // Calculate Metrics
   const totalStudents = roster.length;
+  // Dynamic calculation for average credits
+  const totalEarnedCredits = roster.reduce((sum, s) => sum + (Number(s.total_earned_credits) || 0), 0);
+  const averageCredits = totalStudents > 0 ? Math.round(totalEarnedCredits / totalStudents) : 0;
+
   const atRiskStudents = roster.filter((s) => ["At-Risk", "Probation"].includes(s.academic_status) || Number(s.cgpa || 0) < 2.50);
   const pendingAudits = queue.filter((q) => q.status === "Pending").length;
   const totalCgpa = roster.reduce((sum, s) => sum + (Number(s.cgpa) || 0), 0);
@@ -794,10 +790,10 @@ export function AdvisorDashboard() {
       {/* 2. POLISHED METRICS GRID */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         <MetricCard
-          title="Total Advisees"
-          value={totalStudents}
+          title="Average Credits"
+          value={averageCredits}
           icon={Users}
-          description="Active cohort advisees"
+          description="Average earned credits"
           indicator="bg-blue-50 text-blue-900 border-blue-200"
           iconColor="text-blue-900"
         />
