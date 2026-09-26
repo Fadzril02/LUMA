@@ -207,7 +207,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { success: false, error: unrecError };
 
     } catch (err: any) {
-      console.error('[AuthContext] fetchUserProfile fatal exception:', err);
+      console.error('[AuthContext] fetchUserProfile fatal exception — force-clearing zombie session:', err);
+      // ZOMBIE FIX: even on unexpected throws, kill the JWT in localStorage.
+      // Without this, a network error during profile lookup would leave the zombie
+      // token in storage and repeat the hang on every page reload.
+      try { await supabase.auth.signOut(); } catch (_) { /* best-effort */ }
       setUser(null);
       setSession(null);
       setProfile(null);
@@ -220,17 +224,64 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const initializeAuth = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        const { data: { session }, error: sessionErr } = await supabase.auth.getSession();
         if (!isMounted) return;
 
+        if (sessionErr) {
+          // Cannot even read the session — treat as no session, drop loading
+          console.warn('[AuthContext] getSession error — treating as unauthenticated:', sessionErr.message);
+          setSession(null);
+          setUser(null);
+          setProfile(null);
+          return; // finally still runs
+        }
+
+        if (!session?.user) {
+          // No JWT in storage — normal first-visit state
+          setSession(null);
+          setUser(null);
+          setProfile(null);
+          return; // finally still runs
+        }
+
+        // There IS a JWT. Set optimistic state then verify the DB row exists.
         setSession(session);
-        setUser(session?.user ?? null);
-        if (session?.user) {
-          await fetchUserProfile(session.user);
+        setUser(session.user);
+
+        const profileRes = await fetchUserProfile(session.user);
+
+        if (!isMounted) return;
+
+        // ZOMBIE FIX: fetchUserProfile already called signOut() internally when it
+        // detected no DB row. We mirror that cleanup here so React state is
+        // consistent even if the component re-renders between the signOut() call
+        // inside fetchUserProfile and this check.
+        if (!profileRes.success) {
+          console.warn('[AuthContext] initializeAuth: zombie session detected — profile fetch failed. Ensuring clean state.');
+          // Belt-and-suspenders: signOut may already have been called inside
+          // fetchUserProfile, but we call it again (idempotent) to guarantee the
+          // JWT is gone from localStorage before the loading screen drops.
+          try { await supabase.auth.signOut(); } catch (_) { /* best-effort */ }
+          if (isMounted) {
+            setSession(null);
+            setUser(null);
+            setProfile(null);
+          }
         }
       } catch (err) {
-        console.error('[AuthContext] Session initialization error:', err);
+        // Completely unexpected error (e.g., Supabase SDK throws internally).
+        // Force a clean state so the app never stays stuck on the loading screen.
+        console.error('[AuthContext] initializeAuth fatal error — forcing clean state:', err);
+        try { await supabase.auth.signOut(); } catch (_) { /* best-effort */ }
+        if (isMounted) {
+          setSession(null);
+          setUser(null);
+          setProfile(null);
+          setAuthError('Session initialization failed. Please log in again.');
+        }
       } finally {
+        // GUARANTEED: this ALWAYS runs, even if signOut() above throws.
+        // The loading screen will ALWAYS drop after initializeAuth completes.
         if (isMounted) {
           setIsLoading(false);
           setIsInitializing(false);
@@ -256,8 +307,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         setSession(session);
         setUser(session.user);
-        await fetchUserProfile(session.user);
-        setIsLoading(false);
+
+        // ZOMBIE FIX: wrap fetchUserProfile in try/catch/finally so that if it
+        // throws (or calls signOut() internally for a zombie), isLoading still
+        // drops and the app never hangs on the loading screen.
+        try {
+          const profileRes = await fetchUserProfile(session.user);
+          if (!isMounted) return;
+          if (!profileRes.success) {
+            // fetchUserProfile already cleaned up internally; mirror here.
+            setSession(null);
+            setUser(null);
+            setProfile(null);
+          }
+        } catch (err) {
+          console.error('[AuthContext] onAuthStateChange fetchUserProfile threw:', err);
+          try { await supabase.auth.signOut(); } catch (_) { /* best-effort */ }
+          if (isMounted) {
+            setSession(null);
+            setUser(null);
+            setProfile(null);
+          }
+        } finally {
+          // Guaranteed: isLoading drops regardless of success or failure.
+          if (isMounted) setIsLoading(false);
+        }
       }
     );
 
