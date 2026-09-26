@@ -60,7 +60,14 @@ export function GradePredictor({
     D: 1.0,
     E: 0.0,
     F: 0.0,
+    HL: 0.0,
+    PC: 0.0,
+    EX: 0.0,
+    TD: 0.0,
+    TS: 0.0,
   };
+
+  const neutralGrades = ["HL", "PC", "EX", "TD", "TS"];
 
   const activeMatric =
     propMatric ||
@@ -178,9 +185,17 @@ export function GradePredictor({
   hypotheticalClasses.forEach((cls) => {
     const points = gradePoints[cls.expectedGrade] ?? 0;
     const creds = Number(cls.credits) || 0;
-    newQualityPoints += points * creds;
-    newTotalCredits += creds;
-    addedSemesterCredits += creds;
+    
+    // Neutral grades (HL, EX, PC) and withdrawn (TD, TS) do not affect GPA denominator
+    if (!neutralGrades.includes(cls.expectedGrade)) {
+      newQualityPoints += points * creds;
+      newTotalCredits += creds;
+    }
+    
+    // They do count towards total earned credits if passing (HL, PC, EX)
+    if (["HL", "PC", "EX"].includes(cls.expectedGrade) || !neutralGrades.includes(cls.expectedGrade)) {
+        addedSemesterCredits += creds;
+    }
   });
 
   const projectedCgpa = newTotalCredits > 0 ? (newQualityPoints / newTotalCredits).toFixed(2) : "0.00";
@@ -259,7 +274,7 @@ export function GradePredictor({
                   >
                     {Object.keys(gradePoints).map((g) => (
                       <option key={g} value={g}>
-                        {g} ({gradePoints[g].toFixed(2)})
+                        {g} {neutralGrades.includes(g) ? "(Neutral)" : `(${gradePoints[g].toFixed(2)})`}
                       </option>
                     ))}
                   </select>

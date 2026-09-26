@@ -61,6 +61,33 @@ router = APIRouter(prefix="/audit", tags=["Degree Audit"])
 supabase_svc = SupabaseService()
 llm_fallback = MicroLLMFallback()
 
+def fetch_and_merge_historical_records(matric_no: str, new_records: List[ParsedLineItem]) -> List[ParsedLineItem]:
+    if not supabase_svc.client or not matric_no:
+        return new_records
+    try:
+        new_semesters = {r.semester for r in new_records if r.semester}
+        res = supabase_svc.client.table("academic_records").select("*").eq("matric_no", matric_no).execute()
+        existing = res.data or []
+        
+        merged = []
+        for r in existing:
+            if r.get("semester") not in new_semesters:
+                merged.append(ParsedLineItem(
+                    course_code=r.get("course_code"),
+                    course_name=r.get("course_name") or r.get("course_code"),
+                    credits=r.get("credits") or 3,
+                    grade=r.get("grade"),
+                    grade_point=float(r.get("grade_point") or 0.0),
+                    semester=r.get("semester"),
+                    status=r.get("status"),
+                    is_ai_parsed=r.get("is_ai_parsed", False),
+                    raw_extracted_text=r.get("raw_extracted_text", "")
+                ))
+        return merged + new_records
+    except Exception as e:
+        print(f"[Merge Historical] Error fetching historical records: {e}")
+        return new_records
+
 
 def _check_advisor_identity(jwt_payload: dict, claimed_advisor_id: str) -> None:
     """
@@ -324,6 +351,9 @@ async def finalize_approval(
         curriculum_year=request.curriculum_year
     )
 
+    # 3b. FIX #1: Merge with historical semesters not included in this submission
+    parsed_items = fetch_and_merge_historical_records(matric_number, parsed_items)
+
     # 4. Run Pure Python Graph Prerequisite Audit (with min_grade & credit gates)
     audited_records, summary = PrerequisiteGraphResolver.audit_student_records(
         records=parsed_items,
@@ -456,6 +486,9 @@ async def process_storage_transcript(
         program_code=request.program_code,
         curriculum_year=request.curriculum_year
     )
+
+    # 6b. FIX #1: Merge with historical semesters not included in this submission
+    parsed_courses = fetch_and_merge_historical_records(matric_no, parsed_courses)
 
     # 7. Run Pure Python Graph Prerequisite Audit
     audited_records, summary = PrerequisiteGraphResolver.audit_student_records(

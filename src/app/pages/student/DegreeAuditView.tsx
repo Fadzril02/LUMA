@@ -144,7 +144,8 @@ export function DegreeAuditView({
       c.status === "Passed" ||
       c.status === "Pass" ||
       c.status === "Pass/Approved" ||
-      c.status === "Approved"
+      c.status === "Approved" ||
+      c.status === "Exempted"
   );
 
   const failedCourses = currentCourses.filter(
