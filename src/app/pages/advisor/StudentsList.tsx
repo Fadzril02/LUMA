@@ -29,13 +29,38 @@ export function StudentsList() {
         return;
       }
       try {
-        const query = db
-          .from('students')
-          .select('*, cohorts(template_id, degree_templates(total_credits_required))')
-          .eq('advisor_staff_id', currentAdvisorId)
-          .order('name', { ascending: true });
+        // FIX #5: Fetch from advisee_roster_summary view which includes real
+        // total_earned_credits computed from academic_records, not a fake formula.
+        // Fallback to students table + cohorts join if the view doesn't exist.
+        let data: any[] | null = null;
+        let error: any = null;
 
-        const { data, error } = await query; 
+        const viewRes = await db
+          .from('advisee_roster_summary')
+          .select('*')
+          .eq('advisor_staff_id', currentAdvisorId)
+          .order('student_name', { ascending: true });
+
+        if (!viewRes.error && viewRes.data && viewRes.data.length > 0) {
+          // Normalize view columns to match what the table uses
+          data = viewRes.data.map((row: any) => ({
+            ...row,
+            matric_no: row.matric_no,
+            name: row.student_name || row.name,
+            cgpa: row.current_cgpa ?? row.cgpa,
+            total_earned_credits: row.total_earned_credits ?? null,
+          }));
+          error = null;
+        } else {
+          // Fallback: students table + cohort join (credits will be null)
+          const fallback = await db
+            .from('students')
+            .select('*, cohorts(template_id, degree_templates(total_credits_required))')
+            .eq('advisor_staff_id', currentAdvisorId)
+            .order('name', { ascending: true });
+          data = fallback.data;
+          error = fallback.error;
+        }
 
         if (error) {
           setDbError(error.message);
@@ -178,11 +203,14 @@ export function StudentsList() {
                     student.cohorts?.degree_templates?.total_credits_required ||
                     student.required_credits ||
                     120;
-                  // Mocking credits visually based on CGPA just so the UI bar doesn't break
-                  const visualCredits =
-                    student.credits ||
-                    Math.min(Math.floor(Number(student.cgpa) * 30), requiredCredits) ||
-                    Math.round(requiredCredits * 0.7);
+
+                  // FIX #5: Use real total_earned_credits from advisee_roster_summary view.
+                  // NEVER fabricate credits from CGPA — that produced wildly wrong numbers.
+                  // If the data isn't available yet, show null (renders as '—').
+                  const realCredits: number | null =
+                    student.total_earned_credits != null
+                      ? Number(student.total_earned_credits)
+                      : null;
 
                   return (
                     <tr key={student.matric_no} className="hover:bg-gray-50/50 transition-colors group">
@@ -214,11 +242,13 @@ export function StudentsList() {
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-600 font-medium">{visualCredits} / {requiredCredits}</div>
+                        <div className="text-sm text-gray-600 font-medium">
+                          {realCredits !== null ? realCredits : '—'} / {requiredCredits}
+                        </div>
                         <div className="w-24 bg-gray-100 h-1.5 rounded-full mt-1.5 overflow-hidden">
                           <div 
                             className={`h-full rounded-full transition-all duration-1000 ${isAtRisk ? 'bg-amber-400' : 'bg-emerald-500'}`} 
-                            style={{ width: `${Math.min(100, (visualCredits / requiredCredits) * 100)}%` }}
+                            style={{ width: realCredits !== null ? `${Math.min(100, (realCredits / requiredCredits) * 100)}%` : '0%' }}
                           />
                         </div>
                       </td>

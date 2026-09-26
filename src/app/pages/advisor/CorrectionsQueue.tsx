@@ -7,9 +7,10 @@ import { api } from "../../../lib/api";
 interface CorrectionsQueueProps {
   queue: any[];
   roster: any[];
+  onApproved?: () => void; // FIX #3: callback so parent can refetch queue after approval
 }
 
-export function CorrectionsQueue({ queue, roster }: CorrectionsQueueProps) {
+export function CorrectionsQueue({ queue, roster, onApproved }: CorrectionsQueueProps) {
   const [liveQueue, setLiveQueue] = useState<any[]>(queue);
   const [filterStatus, setFilterStatus] = useState<string>("Pending_Advisor_Approval"); 
 
@@ -118,9 +119,17 @@ export function CorrectionsQueue({ queue, roster }: CorrectionsQueueProps) {
         }))
       });
 
-      // Post-success: actively remove the processed document from the local state array
+      // FIX #3: Optimistically remove from local state immediately so the UI
+      // reflects the approval without waiting for a parent refetch.
+      // Then call onApproved() so the parent (AdvisorPortal) also refetches
+      // fresh queue data from the server, keeping everything in sync.
       setLiveQueue(prev => (prev || []).filter(item => item.id !== docId));
       setActiveAuditDoc(null);
+
+      // Notify parent to refetch — console.log here is intentional for verification;
+      // remove once you've confirmed it fires in DevTools.
+      console.log('[CorrectionsQueue] Approval committed for docId:', docId, '— triggering parent refetch via onApproved()');
+      if (onApproved) onApproved();
 
     } catch (err: any) {
       console.error("Save failed:", err);

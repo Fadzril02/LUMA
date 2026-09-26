@@ -19,90 +19,90 @@ export function AdvisorPortal() {
 
   const advisorStaffId = (profile as any)?.staff_id || (user as any)?.user_metadata?.staff_id || "";
 
-  useEffect(() => {
-    const fetchAdvisorData = async () => {
-      // Security Check: Guard to ensure advisor context is loaded before querying
-      if (!advisorStaffId) {
-        setIsLoading(false);
-        return;
+  const fetchAdvisorData = async () => {
+    // Security Check: Guard to ensure advisor context is loaded before querying
+    if (!advisorStaffId) {
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+
+      // 1. Fetch assigned students strictly filtered by advisor_staff_id
+      const { data: studentsData } = await db
+        .from("students")
+        .select("*")
+        .eq("advisor_staff_id", advisorStaffId);
+
+      const adviseeMatricNos = (studentsData || []).map((s: any) => s.matric_no).filter(Boolean);
+
+      // 2. Fetch uploaded documents queue for this advisor's advisees
+      let queueQuery = db
+        .from("uploaded_documents")
+        .select("*")
+        .order("uploaded_at", { ascending: false });
+      if (adviseeMatricNos.length > 0) {
+        queueQuery = queueQuery.in("matric_no", adviseeMatricNos);
       }
+      const { data: queueData } = await queueQuery;
+      if (queueData) setAuditQueue(queueData);
 
-      try {
-        setIsLoading(true);
+      // 3. Fetch academic records strictly for this advisor's advisees
+      let recordsQuery = db.from("academic_records").select("*");
+      if (adviseeMatricNos.length > 0) {
+        recordsQuery = recordsQuery.in("matric_no", adviseeMatricNos);
+      }
+      const { data: recordsData } = await recordsQuery;
 
-        // 1. Fetch assigned students strictly filtered by advisor_staff_id
-        const { data: studentsData } = await db
-          .from("students")
-          .select("*")
-          .eq("advisor_staff_id", advisorStaffId);
+      if (studentsData) {
+        const liveRoster = studentsData.map((student: any) => {
+          const studentRecords = (recordsData || []).filter(
+            (r: any) => r.matric_no === student.matric_no
+          );
 
-        const adviseeMatricNos = (studentsData || []).map((s: any) => s.matric_no).filter(Boolean);
+          let totalPts = 0;
+          let gradedCreds = 0;
+          let earnedCreds = 0;
 
-        // 2. Fetch uploaded documents queue for this advisor's advisees
-        let queueQuery = db
-          .from("uploaded_documents")
-          .select("*")
-          .order("uploaded_at", { ascending: false });
-        if (adviseeMatricNos.length > 0) {
-          queueQuery = queueQuery.in("matric_no", adviseeMatricNos);
-        }
-        const { data: queueData } = await queueQuery;
-        if (queueData) setAuditQueue(queueData);
-
-        // 3. Fetch academic records strictly for this advisor's advisees
-        let recordsQuery = db.from("academic_records").select("*");
-        if (adviseeMatricNos.length > 0) {
-          recordsQuery = recordsQuery.in("matric_no", adviseeMatricNos);
-        }
-        const { data: recordsData } = await recordsQuery;
-
-        if (studentsData) {
-          const liveRoster = studentsData.map((student: any) => {
-            const studentRecords = (recordsData || []).filter(
-              (r: any) => r.matric_no === student.matric_no
-            );
-
-            let totalPts = 0;
-            let gradedCreds = 0;
-            let earnedCreds = 0;
-
-            studentRecords.forEach((r: any) => {
-              const credits = Number(r.credits) || 3;
-              if (r.status === "Pass" || r.status === "Passed") {
-                earnedCreds += credits;
-                if (r.grade !== "HL" && r.grade !== "N/A" && r.grade_point !== null && r.grade_point !== undefined) {
-                  totalPts += Number(r.grade_point) * credits;
-                  gradedCreds += credits;
-                }
+          studentRecords.forEach((r: any) => {
+            const credits = Number(r.credits) || 3;
+            if (r.status === "Pass" || r.status === "Passed") {
+              earnedCreds += credits;
+              if (r.grade !== "HL" && r.grade !== "N/A" && r.grade_point !== null && r.grade_point !== undefined) {
+                totalPts += Number(r.grade_point) * credits;
+                gradedCreds += credits;
               }
-            });
-
-            const cgpa = gradedCreds > 0 ? totalPts / gradedCreds : Number(student.cgpa || 0);
-            const isAtRisk = cgpa < 2.5 && studentRecords.length > 0;
-            const status = isAtRisk ? "At-Risk" : (student.academic_status || "Good Standing");
-
-            return {
-              id: student.matric_no,
-              name: student.name || "Student",
-              matric_no: student.matric_no,
-              program: student.program || "Unassigned",
-              cgpa: cgpa,
-              credits: earnedCreds,
-              status: status,
-              academic_status: status,
-              rawRecords: studentRecords
-            };
+            }
           });
 
-          setRoster(liveRoster);
-        }
-      } catch (err) {
-        console.error("Database sync failed inside AdvisorPortal:", err);
-      } finally {
-        setIsLoading(false);
-      }
-    };
+          const cgpa = gradedCreds > 0 ? totalPts / gradedCreds : Number(student.cgpa || 0);
+          const isAtRisk = cgpa < 2.5 && studentRecords.length > 0;
+          const status = isAtRisk ? "At-Risk" : (student.academic_status || "Good Standing");
 
+          return {
+            id: student.matric_no,
+            name: student.name || "Student",
+            matric_no: student.matric_no,
+            program: student.program || "Unassigned",
+            cgpa: cgpa,
+            credits: earnedCreds,
+            status: status,
+            academic_status: status,
+            rawRecords: studentRecords
+          };
+        });
+
+        setRoster(liveRoster);
+      }
+    } catch (err) {
+      console.error("Database sync failed inside AdvisorPortal:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchAdvisorData();
   }, [advisorStaffId]);
 
@@ -145,7 +145,7 @@ export function AdvisorPortal() {
               )}
 
               {activeTab === "queue" && (
-                <CorrectionsQueue queue={auditQueue} roster={roster} />
+                <CorrectionsQueue queue={auditQueue} roster={roster} onApproved={fetchAdvisorData} />
               )}
             </>
           )}

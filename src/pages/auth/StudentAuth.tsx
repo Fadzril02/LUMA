@@ -186,6 +186,17 @@ export function StudentAuth() {
 
       if (result.error) throw result.error;
 
+      // SECURITY FIX #1: Hard-check the DB-resolved role returned by signInWithEmail.
+      // fetchUserProfile always resolves the REAL role from the advisors/students table.
+      // If an advisor's credentials are entered here, role will be 'advisor' — reject it.
+      if (result.role === 'advisor') {
+        // Force sign-out so the advisor session is not left active
+        await supabase.auth.signOut();
+        throw new Error(
+          "This account belongs to an Advisor. Please use the Advisor Portal to log in."
+        );
+      }
+
       setSuccessMessage("Authentication successful! Loading your dashboard...");
       setTimeout(() => {
         navigate("/student");

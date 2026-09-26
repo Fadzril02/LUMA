@@ -24,9 +24,27 @@ apiClient.interceptors.response.use(
   }
 );
 
-// Automatically attach Supabase JWT token to outgoing API requests
+// Automatically attach Supabase JWT token to outgoing API requests.
+// FIX #4: Use refreshSession() when the cached token is expired or near expiry
+// to prevent the "upload fails until relogin" symptom caused by stale access tokens.
 apiClient.interceptors.request.use(async (config) => {
-  const { data: { session } } = await supabase.auth.getSession();
+  let { data: { session } } = await supabase.auth.getSession();
+
+  if (session) {
+    // Check if the access token is expired or within 60 seconds of expiry
+    const expiresAt = session.expires_at ?? 0; // Unix timestamp (seconds)
+    const nowSec = Math.floor(Date.now() / 1000);
+    const isExpiredOrNearExpiry = expiresAt - nowSec < 60;
+
+    if (isExpiredOrNearExpiry) {
+      // Force a token refresh so we always send a valid JWT
+      const refreshResult = await supabase.auth.refreshSession();
+      if (refreshResult.data?.session) {
+        session = refreshResult.data.session;
+      }
+    }
+  }
+
   if (session?.access_token) {
     config.headers.Authorization = `Bearer ${session.access_token}`;
   }

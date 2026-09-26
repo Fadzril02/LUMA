@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
@@ -24,6 +24,9 @@ export function CohortSetup() {
   const navigate = useNavigate();
   const { advisor, user } = useAuth();
   const universityId = advisor?.university_id || '00000000-0000-0000-0000-000000000001';
+  // FIX #6: Use advisor.staff_id (the FK stored in cohorts.advisor_staff_id),
+  // NOT user.id (the auth UUID which is a different column).
+  const advisorStaffId = advisor?.staff_id || '';
 
   // Step state (1: Cohort Details, 2: Course CSV Upload, 3: Completed)
   const [currentStep, setCurrentStep] = useState<number>(1);
@@ -36,12 +39,32 @@ export function CohortSetup() {
   const [isCreatingCohort, setIsCreatingCohort] = useState<boolean>(false);
   const [copiedCode, setCopiedCode] = useState<boolean>(false);
 
+  // FIX #6: Degree template selection state
+  interface DegreeTemplate { id: string; program_code: string; program_name: string; syllabus_year?: string; }
+  const [degreeTemplates, setDegreeTemplates] = useState<DegreeTemplate[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
+
   // CSV state
   const [csvFile, setCSVFile] = useState<File | null>(null);
   const [isUploadingCSV, setIsUploadingCSV] = useState<boolean>(false);
   const [csvResult, setCsvResult] = useState<any | null>(null);
   const [csvError, setCsvError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // FIX #6: Fetch live degree templates on mount
+  useEffect(() => {
+    const loadTemplates = async () => {
+      const { data, error } = await supabase
+        .from('degree_templates')
+        .select('id, program_code, program_name, syllabus_year')
+        .order('program_code', { ascending: true });
+      if (!error && data && data.length > 0) {
+        setDegreeTemplates(data);
+        setSelectedTemplateId(data[0].id); // default to first option
+      }
+    };
+    loadTemplates();
+  }, []);
 
   // Generate 6-char random alphanumeric code
   const generateInviteCode = () => {
@@ -56,6 +79,11 @@ export function CohortSetup() {
   const handleCreateCohort = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!cohortName.trim()) return;
+    // FIX #6: Require a template selection before creating the cohort
+    if (!selectedTemplateId) {
+      alert('Please select a Degree Blueprint (template) before creating the cohort.');
+      return;
+    }
 
     setIsCreatingCohort(true);
     const code = generateInviteCode();
@@ -64,11 +92,16 @@ export function CohortSetup() {
       const { data, error } = await supabase
         .from('cohorts')
         .insert({
-          advisor_id: user?.id,
+          // FIX #6: advisor_staff_id must be the staff_id FK, NOT the auth user UUID.
+          // FIX #6: template_id is now the advisor-selected template, not missing.
+          advisor_staff_id: advisorStaffId,
           university_id: universityId,
+          cohort_name: cohortName.trim(),
           name: cohortName.trim(),
           invite_code: code,
+          cohort_code: code,
           curriculum_version: curriculumVersion,
+          template_id: selectedTemplateId,
           is_active: true,
         })
         .select()
@@ -195,6 +228,34 @@ export function CohortSetup() {
                   placeholder="2023/2024"
                   className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm text-slate-900"
                 />
+              </div>
+
+              {/* FIX #6: Live degree blueprint selector — fetched from degree_templates table */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+                  Degree Blueprint <span className="text-rose-500">*</span>
+                </label>
+                {degreeTemplates.length === 0 ? (
+                  <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    No degree templates found. Please upload a course syllabus CSV first, or contact your administrator.
+                  </p>
+                ) : (
+                  <select
+                    required
+                    value={selectedTemplateId}
+                    onChange={(e) => setSelectedTemplateId(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm text-slate-900 bg-white"
+                  >
+                    {degreeTemplates.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.program_name} ({t.program_code}) — {t.syllabus_year || 'N/A'}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Links this cohort to its degree requirements and prerequisite DAG rules.
+                </p>
               </div>
 
               <div className="pt-4 flex items-center justify-end">
