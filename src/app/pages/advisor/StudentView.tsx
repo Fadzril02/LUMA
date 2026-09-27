@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from "react";
-import { ArrowLeft, GraduationCap, Calendar, Clock, BookOpen, AlertCircle, Save, CheckSquare } from "lucide-react";
+import { ArrowLeft, GraduationCap, Calendar, CheckSquare, AlertCircle, Save } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, Badge, Button, Input } from "../../components/ui";
 import { db } from "../../../lib/supabase";
 import { useAuth } from "../../../context/AuthContext";
+import { CourseLedger, CourseLedgerRecord } from "../../../components/shared/CourseLedger";
 
 interface StudentViewProps {
   student: any;
@@ -17,7 +18,18 @@ export function StudentView({ student, onBack }: StudentViewProps) {
   const [pastLogs, setPastLogs] = useState<any[]>([]);
 
   // Extract real metrics safely passed downwards inside array parameters
-  const courseResults = student.rawResults || student.records || [];
+  const courseResults: CourseLedgerRecord[] = (student.rawResults || student.records || []).map((r: any) => ({
+    code: r.course_code || r.code || "",
+    name: r.course_name || r.name || "Unknown Module",
+    credits: Number(r.credits) || 0,
+    grade: r.grade || "N/A",
+    grade_point: Number(r.grade_point ?? r.pointValue) || undefined,
+    semester: r.semester || r.session_semester || r.semester_id || "—",
+    status: r.status || "N/A",
+    prerequisite_met: r.prerequisite_met,
+    missing_prerequisites: r.missing_prerequisites,
+    is_ai_parsed: r.is_ai_parsed,
+  }));
   const totalRequiredCredits =
     student.total_credits_required ||
     student.required_credits ||
@@ -135,40 +147,13 @@ export function StudentView({ student, onBack }: StudentViewProps) {
       {/* 🛠️ CORE COMPONENT DEEP GRID SYSTEM */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* Left Side: Full Academic History Ledger */}
-        <Card className="lg:col-span-2 border border-gray-200">
-          <CardHeader className="border-b border-gray-100 bg-gray-50/50">
-            <CardTitle className="text-base font-bold text-gray-800 flex items-center gap-2">
-              <BookOpen className="w-5 h-5 text-blue-900" /> Academic History Ledger
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-0 max-h-[400px] overflow-y-auto">
-            {courseResults.length === 0 ? (
-              <p className="p-8 text-center text-sm font-mono text-gray-400">
-                No individual course evaluation items attached to database records.
-              </p>
-            ) : (
-              <div className="divide-y divide-gray-100">
-                {courseResults.map((result: any, idx: number) => (
-                  <div key={idx} className="p-4 flex items-center justify-between hover:bg-gray-50/50 transition-colors">
-                    <div className="space-y-1">
-                      <p className="font-mono font-bold text-sm text-gray-900">{result.course_code || result.code}</p>
-                      <p className="text-xs text-gray-500 flex items-center gap-2">
-                        <span className="flex items-center"><Calendar className="w-3 h-3 mr-1" /> Sem {result.semester_id || result.semester || "N/A"}</span>
-                        <span className="flex items-center"><Clock className="w-3 h-3 mr-1" /> {result.credits || result.course?.credit_hour || 3} Credits</span>
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-lg font-black text-gray-900 font-mono bg-gray-100 px-2.5 py-1 rounded-md">
-                        {result.grade}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        {/* Left Side: Full Academic History Ledger — shared CourseLedger (advisor role) */}
+        <div className="lg:col-span-2 max-h-[500px] overflow-y-auto">
+          <CourseLedger
+            records={courseResults}
+            role="advisor"
+          />
+        </div>
 
         {/* Right Side: Proactive Advising Note Hub */}
         <Card className="flex flex-col h-full border border-gray-200">

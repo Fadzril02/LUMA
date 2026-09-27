@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
-import { CheckCircle2, ShieldAlert, Award, BookOpen, Layers, CheckCircle, Clock } from "lucide-react";
+import { CheckCircle2, ShieldAlert, Award, BookOpen, CheckCircle } from "lucide-react";
 import { db } from "../../../lib/supabase";
 import { useAuth } from "../../../context/AuthContext";
+import { CourseLedger, CourseLedgerRecord } from "../../../components/shared/CourseLedger";
 
 export interface DegreeAuditViewProps {
   cgpa?: number | string;
@@ -340,64 +341,11 @@ export function DegreeAuditView({
         </div>
       ) : null}
 
-      {/* Live Approved Courses Ledger with Clean Zero-State */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
-          <div className="flex items-center gap-2">
-            <Layers size={18} className="text-blue-900" />
-            <h3 className="text-sm font-bold text-gray-900">Approved Course Ledger</h3>
-          </div>
-          <span className="text-xs font-mono text-gray-500 font-medium">
-            {approvedCourses.length} Approved Modules
-          </span>
-        </div>
-
-        {approvedCourses.length === 0 ? (
-          /* Clean Zero-State Display */
-          <div className="p-12 text-center flex flex-col items-center justify-center">
-            <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center text-gray-400 mb-3">
-              <Clock size={24} />
-            </div>
-            <h4 className="text-sm font-bold text-gray-900">No Approved Courses Recorded</h4>
-            <p className="text-xs text-gray-500 max-w-sm mt-1 leading-relaxed">
-              Patient zero state: No official transcript slip has been approved yet. Upload your examination slip
-              to populate your live degree audit records.
-            </p>
-          </div>
-        ) : (
-          /* Live Course Table */
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-gray-50/60 text-gray-600 border-b border-gray-200">
-                <tr>
-                  <th className="px-6 py-3 font-semibold uppercase tracking-wider">Course Code</th>
-                  <th className="px-6 py-3 font-semibold uppercase tracking-wider">Course Title</th>
-                  <th className="px-6 py-3 font-semibold uppercase tracking-wider text-center">Credits</th>
-                  <th className="px-6 py-3 font-semibold uppercase tracking-wider text-center">Grade</th>
-                  <th className="px-6 py-3 font-semibold uppercase tracking-wider text-center">Semester</th>
-                  <th className="px-6 py-3 font-semibold uppercase tracking-wider text-right">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {approvedCourses.map((course, idx) => (
-                  <tr key={idx} className="hover:bg-gray-50/60 transition-colors">
-                    <td className="px-6 py-3.5 font-mono text-gray-800 font-bold">{course.code}</td>
-                    <td className="px-6 py-3.5 text-gray-900 font-medium">{course.name}</td>
-                    <td className="px-6 py-3.5 text-center font-mono text-gray-600">{course.credits}</td>
-                    <td className="px-6 py-3.5 text-center font-mono font-bold text-gray-900">{course.grade}</td>
-                    <td className="px-6 py-3.5 text-center font-mono text-gray-600">{course.semester}</td>
-                    <td className="px-6 py-3.5 text-right">
-                      <span className="inline-flex px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                        APPROVED
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      {/* Live Approved Courses Ledger — shared CourseLedger component (student role) */}
+      <CourseLedger
+        records={currentCourses as CourseLedgerRecord[]}
+        role="student"
+      />
     </div>
   );
 }

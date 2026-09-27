@@ -252,30 +252,17 @@ class SupabaseService:
         self._ensure_ready()
 
         try:
-            # 1. FIX #2: Scope the delete to the SPECIFIC semester(s) being submitted,
-            #    NEVER delete ALL records for the student.
+            # 1. TRUE UPSERT: No delete commands. Use upsert on (matric_no, course_code).
             #
-            #    BEFORE (bug): DELETE FROM academic_records WHERE matric_no = X
-            #      -> Wiped all semesters every time a new semester was approved.
+            #    BEFORE (bug): DELETE semester rows, then INSERT — wiped history if any
+            #                  conflict happened mid-batch.
             #
-            #    AFTER (fix): DELETE FROM academic_records WHERE matric_no = X AND semester IN (<semesters_in_this_batch>)
-            #      -> Only the semesters present in this approval batch are replaced.
-            #         Previously approved semesters remain untouched.
+            #    AFTER (fix): UPSERT on (matric_no, course_code) — idempotently updates
+            #                 existing rows and inserts new ones. ALL other semesters are
+            #                 untouched. The unique constraint must exist in Postgres:
+            #                 UNIQUE (matric_no, course_code)
             #
-            submitted_semesters = list({r.semester for r in records if r.semester})
-            if submitted_semesters:
-                try:
-                    # Delete only rows whose semester matches what's being (re-)submitted
-                    self.client.table("academic_records") \
-                        .delete() \
-                        .eq("matric_no", target_matric) \
-                        .in_("semester", submitted_semesters) \
-                        .execute()
-                except Exception as del_err:
-                    print(f"[persist_audit_results] Scoped semester delete warning: {del_err}")
-
-            # 2. Insert new academic records (bind matric_no directly)
-            records_to_insert = [
+            records_to_upsert = [
                 {
                     "matric_no": target_matric,
                     "course_code": r.course_code,
@@ -292,8 +279,11 @@ class SupabaseService:
                 }
                 for r in records
             ]
-            if records_to_insert:
-                self.client.table("academic_records").insert(records_to_insert).execute()
+            if records_to_upsert:
+                self.client.table("academic_records").upsert(
+                    records_to_upsert,
+                    on_conflict="matric_no,course_code"
+                ).execute()
 
             # 3. Update student CGPA & Credits
             update_data = {
