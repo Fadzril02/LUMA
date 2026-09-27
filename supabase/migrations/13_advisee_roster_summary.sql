@@ -79,7 +79,8 @@ SELECT
     COALESCE(la.failed_courses_count, r.failed_count, 0)::INT AS failed_courses_count,
     la.audit_summary,
     la.latest_audit_id,
-    la.last_audited_at
+    la.last_audited_at,
+    s.created_at
 FROM students s
 LEFT JOIN cohorts c ON s.cohort_id = c.id
 LEFT JOIN latest_audits la ON s.matric_no = la.matric_no

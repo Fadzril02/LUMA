@@ -578,46 +578,6 @@ export function LandingPage() {
           ) : authMode === "login" ? (
             /* ================= LOGIN FORM ================= */
             <form onSubmit={handleLogin} className="space-y-4">
-              {/* Role Toggle for Login */}
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-gray-700">
-                  Portal Role
-                </Label>
-                <div className="grid grid-cols-2 p-1 bg-gray-100 rounded-lg">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setLoginRole("student");
-                      resetFormFeedback();
-                    }}
-                    className={`h-9 px-3 text-xs rounded-md transition-all cursor-pointer flex items-center justify-center gap-2 ${
-                      loginRole === "student"
-                        ? "bg-white text-blue-900 font-semibold shadow-sm"
-                        : "text-gray-600 hover:text-gray-900 font-medium"
-                    }`}
-                  >
-                    <GraduationCap className="w-4 h-4" />
-                    <span>Student</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setLoginRole("advisor");
-                      resetFormFeedback();
-                    }}
-                    className={`h-9 px-3 text-xs rounded-md transition-all cursor-pointer flex items-center justify-center gap-2 ${
-                      loginRole === "advisor"
-                        ? "bg-white text-blue-900 font-semibold shadow-sm"
-                        : "text-gray-600 hover:text-gray-900 font-medium"
-                    }`}
-                  >
-                    <Users className="w-4 h-4" />
-                    <span>Advisor</span>
-                  </button>
-                </div>
-              </div>
-
               {(errorMessage || authError) && (
                 <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-xs font-medium flex items-start gap-2">
                   <AlertCircle className="w-4 h-4 shrink-0 text-red-600 mt-0.5" />
@@ -627,14 +587,14 @@ export function LandingPage() {
 
               <div className="space-y-1.5">
                 <Label htmlFor="loginEmail" className="text-xs font-semibold text-gray-700">
-                  {loginRole === "student" ? "Institutional Email" : "Institutional Email"}
+                  Institutional Email or Matric Number
                 </Label>
                 <Input
                   id="loginEmail"
                   type="text"
                   value={loginEmail}
                   onChange={(e) => setLoginEmail(e.target.value)}
-                  placeholder={loginRole === "student" ? "e.g. student@university.edu.my" : "e.g. advisor@university.edu"}
+                  placeholder="e.g. student@university.edu.my or ID"
                   required
                   className="bg-gray-50 border-gray-200 focus:ring-2 focus:ring-blue-900 focus:border-transparent text-gray-900 h-10 text-sm"
                 />

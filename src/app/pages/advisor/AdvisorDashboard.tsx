@@ -237,7 +237,11 @@ export function AdvisorDashboard() {
             records: s.records || []
           }));
           setRoster(formatted);
-          setRecentEnrollments(formatted as RecentEnrollment[]);
+          
+          const sevenDaysAgo = new Date();
+          sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+          const recent = formatted.filter(s => s.created_at && new Date(s.created_at) >= sevenDaysAgo);
+          setRecentEnrollments(recent as RecentEnrollment[]);
         } else {
           setRoster([]);
           setRecentEnrollments([]);
@@ -1156,10 +1160,9 @@ export function AdvisorDashboard() {
               <tbody className="divide-y divide-gray-100">
                 {recentEnrollments.map((enrollment) => {
                   const registeredAt = enrollment.created_at
-                    ? new Date(enrollment.created_at).toLocaleString('en-MY', {
-                        dateStyle: 'medium',
-                        timeStyle: 'short',
-                      })
+                    ? `Joined: ${new Date(enrollment.created_at).toLocaleDateString('en-MY', {
+                        dateStyle: 'medium'
+                      })}`
                     : '—';
                   const isBeingRevoked = isRevoking === enrollment.matric_no;
 

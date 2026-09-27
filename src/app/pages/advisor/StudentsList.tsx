@@ -88,7 +88,7 @@ export function StudentsList() {
       student.matric_no?.toLowerCase().includes(searchTerm.toLowerCase());
     
     // Map database academic_status to your UI filters
-    const isAtRisk = ["At-Risk", "Probation"].includes(student.academic_status);
+    const isAtRisk = ["At-Risk", "Probation"].includes(student.academic_status) || Number(student.cgpa || 0) < 2.50;
     
     const matchesStatus = 
       statusFilter === "All" ? true :
@@ -96,7 +96,14 @@ export function StudentsList() {
       !isAtRisk; // "Safe" means they aren't At-Risk or Probation
     
     return matchesSearch && matchesStatus;
+  }).sort((a, b) => {
+    // Sort RED -> YELLOW -> GREEN
+    const aRisk = ["At-Risk", "Probation"].includes(a.academic_status) || Number(a.cgpa || 0) < 2.0 ? 3 : Number(a.cgpa || 0) < 2.50 ? 2 : 1;
+    const bRisk = ["At-Risk", "Probation"].includes(b.academic_status) || Number(b.cgpa || 0) < 2.0 ? 3 : Number(b.cgpa || 0) < 2.50 ? 2 : 1;
+    return bRisk - aRisk;
   });
+
+  const atRiskCount = roster.filter((student) => ["At-Risk", "Probation"].includes(student.academic_status) || Number(student.cgpa || 0) < 2.50).length;
 
   // 🔄 ROUTER: If a student is clicked, show their specific profile instead of the list
   if (selectedStudent) {
@@ -125,8 +132,15 @@ export function StudentsList() {
       {/* HEADER & SEARCH CONTROLS */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-bold text-gray-900">Advisee Roster</h2>
-          <p className="text-sm text-gray-500">Manage and monitor student academic health.</p>
+          <div className="flex items-center gap-3">
+            <h2 className="text-xl font-bold text-gray-900">Advisee Roster</h2>
+            {atRiskCount > 0 && (
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                {atRiskCount} At-Risk
+              </span>
+            )}
+          </div>
+          <p className="text-sm text-gray-500 mt-1">Manage and monitor student academic health.</p>
         </div>
         
         <div className="flex items-center space-x-3">

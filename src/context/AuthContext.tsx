@@ -115,52 +115,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const email = (currentUser.email || '').toLowerCase();
       
-      // Check if user is a Student (via user metadata role)
-      if (currentUser.user_metadata?.role === 'student') {
-        // Query students strictly WHERE user_id = auth.uid()
-        const { data, error: uidErr } = await supabase
-          .from('students')
-          .select('*')
-          .eq('user_id', currentUser.id)
-          .maybeSingle();
+      // 1. Check if user is a Student
+      const { data: studentData, error: uidErr } = await supabase
+        .from('students')
+        .select('*')
+        .eq('user_id', currentUser.id)
+        .maybeSingle();
 
-        if (uidErr) {
-          console.warn('[AuthContext] Student lookup error:', uidErr.message);
-        }
+      if (uidErr) {
+        console.warn('[AuthContext] Student lookup error:', uidErr.message);
+      }
 
-        // STEP 2 FIX: Hard failure if no linked student row exists.
-        // NEVER construct a fake profile from user_metadata.
-        if (!data) {
-          if (isRegistering.current) {
-            console.log("[AuthContext] Registration in progress, bypassing ghost check.");
-            return { success: true }; 
-          }
-          console.warn(`[AuthContext] BLOCKED GHOST STUDENT: user_id=${currentUser.id} has NO linked row in students table.`);
-          await supabase.auth.signOut();
-          setUser(null);
-          setSession(null);
-          setProfile(null);
-          const blockError = new Error(
-            'Access denied: Your student account is not initialized in the university database. Please contact your academic advisor.'
-          );
-          setAuthError(blockError.message);
-          return { success: false, error: blockError };
-        }
-
+      if (studentData) {
         // Construct profile exclusively from database columns
         const studentProfile: StudentProfile = {
           role: 'student',
-          matric_no: data.matric_no,
-          full_name: data.name,
-          email: data.institutional_email,
-          advisor_staff_id: data.advisor_staff_id,
-          program: data.program,
-          curriculum_year: data.syllabus_type,
-          academic_status: data.academic_status,
-          current_semester: data.current_semester,
-          name: data.name,
-          program_code: data.program,
-          syllabus_type: data.syllabus_type,
+          matric_no: studentData.matric_no,
+          full_name: studentData.name,
+          email: studentData.institutional_email,
+          advisor_staff_id: studentData.advisor_staff_id,
+          program: studentData.program,
+          curriculum_year: studentData.syllabus_type,
+          academic_status: studentData.academic_status,
+          current_semester: studentData.current_semester,
+          name: studentData.name,
+          program_code: studentData.program,
+          syllabus_type: studentData.syllabus_type,
         };
 
         setProfile(studentProfile);
@@ -168,7 +148,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { success: true, profile: studentProfile };
       }
 
-      // Check if user is an Advisor
+      // 2. Check if user is an Advisor
       const { data: advisorData, error: advErr } = await supabase
         .from('advisors')
         .select('*')
@@ -194,6 +174,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setProfile(advisorProfile);
         setAuthError(null);
         return { success: true, profile: advisorProfile };
+      }
+
+      // 3. Handle ghost check for ongoing registration
+      if (isRegistering.current) {
+        console.log("[AuthContext] Registration in progress, bypassing ghost check.");
+        return { success: true }; 
       }
 
       // If neither student nor advisor found in database, reject session
