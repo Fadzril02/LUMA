@@ -252,18 +252,23 @@ class SupabaseService:
         self._ensure_ready()
 
         try:
-            # 1. TRUE UPSERT: No delete commands. Use upsert on (matric_no, course_code).
+            # 1. TRUE UPSERT: No delete commands. Use upsert on (tenant_id, matric_no, course_code).
             #
             #    BEFORE (bug): DELETE semester rows, then INSERT — wiped history if any
             #                  conflict happened mid-batch.
             #
-            #    AFTER (fix): UPSERT on (matric_no, course_code) — idempotently updates
-            #                 existing rows and inserts new ones. ALL other semesters are
-            #                 untouched. The unique constraint must exist in Postgres:
-            #                 UNIQUE (matric_no, course_code)
+            #    AFTER (fix): UPSERT on (tenant_id, matric_no, course_code) — idempotently
+            #                 updates existing rows and inserts new ones. ALL other semesters
+            #                 for this student/tenant are untouched.
             #
+            #    MULTI-TENANT: tenant_id is hardcoded to "UTM" for this iteration.
+            #                  The unique constraint in Postgres must be:
+            #                  UNIQUE (tenant_id, matric_no, course_code)
+            #
+            TENANT_ID = "UTM"
             records_to_upsert = [
                 {
+                    "tenant_id": TENANT_ID,
                     "matric_no": target_matric,
                     "course_code": r.course_code,
                     "course_name": r.course_name,
@@ -282,7 +287,7 @@ class SupabaseService:
             if records_to_upsert:
                 self.client.table("academic_records").upsert(
                     records_to_upsert,
-                    on_conflict="matric_no,course_code"
+                    on_conflict="tenant_id,matric_no,course_code"
                 ).execute()
 
             # 3. Update student CGPA & Credits

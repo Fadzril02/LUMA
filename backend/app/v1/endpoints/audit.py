@@ -66,7 +66,17 @@ def fetch_and_merge_historical_records(matric_no: str, new_records: List[ParsedL
         return new_records
     try:
         new_semesters = {r.semester for r in new_records if r.semester}
-        res = supabase_svc.client.table("academic_records").select("*").eq("matric_no", matric_no).execute()
+        # MULTI-TENANT: scope fetch to (tenant_id="UTM", matric_no) so we never
+        # cross tenant boundaries when pulling the cumulative history.
+        TENANT_ID = "UTM"
+        res = (
+            supabase_svc.client
+            .table("academic_records")
+            .select("*")
+            .eq("tenant_id", TENANT_ID)
+            .eq("matric_no", matric_no)
+            .execute()
+        )
         existing = res.data or []
         
         merged = []
