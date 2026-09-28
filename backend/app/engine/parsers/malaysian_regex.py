@@ -15,7 +15,7 @@ COURSE_PATTERN = re.compile(
     r'(?P<code>[A-Z]{2,6}\s*[-]?\s*[0-9]{3,5}[A-Z]?)\s+'
     r'(?P<name>[\w\s\(\)\/\-\,\&]+?)\s+'
     r'(?P<credit>[1-9])\s+'
-    r'(?P<grade>[A-D][\+\-]?|[EF]|HL|PC|EX|TD|TS|TL)(?:\s+(?P<gp>[0-4]\.[0-9]{2}))?(?:\s+|$)',
+    r'(?P<grade>[A-D][\+\-]?|[EF]|HL|PC|EX|P|LUS|TD|TS|TL)(?:\s+(?P<gp>[0-4]\.[0-9]{2}))?(?:\s+|$)',
     re.IGNORECASE
 )
 
@@ -24,13 +24,13 @@ COURSE_PATTERN_ALT = re.compile(
     r'(?P<code>[A-Z]{2,6}\s*[-]?\s*[0-9]{3,5}[A-Z]?)\s+'
     r'(?P<name>.+?)\s+'
     r'(?P<credit>[1-9])\s+'
-    r'(?P<grade>[A-D][\+\-]?|[EF]|HL|PC|EX|TD|TS|TL)(?:\s+(?P<gp>[0-4]\.[0-9]{2}))?(?:\s+|$)',
+    r'(?P<grade>[A-D][\+\-]?|[EF]|HL|PC|EX|P|LUS|TD|TS|TL)(?:\s+(?P<gp>[0-4]\.[0-9]{2}))?(?:\s+|$)',
     re.IGNORECASE
 )
 
 # Individual Token Patterns for Multi-Line / Tabular Block Parsing
 CODE_TOKEN_PATTERN = re.compile(r'^[A-Z]{2,6}\s*[-]?\s*[0-9]{3,5}[A-Z]?$', re.IGNORECASE)
-GRADE_TOKEN_PATTERN = re.compile(r'^(?:A\+|A|A\-|B\+|B|B\-|C\+|C|C\-|D\+|D|E|HL|PC|EX|TD|TS|TL)$', re.IGNORECASE)
+GRADE_TOKEN_PATTERN = re.compile(r'^(?:A\+|A|A\-|B\+|B|B\-|C\+|C|C\-|D\+|D|E|HL|PC|EX|P|LUS|TD|TS|TL)$', re.IGNORECASE)
 CREDIT_TOKEN_PATTERN = re.compile(r'^[1-9]$')
 GP_TOKEN_PATTERN = re.compile(r'^[0-4]\.[0-9]{2}$')
 
@@ -61,16 +61,18 @@ GRADE_POINTS = {
     "B+": 3.33, "B": 3.00, "B-": 2.67,
     "C+": 2.33, "C": 2.00, "C-": 1.67,
     "D+": 1.33, "D": 1.00, "E": 0.00,
-    "HL": 0.00,  # Lulus (Pass - Neutral)
+    "HL": 0.00,  # Hadir Lulus (Pass - Neutral)
     "PC": 0.00,  # Pengecualian Kursus (Credit Exemption - Neutral)
     "EX": 0.00,  # Exemption (Neutral)
+    "P": 0.00,   # Pass (Neutral)
+    "LUS": 0.00, # Lulus (Neutral)
     "TD": 0.00,  # Tarik Diri (Withdrawn)
     "TS": 0.00,  # Tidak Selesai (Incomplete)
     "TL": 0.00,  # Tidak Lulus (Fail)
 }
 
-PASSING_GRADES = {"A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D+", "D", "HL", "PC", "EX"}
-NEUTRAL_PASSING_GRADES = {"HL", "PC", "EX"}
+PASSING_GRADES = {"A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D+", "D", "HL", "PC", "EX", "P", "LUS"}
+NEUTRAL_PASSING_GRADES = {"HL", "PC", "EX", "P", "LUS"}
 
 
 class MalaysianTranscriptParser:
@@ -156,7 +158,7 @@ class MalaysianTranscriptParser:
                 grade = single_match.group("grade").upper()
                 gp = GRADE_POINTS.get(grade, 0.00)
 
-                status = "Exempted" if grade == "HL" else ("Passed" if grade in PASSING_GRADES else ("In-Progress" if grade in {"TD", "TS"} else "Failed"))
+                status = "Exempted" if grade in NEUTRAL_PASSING_GRADES else ("Passed" if grade in PASSING_GRADES else ("In-Progress" if grade in {"TD", "TS"} else "Failed"))
                 parsed_courses.append(ParsedLineItem(
                     course_code=raw_code,
                     course_name=name,
@@ -213,7 +215,7 @@ class MalaysianTranscriptParser:
                 if block_grade:
                     final_credits = block_credits or 3
                     final_gp = block_gp if block_gp is not None else GRADE_POINTS.get(block_grade, 0.00)
-                    status = "Exempted" if block_grade == "HL" else ("Passed" if block_grade in PASSING_GRADES else ("In-Progress" if block_grade in {"TD", "TS"} else "Failed"))
+                    status = "Exempted" if block_grade in NEUTRAL_PASSING_GRADES else ("Passed" if block_grade in PASSING_GRADES else ("In-Progress" if block_grade in {"TD", "TS"} else "Failed"))
                     
                     parsed_courses.append(ParsedLineItem(
                         course_code=code_val,

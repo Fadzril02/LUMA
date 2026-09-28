@@ -207,7 +207,7 @@ export function StudentView({ student, onBack }: StudentViewProps) {
       cellClassName: "text-center font-mono text-gray-600 whitespace-nowrap",
       render: (c) => {
         const gradeStr = String(c.grade || "");
-        const isNeutral = ["HL", "PC", "EX"].includes(gradeStr.toUpperCase());
+        const isNeutral = ["HL", "PC", "EX", "P", "LUS"].includes(gradeStr.toUpperCase());
         if (isNeutral) return <span className="text-blue-600 font-semibold">—</span>;
         const gp = Number(c.grade_point);
         const hasGp = c.grade_point !== undefined && c.grade_point !== null && !isNaN(gp);
@@ -266,11 +266,18 @@ export function StudentView({ student, onBack }: StudentViewProps) {
         const gradeStr = String(c.grade || "").toUpperCase();
         const statusStr = String(c.status || "");
         const isHL = gradeStr === "HL";
-        const isPC = gradeStr === "PC" || gradeStr === "EX";
-        const isPassed = ["Passed", "Pass", "Pass/Approved", "Approved"].includes(statusStr);
-        const isExempted = statusStr === "Exempted" || isHL || isPC;
-        const isFailed = ["Failed", "Fail"].includes(statusStr) || gradeStr === "E" || gradeStr === "TL";
+        const isPC = ["PC", "EX", "P", "LUS"].includes(gradeStr);
+        const isExempted = statusStr === "Exempted" || isPC;
+        const isPassed = ["Passed", "Pass", "Pass/Approved", "Approved"].includes(statusStr) || isHL;
+        const isFailed = !isHL && !isExempted && (["Failed", "Fail"].includes(statusStr) || gradeStr === "E" || gradeStr === "TL");
 
+        if (isHL) {
+          return (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+              PASSED (HL)
+            </span>
+          );
+        }
         if (isExempted) {
           return (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200">

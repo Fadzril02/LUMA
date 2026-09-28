@@ -237,9 +237,17 @@ export function DegreeAuditView({
       headerClassName: "text-right whitespace-nowrap",
       cellClassName: "text-right whitespace-nowrap",
       render: (c) => {
-        const isHL = c.grade?.toUpperCase() === "HL";
-        const isPC = c.grade?.toUpperCase() === "PC" || c.grade?.toUpperCase() === "EX";
-        const isExempted = c.status === "Exempted" || isHL || isPC;
+        const gradeStr = String(c.grade || "").toUpperCase();
+        const isHL = gradeStr === "HL";
+        const isPC = ["PC", "EX", "P", "LUS"].includes(gradeStr);
+        const isExempted = c.status === "Exempted" || isPC;
+        if (isHL) {
+          return (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+              ✓ PASSED (HL)
+            </span>
+          );
+        }
         if (isExempted) {
           return (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200">

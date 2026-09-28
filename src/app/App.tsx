@@ -33,8 +33,18 @@ function RoleRoute({
 
 export default function App() {
   const { user, role, isLoading } = useAuth();
+  const [forceRender, setForceRender] = React.useState(false);
 
-  if (isLoading) return <LoadingScreen />;
+  React.useEffect(() => {
+    // Failsafe timeout (2.5 seconds): if initialization exceeds 2.5s on a new tab,
+    // force the app to render using the existing localStorage session rather than hanging.
+    const timer = setTimeout(() => {
+      setForceRender(true);
+    }, 2500);
+    return () => clearTimeout(timer);
+  }, []);
+
+  if (isLoading && !forceRender) return <LoadingScreen />;
 
   return (
     <>

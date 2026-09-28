@@ -104,6 +104,12 @@ export function AdvisorPortal() {
 
   useEffect(() => {
     fetchAdvisorData();
+
+    // Safety timer (2.5 seconds): unconditionally flips page-level loading state to false
+    const timer = setTimeout(() => {
+      setIsLoading(false);
+    }, 2500);
+    return () => clearTimeout(timer);
   }, [advisorStaffId]);
 
   const atRiskCount = roster.filter(s => s.status === "At-Risk" || s.academic_status === "At-Risk").length;

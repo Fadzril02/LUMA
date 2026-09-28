@@ -224,50 +224,90 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { success: true }; 
       }
 
-      // If neither student nor advisor found in database or metadata, reject session
-      console.warn(`[AuthContext] BLOCKED UNRECOGNIZED USER: user_id=${currentUser.id}`);
-      await supabase.auth.signOut();
-      setUser(null);
-      setSession(null);
-      setProfile(null);
-      const unrecError = new Error('Access denied: Account not recognized.');
-      setAuthError(unrecError.message);
-      return { success: false, error: unrecError };
+      // 5. Fallback profile if neither database record nor explicit role matched:
+      // DO NOT call supabase.auth.signOut(). Retain user and session from localStorage.
+      console.warn(`[AuthContext] Unassigned database record for user_id=${currentUser.id}; constructing fallback profile.`);
+      const isAdvisor = 
+        metaRole === 'advisor' ||
+        email.includes('advisor') ||
+        email.includes('staff') ||
+        (email.endsWith('@utm.my') && !email.endsWith('@graduate.utm.my'));
 
-    } catch (err: any) {
-      console.error('[AuthContext] fetchUserProfile exception during profile lookup:', err);
-      // Graceful fallback on network glitch or timeout: retain session if metadata role exists
-      const userMeta = currentUser.user_metadata || {};
-      const appMeta = currentUser.app_metadata || {};
-      const metaRole = (userMeta.role || appMeta.role) as UserRole;
-      if (metaRole) {
-        const fallbackProfile: Profile = metaRole === 'student' ? {
+      if (isAdvisor) {
+        const fallbackAdvisor: AdvisorProfile = {
+          role: 'advisor',
+          staff_id: userMeta.staff_id || 'ADV-001',
+          full_name: userMeta.full_name || email.split('@')[0],
+          email: currentUser.email || '',
+          department: userMeta.department || 'Academic Advisory',
+          university_id: userMeta.university_id || '00000000-0000-0000-0000-000000000001',
+          tier: 'freemium',
+          monthly_audit_count: 0,
+          name: userMeta.full_name || email.split('@')[0],
+        };
+        setProfile(fallbackAdvisor);
+        setAuthError(null);
+        return { success: true, profile: fallbackAdvisor };
+      } else {
+        const fallbackStudent: StudentProfile = {
           role: 'student',
-          matric_no: userMeta.matric_no || extractMatricFromEmail(currentUser.email || ''),
-          full_name: userMeta.full_name || (currentUser.email || '').split('@')[0],
+          matric_no: userMeta.matric_no || extractMatricFromEmail(email),
+          full_name: userMeta.full_name || email.split('@')[0],
           email: currentUser.email,
           advisor_staff_id: userMeta.advisor_staff_id || '',
           program: userMeta.program || 'General',
           curriculum_year: userMeta.syllabus_type || '2024/2025',
           academic_status: 'Good Standing',
           current_semester: '1',
-          name: userMeta.full_name || (currentUser.email || '').split('@')[0],
+          name: userMeta.full_name || email.split('@')[0],
           program_code: userMeta.program || 'General',
           syllabus_type: userMeta.syllabus_type || '2024/2025',
-        } : {
-          role: 'advisor',
-          staff_id: userMeta.staff_id || 'ADV-001',
-          full_name: userMeta.full_name || (currentUser.email || '').split('@')[0],
-          email: currentUser.email || '',
-          department: userMeta.department || 'Academic Advisory',
-          tier: 'freemium',
-          monthly_audit_count: 0,
-          name: userMeta.full_name || (currentUser.email || '').split('@')[0],
         };
-        setProfile(fallbackProfile);
-        return { success: true, profile: fallbackProfile };
+        setProfile(fallbackStudent);
+        setAuthError(null);
+        return { success: true, profile: fallbackStudent };
       }
-      return { success: false, error: err };
+
+    } catch (err: any) {
+      console.warn('[AuthContext] fetchUserProfile exception during profile lookup, falling back gracefully:', err);
+      // Retain user and session from localStorage — NEVER call signOut()
+      const userMeta = currentUser.user_metadata || {};
+      const appMeta = currentUser.app_metadata || {};
+      const metaRole = (userMeta.role || appMeta.role) as UserRole;
+      const email = (currentUser.email || '').toLowerCase();
+      const isAdvisor = 
+        metaRole === 'advisor' ||
+        email.includes('advisor') ||
+        email.includes('staff') ||
+        (email.endsWith('@utm.my') && !email.endsWith('@graduate.utm.my'));
+
+      const fallbackProfile: Profile = isAdvisor ? {
+        role: 'advisor',
+        staff_id: userMeta.staff_id || 'ADV-001',
+        full_name: userMeta.full_name || (currentUser.email || '').split('@')[0],
+        email: currentUser.email || '',
+        department: userMeta.department || 'Academic Advisory',
+        tier: 'freemium',
+        monthly_audit_count: 0,
+        name: userMeta.full_name || (currentUser.email || '').split('@')[0],
+      } : {
+        role: 'student',
+        matric_no: userMeta.matric_no || extractMatricFromEmail(email),
+        full_name: userMeta.full_name || (currentUser.email || '').split('@')[0],
+        email: currentUser.email,
+        advisor_staff_id: userMeta.advisor_staff_id || '',
+        program: userMeta.program || 'General',
+        curriculum_year: userMeta.syllabus_type || '2024/2025',
+        academic_status: 'Good Standing',
+        current_semester: '1',
+        name: userMeta.full_name || (currentUser.email || '').split('@')[0],
+        program_code: userMeta.program || 'General',
+        syllabus_type: userMeta.syllabus_type || '2024/2025',
+      };
+
+      setProfile(fallbackProfile);
+      setAuthError(null);
+      return { success: true, profile: fallbackProfile };
     }
   };
 
@@ -386,19 +426,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     );
 
-    // 3. Fallback Safety Timeout: Force loading to false if unresolved within 3 seconds
+    // 3. Fallback Safety Timeout: Force loading to false if unresolved within 2.5 seconds
     const safetyTimeout = setTimeout(() => {
       if (isMounted) {
         setIsLoading((currentLoading) => {
           if (currentLoading) {
-            console.warn('[AuthContext] 3-second safety timeout triggered: forced loading to false');
+            console.warn('[AuthContext] 2.5-second safety timeout triggered: forced loading to false');
             return false;
           }
           return false;
         });
         setIsInitializing(false);
       }
-    }, 3000);
+    }, 2500);
 
     return () => {
       isMounted = false;
@@ -550,11 +590,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         },
       ]);
 
-      // 6. If INSERT fails (duplicate matric, constraint violation),
-      // signOut immediately so the user is never left in an unlinked ghost state
+      // 6. If INSERT fails (duplicate matric, constraint violation), return error without signing out
       if (insertError) {
         console.error('[signUpStudent] Student record INSERT failed:', insertError.message);
-        await supabase.auth.signOut();
         return {
           error: new Error(
             insertError.message.includes('duplicate') || insertError.message.includes('unique')
@@ -564,19 +602,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         };
       }
 
-      // 7. Explicitly sign out to decouple registration from auto-login
-      await supabase.auth.signOut();
-      setUser(null);
-      setSession(null);
-      setProfile(null);
+      // 7. Retain session if active and populate profile
+      if (authData.user) {
+        setUser(authData.user);
+        setSession(authData.session);
+        await fetchUserProfile(authData.user);
+      }
       return { error: null };
     } catch (err: any) {
       console.error('[signUpStudent] Unexpected registration failure:', err);
-      try {
-        await supabase.auth.signOut();
-      } catch (signOutErr) {
-        console.error('[signUpStudent] Cleanup signOut failed:', signOutErr);
-      }
       return {
         error: err instanceof Error ? err : new Error(err?.message || 'Unexpected sign-up failure.'),
       };
@@ -624,8 +658,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (dbError) {
         console.error('[signUpAdvisor] DB upsert failed:', dbError.message);
-        // Auth user was created but DB row failed — sign out to avoid orphan session
-        await supabase.auth.signOut();
         return {
           error: new Error(
             `Account created but profile could not be saved: ${dbError.message}. ` +
@@ -634,19 +666,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         };
       }
 
-      // Explicitly sign out to decouple registration from auto-login
-      await supabase.auth.signOut();
-      setUser(null);
-      setSession(null);
-      setProfile(null);
+      // Retain session if active and populate profile
+      if (authData.user) {
+        setUser(authData.user);
+        setSession(authData.session);
+        await fetchUserProfile(authData.user);
+      }
       return { error: null };
     } catch (err: any) {
       console.error('[signUpAdvisor] Unexpected registration failure:', err);
-      try {
-        await supabase.auth.signOut();
-      } catch (signOutErr) {
-        console.error('[signUpAdvisor] Cleanup signOut failed:', signOutErr);
-      }
       return {
         error: err instanceof Error ? err : new Error(err?.message || 'Unexpected advisor sign-up failure.'),
       };

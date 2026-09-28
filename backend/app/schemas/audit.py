@@ -182,3 +182,17 @@ class PurgeDocumentResponse(BaseModel):
     purged_file_path: Optional[str] = None
     storage_deleted: bool = False
     processing_status: str
+
+
+class RejectDocumentRequest(BaseModel):
+    document_id: str = Field(..., description="UUID of target uploaded document to reject")
+    rejection_reason: Optional[str] = Field("Document rejected by advisor", description="Reason for document rejection")
+    advisor_id: Optional[str] = Field(None, description="Advisor staff ID")
+
+
+class RejectDocumentResponse(BaseModel):
+    success: bool
+    document_id: str
+    processing_status: str = "Rejected"
+    message: str
+

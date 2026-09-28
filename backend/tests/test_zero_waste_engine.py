@@ -234,3 +234,54 @@ def test_dynamic_credits_in_graph_resolver():
     assert summary.total_credits_required == 128
     assert summary.total_credits_earned == 3
 
+
+def test_hadir_lulus_and_neutral_passing_grades():
+    """
+    Verifies that 'HL', 'PC', 'EX', 'P', 'LUS' are all treated as passing/satisfied,
+    never treated as failed, and satisfy prerequisites without requiring grade_point >= 2.0.
+    """
+    try:
+        from app.engine.parsers.malaysian_regex import MalaysianTranscriptParser, PASSING_GRADES, NEUTRAL_PASSING_GRADES
+        from app.engine.graph_resolver import PrerequisiteGraphResolver
+        from app.schemas.audit import ParsedLineItem
+    except ImportError:
+        from backend.app.engine.parsers.malaysian_regex import MalaysianTranscriptParser, PASSING_GRADES, NEUTRAL_PASSING_GRADES
+        from backend.app.engine.graph_resolver import PrerequisiteGraphResolver
+        from backend.app.schemas.audit import ParsedLineItem
+
+    # 1. Verify set memberships
+    for grade in ["HL", "PC", "EX", "P", "LUS"]:
+        assert grade in PASSING_GRADES
+        assert grade in NEUTRAL_PASSING_GRADES
+
+    # 2. Parse transcript lines with HL, PC, EX, P, LUS
+    lines = [
+        "SEMESTER 1 SESSION 2024/2025",
+        "SECJ1013 PROGRAMMING TECHNIQUE I 3 HL 0.00",
+        "SECP1513 DISCRETE STRUCTURE 3 PC 0.00",
+        "UHMS1182 ETHICS 2 EX 0.00",
+        "UKQT3001 CO-CURRICULUM 1 P 0.00",
+        "ULAB1122 ENGLISH 2 LUS 0.00"
+    ]
+    _, courses, unparsed = MalaysianTranscriptParser.parse_transcript_lines(lines)
+    assert len(courses) == 5
+    for c in courses:
+        assert c.status in ["Passed", "Exempted"]
+        assert c.status != "Failed"
+
+    # 3. Test that HL satisfies prerequisite with min_grade='C' (GP 2.00) even with GP=0.0
+    catalog = {
+        "SECJ1013": {"prerequisites": {"type": "AND", "courses": []}},
+        "SECJ1023": {"prerequisites": {"type": "AND", "courses": ["SECJ1013"], "min_grade": "C"}}
+    }
+    records = [
+        ParsedLineItem(course_code="SECJ1013", course_name="Prog I", credits=3, grade="HL", grade_point=0.00, semester="Sem 1", status="Exempted"),
+        ParsedLineItem(course_code="SECJ1023", course_name="Prog II", credits=3, grade="A", grade_point=4.00, semester="Sem 2", status="Passed")
+    ]
+    results, summary = PrerequisiteGraphResolver.audit_student_records(records, catalog)
+    secj1023 = [r for r in results if r.course_code == "SECJ1023"][0]
+    assert secj1023.prerequisite_met is True
+    assert secj1023.traffic_light == "GREEN"
+    assert summary.total_credits_earned == 6
+
+

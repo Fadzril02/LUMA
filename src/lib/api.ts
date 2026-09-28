@@ -145,5 +145,14 @@ export const api = {
     const res = await apiClient.post('/api/v1/audit/process-storage', payload);
     return res.data;
   },
+
+  // Reject uploaded document via service-role backend endpoint
+  rejectDocument: async (documentId: string, rejectionReason?: string) => {
+    const res = await apiClient.post('/api/v1/audit/reject-document', {
+      document_id: documentId,
+      rejection_reason: rejectionReason || "Document rejected by advisor",
+    });
+    return res.data;
+  },
 };
 

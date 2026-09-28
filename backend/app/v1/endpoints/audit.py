@@ -21,7 +21,9 @@ try:
         FinalizeApprovalResponse,
         ExtractPDFRequest,
         ExtractPDFResponse,
-        ParsedLineItem
+        ParsedLineItem,
+        RejectDocumentRequest,
+        RejectDocumentResponse
     )
     from app.engine.extractor import PDFExtractor
     from app.engine.parsers.malaysian_regex import (
@@ -48,7 +50,9 @@ except ImportError:
         FinalizeApprovalResponse,
         ExtractPDFRequest,
         ExtractPDFResponse,
-        ParsedLineItem
+        ParsedLineItem,
+        RejectDocumentRequest,
+        RejectDocumentResponse
     )
     from backend.app.engine.extractor import PDFExtractor
     from backend.app.engine.parsers.malaysian_regex import (
@@ -694,3 +698,47 @@ async def purge_document(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Purge operation failed: {str(e)}"
         )
+
+
+@router.post(
+    "/reject-document",
+    response_model=RejectDocumentResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Reject uploaded document with service-role privileges"
+)
+async def reject_document(
+    request: RejectDocumentRequest,
+    jwt_payload: dict = Depends(verify_advisor_jwt),
+):
+    """
+    Advisor Document Rejection:
+    Updates uploaded_documents table status to 'Rejected' using service-role privileges,
+    bypassing client-side RLS restrictions.
+    """
+    advisor_id = _extract_advisor_id(jwt_payload)
+    if not request.document_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="document_id is required."
+        )
+
+    try:
+        if supabase_svc.client:
+            update_payload = {
+                "processing_status": "Rejected"
+            }
+            supabase_svc.client.table("uploaded_documents").update(update_payload).eq("id", request.document_id).execute()
+            print(f"[Document Rejection] Document {request.document_id} marked as Rejected by {advisor_id}.")
+        return RejectDocumentResponse(
+            success=True,
+            document_id=request.document_id,
+            processing_status="Rejected",
+            message=f"Document '{request.document_id}' successfully marked as Rejected."
+        )
+    except Exception as e:
+        print(f"[Document Rejection Error] {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to reject document: {str(e)}"
+        )
+

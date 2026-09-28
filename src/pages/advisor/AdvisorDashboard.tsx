@@ -228,6 +228,12 @@ export function AdvisorDashboard() {
 
   useEffect(() => {
     loadData();
+
+    // Safety timer (2.5 seconds): unconditionally flips page-level loading state to false
+    const timer = setTimeout(() => {
+      setIsLoading(false);
+    }, 2500);
+    return () => clearTimeout(timer);
   }, [advisor]);
 
   // Filtered Students based on Cohort Selector and Search Query

@@ -8,10 +8,11 @@ import { useAuth } from "../../../context/AuthContext";
 interface CorrectionsQueueProps {
   queue: any[];
   roster: any[];
-  onApproved?: () => void; // FIX #3: callback so parent can refetch queue after approval
+  onApproved?: () => void; // callback so parent can refetch queue after approval
+  onRefresh?: () => void;  // callback alias for parent view refresh
 }
 
-export function CorrectionsQueue({ queue, roster, onApproved }: CorrectionsQueueProps) {
+export function CorrectionsQueue({ queue, roster, onApproved, onRefresh }: CorrectionsQueueProps) {
   const { profile, user } = useAuth();
   const [liveQueue, setLiveQueue] = useState<any[]>(queue);
   const [filterStatus, setFilterStatus] = useState<string>("Pending_Advisor_Approval"); 
@@ -81,9 +82,53 @@ export function CorrectionsQueue({ queue, roster, onApproved }: CorrectionsQueue
 
   const handleReject = async () => {
     if (!activeAuditDoc) return;
-    await db.from("uploaded_documents").update({ processing_status: "Rejected" }).eq("id", activeAuditDoc.id);
-    setLiveQueue(prev => (prev || []).map(item => item?.id === activeAuditDoc.id ? { ...item, processing_status: "Rejected" } : item));
-    setActiveAuditDoc(null);
+    const confirmReject = window.confirm(
+      "Are you sure you want to reject this document? (e.g. unreadable file, wrong document uploaded, or incorrect student)"
+    );
+    if (!confirmReject) return;
+
+    setIsSaving(true);
+    const docId = activeAuditDoc.id;
+
+    try {
+      let backendSuccess = false;
+      // 1. Route through dedicated backend API with service-role privileges to bypass RLS blocks
+      try {
+        await api.rejectDocument(docId, "Document rejected by advisor");
+        backendSuccess = true;
+      } catch (apiErr: any) {
+        console.warn("[CorrectionsQueue] Backend reject-document API failed, falling back to client-side db update:", apiErr);
+      }
+
+      // 2. Client-side fallback if backend was unavailable
+      if (!backendSuccess) {
+        const { error: dbError } = await db
+          .from("uploaded_documents")
+          .update({ processing_status: "Rejected" })
+          .eq("id", docId);
+
+        if (dbError) {
+          console.error("[CorrectionsQueue] Client-side rejection failed due to RLS/database error:", dbError);
+          alert(`Rejection failed: ${dbError.message || "Permission denied by database security policy."}`);
+          return;
+        }
+      }
+
+      // 3. Clear UI state immediately on success
+      setActiveAuditDoc(null);
+      setLiveQueue(prev => (prev || []).filter(item => item?.id !== docId));
+      if (onApproved) {
+        onApproved();
+      }
+      if (onRefresh) {
+        onRefresh();
+      }
+    } catch (err: any) {
+      console.error("[CorrectionsQueue] Unhandled exception in handleReject:", err);
+      alert(`Unexpected error rejecting document: ${err?.message || "Please try again."}`);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleApprove = async () => {
@@ -361,8 +406,13 @@ export function CorrectionsQueue({ queue, roster, onApproved }: CorrectionsQueue
                 </div>
 
                 <div className="mt-8 pt-4 border-t border-gray-100 flex space-x-4">
-                  <Button onClick={handleReject} variant="outline" className="flex-1 text-rose-600 border-rose-200 hover:bg-rose-50">
-                    <XCircle className="w-4 h-4 mr-2" /> Reject Forgery
+                  <Button
+                    onClick={handleReject}
+                    disabled={isSaving}
+                    variant="outline"
+                    className="flex-1 text-rose-600 border-rose-200 hover:bg-rose-50 disabled:opacity-50"
+                  >
+                    <XCircle className="w-4 h-4 mr-2" /> {isSaving ? "Rejecting..." : "Reject Document"}
                   </Button>
                   <Button
                     onClick={handleApprove}

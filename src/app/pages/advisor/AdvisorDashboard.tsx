@@ -273,6 +273,12 @@ export function AdvisorDashboard() {
       }
     };
     fetchData();
+
+    // Safety timer (2.5 seconds): unconditionally flips page-level loading state to false
+    const timer = setTimeout(() => {
+      setIsLoading(false);
+    }, 2500);
+    return () => clearTimeout(timer);
   }, [advisorStaffId]);
 
   // Lock Toggle Handler: updates is_locked in cohorts table for specific cohort
