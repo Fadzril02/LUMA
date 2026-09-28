@@ -176,13 +176,55 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { success: true, profile: advisorProfile };
       }
 
-      // 3. Handle ghost check for ongoing registration
+      // 3. Fallback to user_metadata if database query returned no record yet
+      const userMeta = currentUser.user_metadata || {};
+      const appMeta = currentUser.app_metadata || {};
+      const metaRole = (userMeta.role || appMeta.role) as UserRole;
+
+      if (metaRole === 'student') {
+        const studentProfile: StudentProfile = {
+          role: 'student',
+          matric_no: userMeta.matric_no || extractMatricFromEmail(email),
+          full_name: userMeta.full_name || email.split('@')[0],
+          email: currentUser.email,
+          advisor_staff_id: userMeta.advisor_staff_id || '',
+          program: userMeta.program || 'General',
+          curriculum_year: userMeta.syllabus_type || '2024/2025',
+          academic_status: 'Good Standing',
+          current_semester: '1',
+          name: userMeta.full_name || email.split('@')[0],
+          program_code: userMeta.program || 'General',
+          syllabus_type: userMeta.syllabus_type || '2024/2025',
+        };
+        setProfile(studentProfile);
+        setAuthError(null);
+        return { success: true, profile: studentProfile };
+      }
+
+      if (metaRole === 'advisor') {
+        const advisorProfile: AdvisorProfile = {
+          role: 'advisor',
+          staff_id: userMeta.staff_id || 'ADV-001',
+          full_name: userMeta.full_name || email.split('@')[0],
+          email: currentUser.email || '',
+          department: userMeta.department || 'Academic Advisory',
+          university_id: userMeta.university_id || '00000000-0000-0000-0000-000000000001',
+          tier: 'freemium',
+          monthly_audit_count: 0,
+          name: userMeta.full_name || email.split('@')[0],
+        };
+        setProfile(advisorProfile);
+        setAuthError(null);
+        return { success: true, profile: advisorProfile };
+      }
+
+      // 4. Handle ongoing registration
       if (isRegistering.current) {
         console.log("[AuthContext] Registration in progress, bypassing ghost check.");
         return { success: true }; 
       }
 
-      // If neither student nor advisor found in database, reject session
+      // If neither student nor advisor found in database or metadata, reject session
       console.warn(`[AuthContext] BLOCKED UNRECOGNIZED USER: user_id=${currentUser.id}`);
       await supabase.auth.signOut();
       setUser(null);
@@ -193,14 +235,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { success: false, error: unrecError };
 
     } catch (err: any) {
-      console.error('[AuthContext] fetchUserProfile fatal exception — force-clearing zombie session:', err);
-      // ZOMBIE FIX: even on unexpected throws, kill the JWT in localStorage.
-      // Without this, a network error during profile lookup would leave the zombie
-      // token in storage and repeat the hang on every page reload.
-      try { await supabase.auth.signOut(); } catch (_) { /* best-effort */ }
-      setUser(null);
-      setSession(null);
-      setProfile(null);
+      console.error('[AuthContext] fetchUserProfile exception during profile lookup:', err);
+      // Graceful fallback on network glitch or timeout: retain session if metadata role exists
+      const userMeta = currentUser.user_metadata || {};
+      const appMeta = currentUser.app_metadata || {};
+      const metaRole = (userMeta.role || appMeta.role) as UserRole;
+      if (metaRole) {
+        const fallbackProfile: Profile = metaRole === 'student' ? {
+          role: 'student',
+          matric_no: userMeta.matric_no || extractMatricFromEmail(currentUser.email || ''),
+          full_name: userMeta.full_name || (currentUser.email || '').split('@')[0],
+          email: currentUser.email,
+          advisor_staff_id: userMeta.advisor_staff_id || '',
+          program: userMeta.program || 'General',
+          curriculum_year: userMeta.syllabus_type || '2024/2025',
+          academic_status: 'Good Standing',
+          current_semester: '1',
+          name: userMeta.full_name || (currentUser.email || '').split('@')[0],
+          program_code: userMeta.program || 'General',
+          syllabus_type: userMeta.syllabus_type || '2024/2025',
+        } : {
+          role: 'advisor',
+          staff_id: userMeta.staff_id || 'ADV-001',
+          full_name: userMeta.full_name || (currentUser.email || '').split('@')[0],
+          email: currentUser.email || '',
+          department: userMeta.department || 'Academic Advisory',
+          tier: 'freemium',
+          monthly_audit_count: 0,
+          name: userMeta.full_name || (currentUser.email || '').split('@')[0],
+        };
+        setProfile(fallbackProfile);
+        return { success: true, profile: fallbackProfile };
+      }
       return { success: false, error: err };
     }
   };
@@ -208,122 +274,135 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let isMounted = true;
 
-    const initializeAuth = async () => {
-      try {
-        const { data: { session }, error: sessionErr } = await supabase.auth.getSession();
+    // 1. Initial Session Retrieval via getSession() with explicit .then() and .catch()
+    supabase.auth
+      .getSession()
+      .then(async ({ data: { session: initialSession }, error: sessionErr }) => {
         if (!isMounted) return;
 
         if (sessionErr) {
-          // Cannot even read the session — treat as no session, drop loading
           console.warn('[AuthContext] getSession error — treating as unauthenticated:', sessionErr.message);
           setSession(null);
           setUser(null);
           setProfile(null);
-          return; // finally still runs
-        }
-
-        if (!session?.user) {
-          // No JWT in storage — normal first-visit state
-          setSession(null);
-          setUser(null);
-          setProfile(null);
-          return; // finally still runs
-        }
-
-        // There IS a JWT. Set optimistic state then verify the DB row exists.
-        setSession(session);
-        setUser(session.user);
-
-        const profileRes = await fetchUserProfile(session.user);
-
-        if (!isMounted) return;
-
-        // ZOMBIE FIX: fetchUserProfile already called signOut() internally when it
-        // detected no DB row. We mirror that cleanup here so React state is
-        // consistent even if the component re-renders between the signOut() call
-        // inside fetchUserProfile and this check.
-        if (!profileRes.success) {
-          console.warn('[AuthContext] initializeAuth: zombie session detected — profile fetch failed. Ensuring clean state.');
-          // Belt-and-suspenders: signOut may already have been called inside
-          // fetchUserProfile, but we call it again (idempotent) to guarantee the
-          // JWT is gone from localStorage before the loading screen drops.
-          try { await supabase.auth.signOut(); } catch (_) { /* best-effort */ }
-          if (isMounted) {
-            setSession(null);
-            setUser(null);
-            setProfile(null);
-          }
-        }
-      } catch (err) {
-        // Completely unexpected error (e.g., Supabase SDK throws internally).
-        // Force a clean state so the app never stays stuck on the loading screen.
-        console.error('[AuthContext] initializeAuth fatal error — forcing clean state:', err);
-        try { await supabase.auth.signOut(); } catch (_) { /* best-effort */ }
-        if (isMounted) {
-          setSession(null);
-          setUser(null);
-          setProfile(null);
-          setAuthError('Session initialization failed. Please log in again.');
-        }
-      } finally {
-        // GUARANTEED: this ALWAYS runs, even if signOut() above throws.
-        // The loading screen will ALWAYS drop after initializeAuth completes.
-        if (isMounted) {
           setIsLoading(false);
           setIsInitializing(false);
-        }
-      }
-    };
-
-    initializeAuth();
-
-    // Listen for auth state changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (!isMounted) return;
-        if (isRegistering.current) return;
-
-        if (event === 'SIGNED_OUT' || !session?.user) {
-          setSession(null);
-          setUser(null);
-          setProfile(null);
-          setIsLoading(false);
           return;
         }
 
-        setIsLoading(true);
-        setSession(session);
-        setUser(session.user);
+        if (!initialSession?.user) {
+          setSession(null);
+          setUser(null);
+          setProfile(null);
+          setIsLoading(false);
+          setIsInitializing(false);
+          return;
+        }
 
-        // ZOMBIE FIX: wrap fetchUserProfile in try/catch/finally so that if it
-        // throws (or calls signOut() internally for a zombie), isLoading still
-        // drops and the app never hangs on the loading screen.
+        // Restore session and user optimistically
+        setSession(initialSession);
+        setUser(initialSession.user);
+
         try {
-          const profileRes = await fetchUserProfile(session.user);
-          if (!isMounted) return;
-          if (!profileRes.success) {
-            // fetchUserProfile already cleaned up internally; mirror here.
-            setSession(null);
-            setUser(null);
-            setProfile(null);
+          await fetchUserProfile(initialSession.user);
+        } catch (profileErr) {
+          console.error('[AuthContext] fetchUserProfile error during session restore:', profileErr);
+        } finally {
+          // Unconditional loading completion in .then()
+          if (isMounted) {
+            setIsLoading(false);
+            setIsInitializing(false);
+          }
+        }
+      })
+      .catch((err) => {
+        console.error('[AuthContext] getSession .catch handler error:', err);
+        // Unconditional loading completion in .catch()
+        if (isMounted) {
+          setSession(null);
+          setUser(null);
+          setProfile(null);
+          setIsLoading(false);
+          setIsInitializing(false);
+        }
+      });
+
+    // 2. Auth state change listener handling all events ('INITIAL_SESSION', 'SIGNED_IN', 'SIGNED_OUT', 'TOKEN_REFRESHED')
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, currentSession) => {
+        if (!isMounted) return;
+
+        try {
+          switch (event) {
+            case 'SIGNED_OUT': {
+              setSession(null);
+              setUser(null);
+              setProfile(null);
+              setAuthError(null);
+              break;
+            }
+
+            case 'INITIAL_SESSION':
+            case 'SIGNED_IN': {
+              if (currentSession?.user) {
+                setSession(currentSession);
+                setUser(currentSession.user);
+                if (!isRegistering.current) {
+                  await fetchUserProfile(currentSession.user);
+                }
+              } else {
+                setSession(null);
+                setUser(null);
+                setProfile(null);
+              }
+              break;
+            }
+
+            case 'TOKEN_REFRESHED': {
+              if (currentSession?.user) {
+                setSession(currentSession);
+                setUser(currentSession.user);
+              }
+              break;
+            }
+
+            default: {
+              if (currentSession?.user) {
+                setSession(currentSession);
+                setUser(currentSession.user);
+              }
+              break;
+            }
           }
         } catch (err) {
-          console.error('[AuthContext] onAuthStateChange fetchUserProfile threw:', err);
-          try { await supabase.auth.signOut(); } catch (_) { /* best-effort */ }
-          if (isMounted) {
-            setSession(null);
-            setUser(null);
-            setProfile(null);
-          }
+          console.error(`[AuthContext] onAuthStateChange ${event} error:`, err);
         } finally {
-          // Guaranteed: isLoading drops regardless of success or failure after profile state resolves.
-          if (isMounted) setIsLoading(false);
+          // Unconditional loading completion across ALL auth events
+          if (isMounted) {
+            setIsLoading(false);
+            setIsInitializing(false);
+          }
         }
       }
     );
 
+    // 3. Fallback Safety Timeout: Force loading to false if unresolved within 3 seconds
+    const safetyTimeout = setTimeout(() => {
+      if (isMounted) {
+        setIsLoading((currentLoading) => {
+          if (currentLoading) {
+            console.warn('[AuthContext] 3-second safety timeout triggered: forced loading to false');
+            return false;
+          }
+          return false;
+        });
+        setIsInitializing(false);
+      }
+    }, 3000);
+
     return () => {
       isMounted = false;
+      clearTimeout(safetyTimeout);
       subscription.unsubscribe();
     };
   }, []);
@@ -620,7 +699,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const currentRole: UserRole = profile?.role ?? null;
+  const currentRole: UserRole =
+    profile?.role ??
+    (user?.user_metadata?.role as UserRole) ??
+    (user?.app_metadata?.role as UserRole) ??
+    null;
   const advisorProfile = profile?.role === 'advisor' ? (profile as AdvisorProfile) : null;
   const studentProfile = profile?.role === 'student' ? (profile as StudentProfile) : null;
 

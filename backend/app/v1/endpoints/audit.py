@@ -222,17 +222,17 @@ def _extract_tenant_id(jwt_payload: dict) -> str:
         try:
             res = (
                 supabase_svc.client.table("advisors")
-                .select("university_id")
+                .select("tenant_id")
                 .eq("user_id", jwt_sub)
                 .limit(1)
                 .execute()
             )
-            if res.data and len(res.data) > 0 and res.data[0].get("university_id"):
-                resolved = _resolve_university_code(str(res.data[0]["university_id"]).strip())
-                if resolved:
-                    return resolved
+            if res.data and len(res.data) > 0 and res.data[0].get("tenant_id"):
+                raw_tenant = str(res.data[0]["tenant_id"]).strip()
+                resolved = _resolve_university_code(raw_tenant)
+                return resolved or raw_tenant or "UTM"
         except Exception as e:
-            print(f"[_extract_tenant_id] Advisor university_id lookup error: {e}")
+            print(f"[_extract_tenant_id] Advisor tenant_id lookup error: {e}")
 
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,

@@ -383,3 +383,40 @@ def test_finalize_approval_resolves_custom_university_uuid_from_db():
             "app_metadata": {"staff_id": "STAFF-001", "tenant_id": "UTM"}
         }
 
+
+def test_extract_tenant_id_queries_advisors_tenant_id():
+    """Verify _extract_tenant_id queries public.advisors.tenant_id by user_id."""
+    try:
+        from app.v1.endpoints.audit import _extract_tenant_id, supabase_svc
+    except ImportError:
+        from backend.app.v1.endpoints.audit import _extract_tenant_id, supabase_svc
+
+    mock_client = MagicMock()
+    mock_client.table().select().eq().limit().execute.return_value.data = [{"tenant_id": "UTM"}]
+
+    with patch.object(supabase_svc, "client", mock_client):
+        tenant = _extract_tenant_id({"sub": "advisor-user-123"})
+        assert tenant == "UTM"
+        mock_client.table.assert_called_with("advisors")
+        mock_client.table().select.assert_called_with("tenant_id")
+        mock_client.table().select().eq.assert_called_with("user_id", "advisor-user-123")
+
+
+def test_extract_advisor_id_queries_advisors_staff_id():
+    """Verify _extract_advisor_id queries public.advisors.staff_id by user_id and returns staff_id string."""
+    try:
+        from app.v1.endpoints.audit import _extract_advisor_id, supabase_svc
+    except ImportError:
+        from backend.app.v1.endpoints.audit import _extract_advisor_id, supabase_svc
+
+    mock_client = MagicMock()
+    mock_client.table().select().eq().limit().execute.return_value.data = [{"staff_id": "TEST123"}]
+
+    with patch.object(supabase_svc, "client", mock_client):
+        staff_id = _extract_advisor_id({"sub": "advisor-user-456"})
+        assert staff_id == "TEST123"
+        mock_client.table.assert_called_with("advisors")
+        mock_client.table().select.assert_called_with("staff_id")
+        mock_client.table().select().eq.assert_called_with("user_id", "advisor-user-456")
+
+
