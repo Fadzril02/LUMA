@@ -27,7 +27,7 @@ client = TestClient(app)
 app.dependency_overrides[verify_advisor_jwt] = lambda: {
     "email": "advisor@university.edu.my",
     "sub": "mock-advisor-uid",
-    "user_metadata": {"staff_id": "STAFF-001"}
+    "app_metadata": {"staff_id": "STAFF-001", "tenant_id": "UTM"}
 }
 
 AUTH_HEADERS = {"Authorization": "Bearer mock-test-token"}
@@ -98,6 +98,7 @@ def test_finalize_approval_fastapi_endpoint_flow():
         mock_svc.get_university_course_catalog.return_value = mock_catalog
         mock_svc.get_or_create_student.return_value = mock_student
         mock_svc.persist_audit_results.return_value = "audit-uuid-12345"
+        mock_svc.get_student_block_exempted_credits.return_value = (0, None)
         mock_svc.client = mock_supabase
 
         response = client.post("/api/v1/audit/finalize-approval", json=payload, headers=AUTH_HEADERS)
@@ -128,10 +129,14 @@ def test_finalize_approval_fastapi_endpoint_flow():
         mock_supabase.table().update.assert_called_with({"processing_status": "Approved"})
 
 
-def test_finalize_approval_missing_jwt_advisor_id_401():
-    """Test that a JWT lacking advisor identity returns 401 Unauthorized."""
-    # Temporarily override JWT dependency to return an empty dict (no advisor identity)
-    app.dependency_overrides[verify_advisor_jwt] = lambda: {}
+def test_finalize_approval_missing_jwt_advisor_id_403():
+    """Test that a JWT lacking advisor identity returns 403 Forbidden."""
+    # Temporarily override JWT dependency to return a payload without staff_id in app_metadata or DB
+    app.dependency_overrides[verify_advisor_jwt] = lambda: {
+        "email": "advisor@university.edu.my",
+        "sub": "mock-advisor-uid",
+        "app_metadata": {"tenant_id": "UTM"}
+    }
     payload = {
         "document_id": "99999999-9999-9999-9999-999999999999",
         "matric_number": "TEST-SE24-FINAL",
@@ -142,16 +147,21 @@ def test_finalize_approval_missing_jwt_advisor_id_401():
             }
         ]
     }
+    mock_supabase = MagicMock()
+    mock_supabase.table().select().eq().limit().execute.return_value.data = []
+    patch_target = "app.v1.endpoints.audit.supabase_svc" if "app.v1.endpoints.audit" in sys.modules else "backend.app.v1.endpoints.audit.supabase_svc"
     try:
-        response = client.post("/api/v1/audit/finalize-approval", json=payload, headers=AUTH_HEADERS)
-        assert response.status_code == 401
-        assert "Valid advisor identity" in response.json()["detail"]
+        with patch(patch_target) as mock_svc:
+            mock_svc.client = mock_supabase
+            response = client.post("/api/v1/audit/finalize-approval", json=payload, headers=AUTH_HEADERS)
+            assert response.status_code == 403
+            assert "Advisor identity cannot be securely verified" in response.json()["detail"]
     finally:
         # Restore mock advisor JWT
         app.dependency_overrides[verify_advisor_jwt] = lambda: {
             "email": "advisor@university.edu.my",
             "sub": "mock-advisor-uid",
-            "user_metadata": {"staff_id": "STAFF-001"}
+            "app_metadata": {"staff_id": "STAFF-001", "tenant_id": "UTM"}
         }
 
 
@@ -188,3 +198,92 @@ def test_finalize_approval_missing_matric_422():
         response = client.post("/api/v1/audit/finalize-approval", json=payload, headers=AUTH_HEADERS)
     assert response.status_code == 422
     assert "matric_number is required" in response.json()["detail"]
+
+
+def test_finalize_approval_forged_tenant_idor_ignored():
+    """
+    Strict regression test for IDOR vulnerability:
+    Mock a JWT with app_metadata: {"tenant_id": "SECURE_UM"}, but send a request body
+    containing tenant_id: "HACKED_UTM". Assert that the endpoint processes the request
+    under "SECURE_UM", completely ignoring the malicious body.
+    """
+    app.dependency_overrides[verify_advisor_jwt] = lambda: {
+        "email": "advisor@um.edu.my",
+        "sub": "mock-advisor-uid",
+        "app_metadata": {"staff_id": "STAFF-001", "tenant_id": "SECURE_UM"}
+    }
+    mock_supabase = MagicMock()
+    mock_catalog = {
+        "SECJ1013": {"course_code": "SECJ1013", "prerequisites": {"type": "AND", "courses": []}}
+    }
+    mock_student = {
+        "id": "550e8400-e29b-41d4-a716-446655440000",
+        "matric_number": "TEST-SE24-IDOR",
+        "student_name": "Test IDOR Student"
+    }
+    # Attacker passes spoofed tenant_id="HACKED_UTM" in request body
+    payload = {
+        "tenant_id": "HACKED_UTM",
+        "document_id": "99999999-9999-9999-9999-999999999999",
+        "matric_number": "TEST-SE24-IDOR",
+        "student_name": "Test IDOR Student",
+        "advisor_id": "STAFF-001",
+        "courses": [{"course_code": "SECJ1013", "grade": "A", "credit_hour": 3}]
+    }
+
+    patch_target = "app.v1.endpoints.audit.supabase_svc" if "app.v1.endpoints.audit" in sys.modules else "backend.app.v1.endpoints.audit.supabase_svc"
+    try:
+        with patch(patch_target) as mock_svc:
+            mock_svc.get_university_course_catalog.return_value = mock_catalog
+            mock_svc.get_or_create_student.return_value = mock_student
+            mock_svc.persist_audit_results.return_value = "audit-uuid-idor"
+            mock_svc.get_student_block_exempted_credits.return_value = (0, None)
+            mock_svc.client = mock_supabase
+
+            response = client.post("/api/v1/audit/finalize-approval", json=payload, headers=AUTH_HEADERS)
+            assert response.status_code == 200
+            
+            # Assert persist_audit_results was called with 'SECURE_UM', NOT 'HACKED_UTM'
+            mock_svc.persist_audit_results.assert_called_once()
+            call_kwargs = mock_svc.persist_audit_results.call_args[1]
+            assert call_kwargs["tenant_id"] == "SECURE_UM"
+            assert call_kwargs["tenant_id"] != "HACKED_UTM"
+    finally:
+        app.dependency_overrides[verify_advisor_jwt] = lambda: {
+            "email": "advisor@university.edu.my",
+            "sub": "mock-advisor-uid",
+            "app_metadata": {"staff_id": "STAFF-001", "tenant_id": "UTM"}
+        }
+
+
+def test_finalize_approval_unverifiable_tenant_raises_403():
+    """Verify that if tenant cannot be securely verified, endpoint raises 403 Forbidden."""
+    app.dependency_overrides[verify_advisor_jwt] = lambda: {
+        "email": "advisor@unknown.edu.my",
+        "sub": "mock-advisor-uid",
+        "app_metadata": {"staff_id": "STAFF-001"}  # Missing tenant_id/university_id
+    }
+    mock_supabase = MagicMock()
+    mock_supabase.table().select().eq().limit().execute.return_value.data = []
+
+    payload = {
+        "document_id": "99999999-9999-9999-9999-999999999999",
+        "matric_number": "TEST-SE24-403",
+        "advisor_id": "STAFF-001",
+        "courses": [{"course_code": "SECJ1013", "grade": "A", "credit_hour": 3}]
+    }
+
+    patch_target = "app.v1.endpoints.audit.supabase_svc" if "app.v1.endpoints.audit" in sys.modules else "backend.app.v1.endpoints.audit.supabase_svc"
+    try:
+        with patch(patch_target) as mock_svc:
+            mock_svc.client = mock_supabase
+            response = client.post("/api/v1/audit/finalize-approval", json=payload, headers=AUTH_HEADERS)
+            assert response.status_code == 403
+            assert "Tenant ID cannot be securely verified" in response.json()["detail"]
+    finally:
+        app.dependency_overrides[verify_advisor_jwt] = lambda: {
+            "email": "advisor@university.edu.my",
+            "sub": "mock-advisor-uid",
+            "app_metadata": {"staff_id": "STAFF-001", "tenant_id": "UTM"}
+        }
+

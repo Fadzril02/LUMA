@@ -102,48 +102,45 @@ def fetch_and_merge_historical_records(matric_no: str, new_records: List[ParsedL
         return new_records
 
 
-def _check_advisor_identity(jwt_payload: dict, claimed_advisor_id: str) -> None:
+def _extract_advisor_id(jwt_payload: dict) -> str:
     """
-    Cross-reference the JWT's institutional email against the advisor_id
+    Extract advisor staff_id server-side strictly from verified JWT app_metadata
+    or by querying the advisors table using the verified sub claim.
+    Completely removes all references to user_metadata or unverified payload.
+    Hard-fails with 403 Forbidden if not securely verified.
+    """
+    app_metadata = jwt_payload.get("app_metadata") or {}
+    advisor_id = app_metadata.get("staff_id") or app_metadata.get("advisor_id")
+    if advisor_id and str(advisor_id).strip():
+        return str(advisor_id).strip()
+
+    jwt_sub = jwt_payload.get("sub")
+    if supabase_svc.client and jwt_sub:
+        try:
+            res = (
+                supabase_svc.client.table("advisors")
+                .select("staff_id")
+                .eq("user_id", jwt_sub)
+                .limit(1)
+                .execute()
+            )
+            if res.data and len(res.data) > 0 and res.data[0].get("staff_id"):
+                return str(res.data[0]["staff_id"]).strip()
+        except Exception as e:
+            print(f"[_extract_advisor_id] Advisor staff_id lookup error: {e}")
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Unauthorized: Advisor identity cannot be securely verified."
+    )
+
+
+def _check_advisor_identity(jwt_payload: dict, claimed_advisor_id: str) -> str:
+    """
+    Cross-reference the verified JWT advisor identity against the advisor_id
     claimed in the request body.
-
-    Raises HTTP 403 if:
-      - The JWT email does not match any advisor in the database.
-      - The matched advisor's staff_id differs from the claimed advisor_id.
-
-    This is the gate that prevents advisor A from submitting records on
-    behalf of advisor B using their own valid token.
     """
-    jwt_email = (jwt_payload.get("email") or "").strip().lower()
-    if not jwt_email:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="JWT contains no email claim; cannot verify advisor identity.",
-        )
-
-    if not supabase_svc.client:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database client unavailable.",
-        )
-
-    try:
-        res = supabase_svc.client.table("advisors") \
-            .select("staff_id") \
-            .eq("institutional_email", jwt_email) \
-            .execute()
-        rows = res.data or []
-    except Exception as e:
-        print(f"[_check_advisor_identity] Query error: {e}")
-        rows = []
-
-    if not rows:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"JWT identity '{jwt_email}' is not a registered advisor.",
-        )
-
-    actual_staff_id = rows[0]["staff_id"]
+    actual_staff_id = _extract_advisor_id(jwt_payload)
     if actual_staff_id != claimed_advisor_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -152,6 +149,40 @@ def _check_advisor_identity(jwt_payload: dict, claimed_advisor_id: str) -> None:
                 f"the claimed advisor_id='{claimed_advisor_id}' in the request body."
             ),
         )
+    return actual_staff_id
+
+
+def _extract_tenant_id(jwt_payload: dict) -> str:
+    """
+    Extract tenant_id server-side strictly from verified JWT app_metadata
+    or by querying the advisors table using the verified sub claim.
+    Completely removes all references to user_metadata or unverified payload.
+    Hard-fails with 403 Forbidden if not securely verified.
+    """
+    app_metadata = jwt_payload.get("app_metadata") or {}
+    tenant_id = app_metadata.get("tenant_id") or app_metadata.get("university_id")
+    if tenant_id and str(tenant_id).strip():
+        return str(tenant_id).strip()
+
+    jwt_sub = jwt_payload.get("sub")
+    if supabase_svc.client and jwt_sub:
+        try:
+            res = (
+                supabase_svc.client.table("advisors")
+                .select("university_id")
+                .eq("user_id", jwt_sub)
+                .limit(1)
+                .execute()
+            )
+            if res.data and len(res.data) > 0 and res.data[0].get("university_id"):
+                return str(res.data[0]["university_id"]).strip()
+        except Exception as e:
+            print(f"[_extract_tenant_id] Advisor university_id lookup error: {e}")
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Unauthorized: Tenant ID cannot be securely verified."
+    )
 
 
 @router.post(
@@ -283,31 +314,9 @@ async def finalize_approval(
     5. Updates student CGPA & academic standing in 'students'.
     6. Updates uploaded_documents row to processing_status = 'Approved'.
     """
-    # Stop trusting frontend for advisor identity. Extract advisor_id strictly from verified JWT payload.
-    advisor_id = (
-        jwt_payload.get("user_metadata", {}).get("staff_id") or
-        jwt_payload.get("staff_id")
-    )
-    if not advisor_id:
-        jwt_email = (jwt_payload.get("email") or "").strip().lower()
-        jwt_sub = jwt_payload.get("sub")
-        if supabase_svc.client and (jwt_email or jwt_sub):
-            try:
-                query = supabase_svc.client.table("advisors").select("staff_id")
-                if jwt_email:
-                    res = query.eq("institutional_email", jwt_email).limit(1).execute()
-                else:
-                    res = query.eq("user_id", jwt_sub).limit(1).execute()
-                if res.data and len(res.data) > 0:
-                    advisor_id = res.data[0]["staff_id"]
-            except Exception as e:
-                print(f"[finalize_approval] Advisor staff_id lookup error: {e}")
-
-    if not advisor_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Unauthorized: Valid advisor identity (staff_id) could not be resolved from JWT session."
-        )
+    # Stop trusting frontend for advisor identity. Extract advisor_id and tenant_id strictly from verified JWT app_metadata or verified sub DB lookup.
+    advisor_id = _extract_advisor_id(jwt_payload)
+    tenant_id = _extract_tenant_id(jwt_payload)
 
     # Validate that courses array is not empty
     if not request.courses:
@@ -374,8 +383,8 @@ async def finalize_approval(
     if student_grad_req is not None:
         total_required_credits = student_grad_req
 
-    # 3b. FIX #1: Merge with historical semesters not included in this submission
-    tenant_id = (getattr(request, "tenant_id", None) or "UTM").strip()
+    # 3b. SECURE MULTI-TENANCY (Prevent IDOR):
+    # Historical records scoped to verified tenant_id derived server-side
     parsed_items = fetch_and_merge_historical_records(matric_number, parsed_items, tenant_id=tenant_id)
 
     # 4. Run Pure Python Graph Prerequisite Audit (with min_grade & credit gates)
@@ -414,11 +423,33 @@ async def finalize_approval(
     except Exception as doc_update_err:
         print(f"[Document Status Update Warning] {doc_update_err}")
 
-    # 6. Automatic Storage Purge on Advisor Approval (Zero-Waste Data Retention)
-    # The approval-only gate is strictly enforced inside purge_uploaded_document_file:
-    # it verifies that uploaded_documents.processing_status == 'Approved' before deleting.
+    # 6. Relocated Automatic Storage Purge on Advisor Approval (Zero-Waste Data Retention)
+    # The file should ONLY be deleted after the advisor has visually verified it
+    # and the data is successfully upserted into the database.
     purge_successful = False
     try:
+        target_path = getattr(request, "storage_path", None) or getattr(request, "file_path", None)
+        if not target_path and supabase_svc.client and request.document_id:
+            try:
+                doc_query = (
+                    supabase_svc.client.table("uploaded_documents")
+                    .select("file_path")
+                    .eq("id", request.document_id)
+                    .limit(1)
+                    .execute()
+                )
+                if doc_query.data and doc_query.data[0].get("file_path"):
+                    target_path = doc_query.data[0]["file_path"]
+            except Exception as doc_fetch_err:
+                print(f"[Purge Path Resolution Warning] {doc_fetch_err}")
+
+        if target_path and target_path not in {"", "[PURGED]"}:
+            _bucket = "academic-slips" if "academic-slips" in target_path else "transcripts"
+            supabase_svc.delete_file_from_storage(
+                bucket_name=_bucket,
+                file_path=target_path
+            )
+
         if supabase_svc.client and request.document_id:
             purge_res = supabase_svc.purge_uploaded_document_file(
                 document_id=request.document_id,
@@ -428,7 +459,7 @@ async def finalize_approval(
             purge_successful = purge_res.get("success", False)
             print(f"[Automatic Purge] Document '{request.document_id}' purged successfully.")
     except Exception as purge_err:
-        print(f"[Automatic Purge Warning] Could not purge document '{request.document_id}': {purge_err}")
+        print(f"[Auto-Purge OUTER WARNING] Unexpected error during storage cleanup: {purge_err}")
 
     return FinalizeApprovalResponse(
         success=True,
@@ -457,8 +488,13 @@ async def process_storage_transcript(
     """
     Zero-Waste Direct Storage Processing
     """
-    # Cross-reference: JWT email must own the claimed advisor_id
-    _check_advisor_identity(jwt_payload, request.advisor_id)
+    # Secure server-side identity & tenant extraction
+    advisor_id = _extract_advisor_id(jwt_payload)
+    tenant_id = _extract_tenant_id(jwt_payload)
+
+    # Cross-reference: JWT identity must match claimed advisor_id if provided in request
+    if request.advisor_id:
+        _check_advisor_identity(jwt_payload, request.advisor_id)
 
     # 1. Download PDF bytes
     try:
@@ -483,21 +519,6 @@ async def process_storage_transcript(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Uploaded transcript PDF appears to be empty or an unsupported scanned image."
         )
-
-    # === AUTO-PURGE: PDF bytes are now fully extracted into memory (raw_lines). ===
-    # Delete the raw file from storage immediately so we never accumulate PDFs on the
-    # Supabase free-tier 1GB limit. Deletion is non-blocking: a failure logs a warning
-    # but does NOT interrupt the response pipeline.
-    try:
-        _bucket = "academic-slips" if "academic-slips" in request.storage_path else "transcripts"
-        supabase_svc.delete_file_from_storage(
-            bucket_name=_bucket,
-            file_path=request.storage_path
-        )
-    except Exception as _purge_err:
-        # Defensive outer catch — should never be reached since delete_file_from_storage
-        # already swallows its own exceptions, but we guard here anyway.
-        print(f"[Auto-Purge OUTER WARNING] Unexpected error during storage cleanup: {_purge_err}")
 
     # 3. Regex Parsing (Zero AI Cost)
     metadata, parsed_courses, unparsed_lines = MalaysianTranscriptParser.parse_transcript_lines(raw_lines)
@@ -535,8 +556,8 @@ async def process_storage_transcript(
     if student_grad_req is not None:
         total_required_credits = student_grad_req
 
-    # 6b. FIX #1: Merge with historical semesters not included in this submission
-    tenant_id = (getattr(request, "tenant_id", None) or "UTM").strip()
+    # 6b. SECURE MULTI-TENANCY (Prevent IDOR):
+    # Historical records scoped to verified tenant_id derived server-side
     parsed_courses = fetch_and_merge_historical_records(matric_no, parsed_courses, tenant_id=tenant_id)
 
     # 7. Run Pure Python Graph Prerequisite Audit
@@ -546,13 +567,6 @@ async def process_storage_transcript(
         total_required_credits=total_required_credits,
         block_exempted_credits=block_exempted_credits
     )
-
-    advisor_id = (request.advisor_id or "").strip()
-    if not advisor_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="advisor_id is required."
-        )
 
     # 7. Upsert Student Record & Persist Audits to Supabase
     student = supabase_svc.get_or_create_student(

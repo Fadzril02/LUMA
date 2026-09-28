@@ -6,6 +6,7 @@ import { StudentPortal } from './pages/student/StudentPortal';
 import { AdvisorPortal } from './pages/advisor/AdvisorPortal';
 import { Loader2 } from 'lucide-react';
 import { Toaster } from './components/ui/sonner';
+import { ProtectedRoute } from './components/ProtectedRoute';
 
 // ── Loading spinner ──────────────────────────────────────────────────────────
 function LoadingScreen() {
@@ -27,11 +28,7 @@ function RoleRoute({
   children: React.ReactNode;
   allowedRole: 'student' | 'advisor' | 'admin';
 }) {
-  const { user, role, isLoading } = useAuth();
-  if (isLoading) return <LoadingScreen />;
-  if (!user) return <Navigate to="/" replace />;
-  if (role && role !== allowedRole) return <Navigate to="/" replace />;
-  return <>{children}</>;
+  return <ProtectedRoute allowedRole={allowedRole}>{children}</ProtectedRoute>;
 }
 
 export default function App() {
@@ -45,17 +42,19 @@ export default function App() {
       <BrowserRouter>
       <Routes>
         {/* ── Root / Login ────────────────────────────────────────────── */}
-        {/* Both / and /login show LandingPage when unauthenticated.      */}
-        {/* Authenticated users are redirected to their portal.           */}
+        {/* Both / and /login show LandingPage when unauthenticated or role unresolved. */}
+        {/* Authenticated users with verified roles are redirected to their portal.     */}
         <Route
           path="/"
           element={
-            !user ? (
+            !user || !role ? (
               <LandingPage />
             ) : role === 'student' ? (
               <Navigate to="/student" replace />
-            ) : (
+            ) : role === 'advisor' ? (
               <Navigate to="/advisor" replace />
+            ) : (
+              <LandingPage />
             )
           }
         />

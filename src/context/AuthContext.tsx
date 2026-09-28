@@ -291,6 +291,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return;
         }
 
+        setIsLoading(true);
         setSession(session);
         setUser(session.user);
 
@@ -315,7 +316,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setProfile(null);
           }
         } finally {
-          // Guaranteed: isLoading drops regardless of success or failure.
+          // Guaranteed: isLoading drops regardless of success or failure after profile state resolves.
           if (isMounted) setIsLoading(false);
         }
       }

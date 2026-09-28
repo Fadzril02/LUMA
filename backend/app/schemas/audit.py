@@ -11,7 +11,7 @@ class StorageAuditRequest(BaseModel):
     Request model for processing a PDF directly from Supabase Storage.
     Eliminates multipart upload overhead to FastAPI.
     """
-    tenant_id: str = Field("UTM", description="Multi-tenant identifier (e.g., 'UTM', 'UM')")
+    tenant_id: Optional[str] = Field(None, description="Multi-tenant identifier (deprecated: extracted server-side from JWT)")
     storage_path: str = Field(..., description="Path inside the transcripts bucket, e.g., 'transcripts/{advisor_id}/{filename}'")
     student_id: Optional[str] = Field(None, description="UUID of existing student, or None to auto-create/lookup via matric")
     advisor_id: str = Field(..., description="UUID of authenticated advisor")
@@ -26,7 +26,7 @@ class TranscriptProcessRequest(BaseModel):
     """
     Dynamic Multi-Tenant Request model for processing a transcript from storage.
     """
-    tenant_id: str = Field(..., description="Institutional multi-tenant identifier (e.g., 'UTM', 'UM')")
+    tenant_id: Optional[str] = Field(None, description="Institutional multi-tenant identifier (deprecated: extracted server-side from JWT)")
     storage_path: str = Field(..., description="Path inside the transcripts bucket")
     student_id: Optional[str] = Field(None, description="UUID of existing student, or None to auto-create/lookup via matric")
     advisor_id: str = Field(..., description="UUID of authenticated advisor")
@@ -39,7 +39,7 @@ class TranscriptProcessRequest(BaseModel):
 
 class ExtractPDFRequest(BaseModel):
     file_path: str = Field(..., description="Path in Supabase storage bucket, e.g. 'slips/matric_timestamp.pdf'")
-    tenant_id: Optional[str] = Field("UTM", description="Tenant ID identifier")
+    tenant_id: Optional[str] = Field(None, description="Tenant ID identifier (deprecated: extracted server-side from JWT)")
 
 
 class ExtractPDFResponse(BaseModel):
@@ -120,7 +120,7 @@ class ExtractedCourseItem(BaseModel):
 
 
 class FinalizeApprovalRequest(BaseModel):
-    tenant_id: str = Field("UTM", description="Multi-tenant identifier (e.g., 'UTM', 'UM')")
+    tenant_id: Optional[str] = Field(None, description="Multi-tenant identifier (deprecated: extracted server-side from JWT)")
     document_id: str = Field(..., description="UUID of document in uploaded_documents table")
     matric_number: str = Field(..., description="Student matric number")
     student_name: Optional[str] = None
@@ -132,13 +132,15 @@ class FinalizeApprovalRequest(BaseModel):
     academic_session: Optional[str] = "2024/2025"
     semester: Optional[Any] = 1
     courses: List[ExtractedCourseItem] = []
+    storage_path: Optional[str] = Field(None, description="Optional storage path of the transcript file to purge")
+    file_path: Optional[str] = Field(None, description="Optional file path of the transcript file to purge")
 
 
 class AuditApprovalRequest(BaseModel):
     """
     Dynamic Multi-Tenant Request model for finalizing advisor audit approval.
     """
-    tenant_id: str = Field(..., description="Institutional multi-tenant identifier (e.g., 'UTM', 'UM')")
+    tenant_id: Optional[str] = Field(None, description="Institutional multi-tenant identifier (deprecated: extracted server-side from JWT)")
     document_id: str = Field(..., description="UUID of document in uploaded_documents table")
     matric_number: str = Field(..., description="Student matric number")
     student_name: Optional[str] = None
@@ -150,6 +152,8 @@ class AuditApprovalRequest(BaseModel):
     academic_session: Optional[str] = "2024/2025"
     semester: Optional[Any] = 1
     courses: List[ExtractedCourseItem] = []
+    storage_path: Optional[str] = Field(None, description="Optional storage path of the transcript file to purge")
+    file_path: Optional[str] = Field(None, description="Optional file path of the transcript file to purge")
 
 
 class FinalizeApprovalResponse(BaseModel):
