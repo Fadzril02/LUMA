@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from "react";
-import { CheckCircle2, ShieldAlert, Award, BookOpen, CheckCircle } from "lucide-react";
+import { CheckCircle2, ShieldAlert, Award, BookOpen, CheckCircle, Hash, Calendar, Layers } from "lucide-react";
 import { db } from "../../../lib/supabase";
 import { useAuth } from "../../../context/AuthContext";
-import { CourseLedger, CourseLedgerRecord } from "../../../components/shared/CourseLedger";
+import { CourseLedger, CourseLedgerRecord, LedgerColumn } from "../../../components/shared/CourseLedger";
 
 export interface DegreeAuditViewProps {
   cgpa?: number | string;
@@ -195,6 +195,67 @@ export function DegreeAuditView({
     },
   ];
 
+  const studentColumns: LedgerColumn<CourseLedgerRecord>[] = [
+    {
+      key: "code",
+      header: (
+        <div className="flex items-center gap-1.5">
+          <Hash size={11} /> Code
+        </div>
+      ),
+      headerClassName: "whitespace-nowrap",
+      cellClassName: "font-mono font-bold text-gray-900 whitespace-nowrap",
+      render: (c) => c.code,
+    },
+    {
+      key: "name",
+      header: "Course Title",
+      cellClassName: "text-gray-700 font-medium max-w-[220px] truncate",
+      render: (c) => <span title={c.name}>{c.name}</span>,
+    },
+    {
+      key: "credits",
+      header: "Cr",
+      headerClassName: "text-center whitespace-nowrap",
+      cellClassName: "text-center font-mono text-gray-600 whitespace-nowrap",
+      render: (c) => c.credits,
+    },
+    {
+      key: "semester",
+      header: (
+        <div className="flex items-center justify-center gap-1.5">
+          <Calendar size={11} /> Sem
+        </div>
+      ),
+      headerClassName: "text-center whitespace-nowrap",
+      cellClassName: "text-center font-mono text-gray-500 whitespace-nowrap",
+      render: (c) => c.semester || "—",
+    },
+    {
+      key: "status",
+      header: "Status",
+      headerClassName: "text-right whitespace-nowrap",
+      cellClassName: "text-right whitespace-nowrap",
+      render: (c) => {
+        const isHL = c.grade?.toUpperCase() === "HL";
+        const isPC = c.grade?.toUpperCase() === "PC" || c.grade?.toUpperCase() === "EX";
+        const isExempted = c.status === "Exempted" || isHL || isPC;
+        if (isExempted) {
+          return (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+              ✓ EXEMPT
+            </span>
+          );
+        }
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+            ✓ PASSED
+          </span>
+        );
+      },
+    },
+  ];
+
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Top Academic Audit Metrics Cards */}
@@ -341,10 +402,14 @@ export function DegreeAuditView({
         </div>
       ) : null}
 
-      {/* Live Approved Courses Ledger — shared CourseLedger component (student role) */}
+      {/* Live Approved Courses Ledger — Decoupled Student Columns */}
       <CourseLedger
-        records={currentCourses as CourseLedgerRecord[]}
-        role="student"
+        records={approvedCourses as CourseLedgerRecord[]}
+        columns={studentColumns}
+        title="Approved Course Ledger"
+        subtitle={`${approvedCourses.length} Approved`}
+        icon={<Layers size={16} className="text-blue-900" />}
+        emptyMessage="No approved courses recorded. Upload your transcript slip to populate your degree audit."
       />
     </div>
   );

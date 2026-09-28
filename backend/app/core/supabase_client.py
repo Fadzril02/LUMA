@@ -73,6 +73,41 @@ class SupabaseService:
             fallback_bucket = "transcripts" if bucket == "academic-slips" else "academic-slips"
             return self.client.storage.from_(fallback_bucket).download(clean_path)
 
+    def delete_file_from_storage(self, bucket_name: str, file_path: str) -> bool:
+        """
+        Auto-Purge: Deletes a file from Supabase Storage after extraction is complete.
+
+        Called immediately after PyMuPDF extracts text from the PDF bytes, so the raw
+        PDF is never retained beyond the extraction step. This keeps the Supabase free-tier
+        storage bucket from accumulating uploaded transcripts indefinitely.
+
+        Args:
+            bucket_name: The storage bucket ('academic-slips' or 'transcripts').
+            file_path:   The clean relative file path within the bucket.
+
+        Returns:
+            True  — file was successfully removed from storage.
+            False — removal failed (file not found, permissions, etc.).
+                    A warning is logged but the exception is NOT re-raised so the
+                    caller's response pipeline is never interrupted.
+        """
+        if not self.client:
+            print(f"[delete_file_from_storage] Client not ready — skipping purge of '{file_path}'.")
+            return False
+        try:
+            clean_path = (
+                file_path
+                .removeprefix("transcripts/")
+                .removeprefix("academic-slips/")
+                .removeprefix("/")
+            )
+            self.client.storage.from_(bucket_name).remove([clean_path])
+            print(f"[Auto-Purge] Deleted '{clean_path}' from bucket '{bucket_name}'.")
+            return True
+        except Exception as e:
+            print(f"[Auto-Purge WARNING] Could not delete '{file_path}' from '{bucket_name}': {e}")
+            return False
+
     def get_university_course_catalog(self, university_id: str = "") -> Dict[str, Dict[str, Any]]:
         """
         Fetches all courses and prerequisites for a given university.
@@ -231,6 +266,39 @@ class SupabaseService:
             print(f"[get_or_create_student] Student insert warning: {ins_err}")
             return new_student
 
+    def get_student_block_exempted_credits(
+        self,
+        matric_no: str
+    ) -> tuple[int, Optional[int]]:
+        """
+        Fetches block_exempted_credits and graduation_credit_requirement from the
+        students table for Diploma/Transfer students who enter with pre-approved credits.
+
+        Returns:
+            (block_exempted_credits: int, graduation_credit_requirement: int | None)
+            Falls back to (0, None) on any fetch failure so the audit is never blocked.
+        """
+        clean_matric = (matric_no or "").strip().upper()
+        if not self.client or not clean_matric:
+            return 0, None
+        try:
+            res = (
+                self.client
+                .table("students")
+                .select("block_exempted_credits, graduation_credit_requirement")
+                .eq("matric_no", clean_matric)
+                .maybe_single()
+                .execute()
+            )
+            if res and res.data:
+                block_credits = int(res.data.get("block_exempted_credits") or 0)
+                grad_req = res.data.get("graduation_credit_requirement")
+                grad_req = int(grad_req) if grad_req is not None else None
+                return block_credits, grad_req
+        except Exception as e:
+            print(f"[get_student_block_exempted_credits] Fetch warning for {clean_matric}: {e}")
+        return 0, None
+
     def persist_audit_results(
         self,
         matric_no: str,
@@ -238,7 +306,8 @@ class SupabaseService:
         records: List[CourseAuditResult],
         summary: AuditSummary,
         storage_pdf_path: str,
-        student_id: Optional[str] = None
+        student_id: Optional[str] = None,
+        tenant_id: str = "UTM"
     ) -> str:
         """
         Saves parsed academic records and degree audit snapshot to PostgreSQL.
@@ -261,14 +330,13 @@ class SupabaseService:
             #                 updates existing rows and inserts new ones. ALL other semesters
             #                 for this student/tenant are untouched.
             #
-            #    MULTI-TENANT: tenant_id is hardcoded to "UTM" for this iteration.
+            #    MULTI-TENANT: dynamic tenant_id routed from request context.
             #                  The unique constraint in Postgres must be:
             #                  UNIQUE (tenant_id, matric_no, course_code)
             #
-            TENANT_ID = "UTM"
             records_to_upsert = [
                 {
-                    "tenant_id": TENANT_ID,
+                    "tenant_id": tenant_id,
                     "matric_no": target_matric,
                     "course_code": r.course_code,
                     "course_name": r.course_name,

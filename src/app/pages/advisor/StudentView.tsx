@@ -1,9 +1,21 @@
 import React, { useState, useEffect } from "react";
-import { ArrowLeft, GraduationCap, Calendar, CheckSquare, AlertCircle, Save } from "lucide-react";
+import {
+  ArrowLeft,
+  GraduationCap,
+  Calendar,
+  CheckSquare,
+  AlertCircle,
+  Save,
+  Hash,
+  Info,
+  CheckCircle2,
+  AlertTriangle,
+  BookOpen
+} from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, Badge, Button, Input } from "../../components/ui";
 import { db } from "../../../lib/supabase";
 import { useAuth } from "../../../context/AuthContext";
-import { CourseLedger, CourseLedgerRecord } from "../../../components/shared/CourseLedger";
+import { CourseLedger, CourseLedgerRecord, LedgerColumn } from "../../../components/shared/CourseLedger";
 
 interface StudentViewProps {
   student: any;
@@ -16,9 +28,24 @@ export function StudentView({ student, onBack }: StudentViewProps) {
   const [actionItem, setActionItem] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [pastLogs, setPastLogs] = useState<any[]>([]);
+  const [fetchedRecords, setFetchedRecords] = useState<any[]>([]);
 
-  // Extract real metrics safely passed downwards inside array parameters
-  const courseResults: CourseLedgerRecord[] = (student.rawResults || student.records || []).map((r: any) => ({
+  // Guard against null/undefined student prop rendering blankly
+  if (!student) {
+    console.error("MODAL_CRASH_DUMP: StudentView rendered with missing/null student prop:", student);
+    return (
+      <div className="p-8 text-center text-rose-600 bg-rose-50 rounded-xl border border-rose-200">
+        <p className="font-bold">Error loading student profile.</p>
+        <button onClick={onBack} className="mt-3 text-xs underline text-blue-900 cursor-pointer">
+          Return to Advisee List
+        </button>
+      </div>
+    );
+  }
+
+  // Extract real metrics safely passed downwards or fetched from academic_records
+  const recordsSource = student.rawResults || student.records || (fetchedRecords.length > 0 ? fetchedRecords : []);
+  const courseResults: CourseLedgerRecord[] = recordsSource.map((r: any) => ({
     code: r.course_code || r.code || "",
     name: r.course_name || r.name || "Unknown Module",
     credits: Number(r.credits) || 0,
@@ -30,6 +57,7 @@ export function StudentView({ student, onBack }: StudentViewProps) {
     missing_prerequisites: r.missing_prerequisites,
     is_ai_parsed: r.is_ai_parsed,
   }));
+
   const totalRequiredCredits =
     student.total_credits_required ||
     student.required_credits ||
@@ -39,21 +67,63 @@ export function StudentView({ student, onBack }: StudentViewProps) {
   const currentCredits = Number(student.credits || student.total_earned_credits) || 0;
   const creditProgressPercentage = Math.min((currentCredits / totalRequiredCredits) * 100, 100);
 
+  // Diagnostic Hook: Robust try/catch blocks with explicit MODAL_CRASH_DUMP logs
   useEffect(() => {
-    const fetchLogs = async () => {
-      if (!student.matric_no) return;
-      const { data, error } = await db
-        .from("advising_logs")
-        .select("*")
-        .eq("student_matric_no", student.matric_no)
-        .order("session_date", { ascending: false });
-      
-      if (!error && data) {
-        setPastLogs(data);
+    let isMounted = true;
+
+    const fetchModalData = async () => {
+      try {
+        if (!student?.matric_no) {
+          console.error("MODAL_CRASH_DUMP: Student object is missing matric_no identifier:", student);
+          return;
+        }
+
+        // 1. Fetch Advising Logs
+        try {
+          const { data: logsData, error: logsError } = await db
+            .from("advising_logs")
+            .select("*")
+            .eq("student_matric_no", student.matric_no)
+            .order("session_date", { ascending: false });
+
+          if (logsError) {
+            console.error("MODAL_CRASH_DUMP: Error fetching advising_logs table:", logsError);
+          } else if (logsData && isMounted) {
+            setPastLogs(logsData);
+          }
+        } catch (logsCatchErr) {
+          console.error("MODAL_CRASH_DUMP: Exception during advising_logs query:", logsCatchErr);
+        }
+
+        // 2. Fetch Academic Records if not provided in student prop
+        if (!student.rawResults && !student.records) {
+          try {
+            const { data: recData, error: recError } = await db
+              .from("academic_records")
+              .select("*")
+              .eq("matric_no", student.matric_no)
+              .order("semester", { ascending: true });
+
+            if (recError) {
+              console.error("MODAL_CRASH_DUMP: Error fetching academic_records table:", recError);
+            } else if (recData && isMounted) {
+              setFetchedRecords(recData);
+            }
+          } catch (recCatchErr) {
+            console.error("MODAL_CRASH_DUMP: Exception during academic_records query:", recCatchErr);
+          }
+        }
+      } catch (fatalError) {
+        console.error("MODAL_CRASH_DUMP: Fatal error in modal data fetch:", fatalError);
       }
     };
-    fetchLogs();
-  }, [student.matric_no]);
+
+    fetchModalData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [student?.matric_no]);
 
   const handleSaveNotes = async () => {
     if (!notes.trim()) return;
@@ -61,6 +131,9 @@ export function StudentView({ student, onBack }: StudentViewProps) {
     const advisorStaffId = (profile as any)?.staff_id;
     
     try {
+      if (!student?.matric_no) {
+        throw new Error("Cannot save advising log: student.matric_no is missing");
+      }
       const { data, error } = await db.from("advising_logs").insert([{
         student_matric_no: student.matric_no,
         advisor_staff_id: advisorStaffId,
@@ -68,7 +141,10 @@ export function StudentView({ student, onBack }: StudentViewProps) {
         action_item: actionItem.trim() || null
       }]).select();
 
-      if (error) throw error;
+      if (error) {
+        console.error("MODAL_CRASH_DUMP: Error saving advising log:", error);
+        throw error;
+      }
       
       if (data && data.length > 0) {
         setPastLogs([data[0], ...pastLogs]);
@@ -77,12 +153,142 @@ export function StudentView({ student, onBack }: StudentViewProps) {
         alert("Academic intervention logs committed to database ledger.");
       }
     } catch (err) {
-      console.error("Failed to save log:", err);
+      console.error("MODAL_CRASH_DUMP: Exception in handleSaveNotes:", err);
       alert("Failed to save advising log.");
     } finally {
       setIsSaving(false);
     }
   };
+
+  // Strictly decoupled advisor column configuration
+  const advisorColumns: LedgerColumn<CourseLedgerRecord>[] = [
+    {
+      key: "code",
+      header: (
+        <div className="flex items-center gap-1.5">
+          <Hash size={11} /> Code
+        </div>
+      ),
+      headerClassName: "whitespace-nowrap",
+      cellClassName: "font-mono font-bold text-gray-900 whitespace-nowrap",
+      render: (c) => c.code,
+    },
+    {
+      key: "name",
+      header: "Course Title",
+      cellClassName: "text-gray-700 font-medium max-w-[220px] truncate",
+      render: (c) => <span title={c.name}>{c.name}</span>,
+    },
+    {
+      key: "credits",
+      header: "Cr",
+      headerClassName: "text-center whitespace-nowrap",
+      cellClassName: "text-center font-mono text-gray-600 whitespace-nowrap",
+      render: (c) => c.credits,
+    },
+    {
+      key: "semester",
+      header: (
+        <div className="flex items-center justify-center gap-1.5">
+          <Calendar size={11} /> Sem
+        </div>
+      ),
+      headerClassName: "text-center whitespace-nowrap",
+      cellClassName: "text-center font-mono text-gray-500 whitespace-nowrap",
+      render: (c) => c.semester || "—",
+    },
+    {
+      key: "grade_point",
+      header: "GP",
+      headerClassName: "text-center whitespace-nowrap",
+      cellClassName: "text-center font-mono text-gray-600 whitespace-nowrap",
+      render: (c) => {
+        const isNeutral = ["HL", "PC", "EX"].includes(c.grade?.toUpperCase() || "");
+        if (isNeutral) return <span className="text-blue-600 font-semibold">—</span>;
+        return (
+          <span className={`font-bold ${(c.grade_point ?? 0) < 2.0 ? "text-rose-600" : "text-gray-800"}`}>
+            {c.grade_point !== undefined && c.grade_point !== null ? c.grade_point.toFixed(2) : "—"}
+          </span>
+        );
+      },
+    },
+    {
+      key: "prereq",
+      header: (
+        <div className="flex items-center justify-center gap-1.5">
+          <Info size={11} /> Prereq
+        </div>
+      ),
+      headerClassName: "text-center whitespace-nowrap",
+      cellClassName: "text-center whitespace-nowrap",
+      render: (c) => {
+        if (c.prerequisite_met === false) {
+          return (
+            <span
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200"
+              title={(c.missing_prerequisites || []).join(", ")}
+            >
+              <AlertTriangle size={9} /> UNMET
+            </span>
+          );
+        }
+        return <CheckCircle2 size={14} className="mx-auto text-emerald-500" />;
+      },
+    },
+    {
+      key: "ai_flag",
+      header: "AI",
+      headerClassName: "text-center whitespace-nowrap",
+      cellClassName: "text-center whitespace-nowrap",
+      render: (c) => (
+        c.is_ai_parsed ? (
+          <span className="text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">AI</span>
+        ) : (
+          <span className="text-[10px] text-gray-400">—</span>
+        )
+      ),
+    },
+    {
+      key: "status",
+      header: "Status",
+      headerClassName: "text-right whitespace-nowrap",
+      cellClassName: "text-right whitespace-nowrap",
+      render: (c) => {
+        const isHL = c.grade?.toUpperCase() === "HL";
+        const isPC = c.grade?.toUpperCase() === "PC" || c.grade?.toUpperCase() === "EX";
+        const isPassed = ["Passed", "Pass", "Pass/Approved", "Approved"].includes(c.status);
+        const isExempted = c.status === "Exempted" || isHL || isPC;
+        const isFailed = ["Failed", "Fail"].includes(c.status) || c.grade === "E" || c.grade === "TL";
+
+        if (isExempted) {
+          return (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+              EXEMPT ({c.grade})
+            </span>
+          );
+        }
+        if (isPassed) {
+          return (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+              PASSED ({c.grade})
+            </span>
+          );
+        }
+        if (isFailed) {
+          return (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+              <AlertTriangle size={10} /> FAILED ({c.grade})
+            </span>
+          );
+        }
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-gray-100 text-gray-600 border border-gray-200">
+            {c.status || "—"}
+          </span>
+        );
+      },
+    },
+  ];
 
   return (
     <div className="space-y-6">
@@ -147,11 +353,16 @@ export function StudentView({ student, onBack }: StudentViewProps) {
       {/* 🛠️ CORE COMPONENT DEEP GRID SYSTEM */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* Left Side: Full Academic History Ledger — shared CourseLedger (advisor role) */}
+        {/* Left Side: Full Academic History Ledger — decoupled advisor columns */}
         <div className="lg:col-span-2 max-h-[500px] overflow-y-auto">
           <CourseLedger
             records={courseResults}
-            role="advisor"
+            columns={advisorColumns}
+            title="Academic History Ledger"
+            subtitle={`${courseResults.length} Courses`}
+            icon={<BookOpen size={16} className="text-blue-900" />}
+            emptyMessage="No academic records are attached to this student profile yet."
+            getRowClassName={(c) => (c.prerequisite_met === false ? "bg-rose-50/40 hover:bg-rose-50/60" : "")}
           />
         </div>
 

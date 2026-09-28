@@ -11,7 +11,23 @@ class StorageAuditRequest(BaseModel):
     Request model for processing a PDF directly from Supabase Storage.
     Eliminates multipart upload overhead to FastAPI.
     """
+    tenant_id: str = Field("UTM", description="Multi-tenant identifier (e.g., 'UTM', 'UM')")
     storage_path: str = Field(..., description="Path inside the transcripts bucket, e.g., 'transcripts/{advisor_id}/{filename}'")
+    student_id: Optional[str] = Field(None, description="UUID of existing student, or None to auto-create/lookup via matric")
+    advisor_id: str = Field(..., description="UUID of authenticated advisor")
+    university_id: str = Field(..., description="UUID of the university")
+    matric_number: Optional[str] = Field(None, description="Student matric number if known upfront")
+    curriculum_year: Optional[str] = Field(None, description="Curriculum intake year")
+    program_code: Optional[str] = Field(None, description="Program code")
+    cohort_id: Optional[str] = Field(None, description="UUID of student's cohort")
+
+
+class TranscriptProcessRequest(BaseModel):
+    """
+    Dynamic Multi-Tenant Request model for processing a transcript from storage.
+    """
+    tenant_id: str = Field(..., description="Institutional multi-tenant identifier (e.g., 'UTM', 'UM')")
+    storage_path: str = Field(..., description="Path inside the transcripts bucket")
     student_id: Optional[str] = Field(None, description="UUID of existing student, or None to auto-create/lookup via matric")
     advisor_id: str = Field(..., description="UUID of authenticated advisor")
     university_id: str = Field(..., description="UUID of the university")
@@ -23,6 +39,7 @@ class StorageAuditRequest(BaseModel):
 
 class ExtractPDFRequest(BaseModel):
     file_path: str = Field(..., description="Path in Supabase storage bucket, e.g. 'slips/matric_timestamp.pdf'")
+    tenant_id: Optional[str] = Field("UTM", description="Tenant ID identifier")
 
 
 class ExtractPDFResponse(BaseModel):
@@ -103,6 +120,25 @@ class ExtractedCourseItem(BaseModel):
 
 
 class FinalizeApprovalRequest(BaseModel):
+    tenant_id: str = Field("UTM", description="Multi-tenant identifier (e.g., 'UTM', 'UM')")
+    document_id: str = Field(..., description="UUID of document in uploaded_documents table")
+    matric_number: str = Field(..., description="Student matric number")
+    student_name: Optional[str] = None
+    advisor_id: Optional[str] = Field(None, description="Advisor staff ID (extracted server-side from JWT)")
+    university_id: Optional[str] = ""
+    curriculum_year: Optional[str] = None
+    program_code: Optional[str] = None
+    cohort_id: Optional[str] = Field(None, description="UUID of student's cohort")
+    academic_session: Optional[str] = "2024/2025"
+    semester: Optional[Any] = 1
+    courses: List[ExtractedCourseItem] = []
+
+
+class AuditApprovalRequest(BaseModel):
+    """
+    Dynamic Multi-Tenant Request model for finalizing advisor audit approval.
+    """
+    tenant_id: str = Field(..., description="Institutional multi-tenant identifier (e.g., 'UTM', 'UM')")
     document_id: str = Field(..., description="UUID of document in uploaded_documents table")
     matric_number: str = Field(..., description="Student matric number")
     student_name: Optional[str] = None

@@ -9,12 +9,14 @@ from typing import Dict, Any, List
 try:
     from app.schemas.audit import (
         StorageAuditRequest,
+        TranscriptProcessRequest,
         DegreeAuditResponse,
         AuditSummary,
         CourseAuditResult,
         PurgeDocumentRequest,
         PurgeDocumentResponse,
         FinalizeApprovalRequest,
+        AuditApprovalRequest,
         FinalizeApprovalResponse,
         ExtractPDFRequest,
         ExtractPDFResponse,
@@ -34,12 +36,14 @@ try:
 except ImportError:
     from backend.app.schemas.audit import (
         StorageAuditRequest,
+        TranscriptProcessRequest,
         DegreeAuditResponse,
         AuditSummary,
         CourseAuditResult,
         PurgeDocumentRequest,
         PurgeDocumentResponse,
         FinalizeApprovalRequest,
+        AuditApprovalRequest,
         FinalizeApprovalResponse,
         ExtractPDFRequest,
         ExtractPDFResponse,
@@ -61,19 +65,18 @@ router = APIRouter(prefix="/audit", tags=["Degree Audit"])
 supabase_svc = SupabaseService()
 llm_fallback = MicroLLMFallback()
 
-def fetch_and_merge_historical_records(matric_no: str, new_records: List[ParsedLineItem]) -> List[ParsedLineItem]:
+def fetch_and_merge_historical_records(matric_no: str, new_records: List[ParsedLineItem], tenant_id: str = "UTM") -> List[ParsedLineItem]:
     if not supabase_svc.client or not matric_no:
         return new_records
     try:
         new_semesters = {r.semester for r in new_records if r.semester}
-        # MULTI-TENANT: scope fetch to (tenant_id="UTM", matric_no) so we never
+        # MULTI-TENANT: scope fetch to (tenant_id, matric_no) so we never
         # cross tenant boundaries when pulling the cumulative history.
-        TENANT_ID = "UTM"
         res = (
             supabase_svc.client
             .table("academic_records")
             .select("*")
-            .eq("tenant_id", TENANT_ID)
+            .eq("tenant_id", tenant_id)
             .eq("matric_no", matric_no)
             .execute()
         )
@@ -361,14 +364,26 @@ async def finalize_approval(
         curriculum_year=request.curriculum_year
     )
 
+    # 3a. Fetch block_exempted_credits and graduation_credit_requirement from students table.
+    #     Diploma/Transfer students enter with pre-approved credits that must be added to
+    #     their earned total. graduation_credit_requirement, if set, overrides the template
+    #     default so the progress bar reflects the student's actual adjusted target.
+    block_exempted_credits, student_grad_req = supabase_svc.get_student_block_exempted_credits(
+        matric_no=matric_number
+    )
+    if student_grad_req is not None:
+        total_required_credits = student_grad_req
+
     # 3b. FIX #1: Merge with historical semesters not included in this submission
-    parsed_items = fetch_and_merge_historical_records(matric_number, parsed_items)
+    tenant_id = (getattr(request, "tenant_id", None) or "UTM").strip()
+    parsed_items = fetch_and_merge_historical_records(matric_number, parsed_items, tenant_id=tenant_id)
 
     # 4. Run Pure Python Graph Prerequisite Audit (with min_grade & credit gates)
     audited_records, summary = PrerequisiteGraphResolver.audit_student_records(
         records=parsed_items,
         course_catalog=catalog,
-        total_required_credits=total_required_credits
+        total_required_credits=total_required_credits,
+        block_exempted_credits=block_exempted_credits
     )
 
     # 4. Upsert Student Record & Persist Audits to Supabase
@@ -386,7 +401,8 @@ async def finalize_approval(
         advisor_id=advisor_id,
         records=audited_records,
         summary=summary,
-        storage_pdf_path=f"document:{request.document_id}"
+        storage_pdf_path=f"document:{request.document_id}",
+        tenant_id=tenant_id
     )
 
     # 5. Update uploaded_documents status to 'Approved'
@@ -468,6 +484,21 @@ async def process_storage_transcript(
             detail="Uploaded transcript PDF appears to be empty or an unsupported scanned image."
         )
 
+    # === AUTO-PURGE: PDF bytes are now fully extracted into memory (raw_lines). ===
+    # Delete the raw file from storage immediately so we never accumulate PDFs on the
+    # Supabase free-tier 1GB limit. Deletion is non-blocking: a failure logs a warning
+    # but does NOT interrupt the response pipeline.
+    try:
+        _bucket = "academic-slips" if "academic-slips" in request.storage_path else "transcripts"
+        supabase_svc.delete_file_from_storage(
+            bucket_name=_bucket,
+            file_path=request.storage_path
+        )
+    except Exception as _purge_err:
+        # Defensive outer catch — should never be reached since delete_file_from_storage
+        # already swallows its own exceptions, but we guard here anyway.
+        print(f"[Auto-Purge OUTER WARNING] Unexpected error during storage cleanup: {_purge_err}")
+
     # 3. Regex Parsing (Zero AI Cost)
     metadata, parsed_courses, unparsed_lines = MalaysianTranscriptParser.parse_transcript_lines(raw_lines)
 
@@ -497,14 +528,23 @@ async def process_storage_transcript(
         curriculum_year=request.curriculum_year
     )
 
+    # 6a. Fetch block_exempted_credits for Diploma/Transfer students
+    block_exempted_credits, student_grad_req = supabase_svc.get_student_block_exempted_credits(
+        matric_no=matric_no
+    )
+    if student_grad_req is not None:
+        total_required_credits = student_grad_req
+
     # 6b. FIX #1: Merge with historical semesters not included in this submission
-    parsed_courses = fetch_and_merge_historical_records(matric_no, parsed_courses)
+    tenant_id = (getattr(request, "tenant_id", None) or "UTM").strip()
+    parsed_courses = fetch_and_merge_historical_records(matric_no, parsed_courses, tenant_id=tenant_id)
 
     # 7. Run Pure Python Graph Prerequisite Audit
     audited_records, summary = PrerequisiteGraphResolver.audit_student_records(
         records=parsed_courses,
         course_catalog=catalog,
-        total_required_credits=total_required_credits
+        total_required_credits=total_required_credits,
+        block_exempted_credits=block_exempted_credits
     )
 
     advisor_id = (request.advisor_id or "").strip()
@@ -529,7 +569,8 @@ async def process_storage_transcript(
         advisor_id=advisor_id,
         records=audited_records,
         summary=summary,
-        storage_pdf_path=request.storage_path
+        storage_pdf_path=request.storage_path,
+        tenant_id=tenant_id
     )
 
     return DegreeAuditResponse(

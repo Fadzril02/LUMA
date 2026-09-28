@@ -3,6 +3,7 @@ import { Check, XCircle, Clock, CheckCircle2, FileText, Calendar, Eye, X, Plus, 
 import { Card, CardContent, Button, Badge } from "../../components/ui";
 import { db } from "../../../lib/supabase";
 import { api } from "../../../lib/api";
+import { useAuth } from "../../../context/AuthContext";
 
 interface CorrectionsQueueProps {
   queue: any[];
@@ -11,6 +12,7 @@ interface CorrectionsQueueProps {
 }
 
 export function CorrectionsQueue({ queue, roster, onApproved }: CorrectionsQueueProps) {
+  const { profile, user } = useAuth();
   const [liveQueue, setLiveQueue] = useState<any[]>(queue);
   const [filterStatus, setFilterStatus] = useState<string>("Pending_Advisor_Approval"); 
 
@@ -103,9 +105,11 @@ export function CorrectionsQueue({ queue, roster, onApproved }: CorrectionsQueue
       
       // Route through FastAPI Zero-Waste engine for DAG verification & persistence into academic_records.
       // Note: advisor_id is strictly derived from the verified JWT payload on the backend.
+      const tenantId = (profile as any)?.tenant_id || (profile as any)?.university_id || (user as any)?.user_metadata?.tenant_id || "UTM";
       await api.finalizeApproval({
         document_id: docId,
         matric_number: docMatricNo,
+        tenant_id: tenantId,
         student_name: matchingStudent ? matchingStudent.name : studentData.student_name,
         academic_session: studentData.academic_session || "2024/2025",
         semester: studentData.semester || 1,

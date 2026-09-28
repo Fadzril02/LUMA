@@ -99,11 +99,16 @@ class PrerequisiteGraphResolver:
         records: List[ParsedLineItem],
         course_catalog: Dict[str, Dict[str, Any]],
         total_required_credits: int = 0,
-        min_cgpa_threshold: float = 2.00
+        min_cgpa_threshold: float = 2.00,
+        block_exempted_credits: int = 0
     ) -> tuple[List[CourseAuditResult], AuditSummary]:
         """
         Runs pure Python graph traversal & set validation on parsed courses against course catalog.
         Categorizes each course into Traffic Light Matrix (GREEN, YELLOW, RED) and computes 5-domain radar scores.
+
+        block_exempted_credits: Pre-approved credits for Diploma/Transfer students that are
+        added to total_credits_earned AFTER the record loop. They do NOT affect CGPA math
+        (no grade points, not included in gpa_credits denominator).
         """
         # Map of passed/exempted courses: code -> ParsedLineItem
         passed_courses: Dict[str, ParsedLineItem] = {}
@@ -231,7 +236,14 @@ class PrerequisiteGraphResolver:
             ))
 
         # Calculate Final CGPA
+        # NOTE: block_exempted_credits are NOT included in gpa_credits — they carry no
+        # grade point value and must not inflate or deflate the GPA denominator.
         cgpa = round(total_grade_points / gpa_credits, 2) if gpa_credits > 0 else 0.00
+
+        # Apply block exempted credits AFTER CGPA calculation.
+        # Formula: Final Total Credits = (Passed/Exempted credits from records) + block_exempted_credits
+        if block_exempted_credits > 0:
+            total_credits_earned += block_exempted_credits
 
         # Calculate 5-Domain Radar Stats (0.0 - 4.0)
         radar_stats: Dict[str, float] = {}

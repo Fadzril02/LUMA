@@ -57,6 +57,7 @@ export interface StorageAuditPayload {
   storage_path: string;
   advisor_id: string;
   university_id: string;
+  tenant_id?: string;
   matric_number?: string;
   curriculum_year?: string;
   program_code?: string;
@@ -65,6 +66,7 @@ export interface StorageAuditPayload {
 export interface FinalizeApprovalPayload {
   document_id: string;
   matric_number: string;
+  tenant_id?: string;
   student_name?: string;
   advisor_id?: string;
   university_id?: string;
@@ -124,8 +126,11 @@ export const api = {
   },
 
   // Extract PDF from storage path
-  extractTranscript: async (filePath: string) => {
-    const res = await apiClient.post('/api/v1/audit/extract', { file_path: filePath });
+  extractTranscript: async (filePath: string, tenantId?: string) => {
+    const res = await apiClient.post('/api/v1/audit/extract', {
+      file_path: filePath,
+      ...(tenantId ? { tenant_id: tenantId } : {})
+    });
     return res.data;
   },
 

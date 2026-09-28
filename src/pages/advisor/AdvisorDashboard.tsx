@@ -308,10 +308,12 @@ export function AdvisorDashboard() {
 
       if (uploadErr) throw new Error(`Storage upload failed: ${uploadErr.message}`);
 
+      const tenantId = (advisor as any)?.tenant_id || advisor?.university_id || (user as any)?.user_metadata?.tenant_id || "UTM";
       const auditRes = await api.processStorageAudit({
         storage_path: `transcripts/${uploadData.path}`,
         advisor_id: user.id,
         university_id: universityId,
+        tenant_id: tenantId,
       });
 
       setShowAuditModal(false);
