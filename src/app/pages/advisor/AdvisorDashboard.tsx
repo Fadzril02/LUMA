@@ -74,6 +74,7 @@ export function AdvisorDashboard() {
   const [cohorts, setCohorts] = useState<AdvisorCohort[]>([]);
   const [degreeTemplates, setDegreeTemplates] = useState<DegreeTemplate[]>([]);
   const [togglingCohortId, setTogglingCohortId] = useState<string | null>(null);
+  const [deletingCohortId, setDeletingCohortId] = useState<string | null>(null);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
   // Create Cohort Modal State
@@ -306,6 +307,41 @@ export function AdvisorDashboard() {
       toast.error(err.message || "Failed to update cohort lock status.");
     } finally {
       setTogglingCohortId(null);
+    }
+  };
+
+  // Delete Cohort Handler: safely removes empty cohorts
+  const handleDeleteCohort = async (cohortId: string, studentCount: number) => {
+    // Step 3a (Validation Gate): If studentCount > 0, trigger an immediate UI block
+    if (studentCount > 0) {
+      alert("Cannot delete this cohort because it has active students assigned. Please reassign the students first.");
+      return;
+    }
+
+    // Step 3b (Confirmation Gate)
+    const confirm = window.confirm("Are you sure you want to delete this cohort? This action cannot be undone.");
+    if (!confirm) return;
+
+    setDeletingCohortId(cohortId);
+    try {
+      // Step 3c (Database Execution)
+      const { error } = await db.from("cohorts").delete().eq("id", cohortId);
+
+      // Step 3d (Error Handling)
+      if (error) {
+        console.error("Failed to delete cohort:", error);
+        alert(error.message);
+        return;
+      }
+
+      // Step 3e (Optimistic UI Update)
+      setCohorts((prev) => prev.filter((c) => c.id !== cohortId));
+      toast.success("Cohort deleted successfully.");
+    } catch (err: any) {
+      console.error("Unexpected error deleting cohort:", err);
+      alert(err?.message || "Failed to delete cohort.");
+    } finally {
+      setDeletingCohortId(null);
     }
   };
 
@@ -713,7 +749,9 @@ export function AdvisorDashboard() {
               const programName = tmpl?.program_name || "Degree Program";
               const isLocked = cohort.is_locked;
               const isToggling = togglingCohortId === cohort.id;
+              const isDeleting = deletingCohortId === cohort.id;
               const isCopied = copiedCode === cohort.cohort_code;
+              const studentCount = roster.filter((s) => s.cohort_id === cohort.id).length;
 
               return (
                 <div
@@ -732,6 +770,10 @@ export function AdvisorDashboard() {
                       <span className="inline-flex items-center px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[11px] font-mono">
                         {syllabusYear}
                       </span>
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[11px] font-mono font-medium">
+                        <Users className="w-3 h-3 text-slate-500" />
+                        {studentCount} {studentCount === 1 ? "student" : "students"}
+                      </span>
                       {isLocked ? (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-rose-50 text-rose-700 text-[11px] font-mono font-semibold border border-rose-200">
                           <Lock className="w-3 h-3" />
@@ -749,7 +791,7 @@ export function AdvisorDashboard() {
                     </p>
                   </div>
 
-                  {/* Cohort Code Display & Lock Switch */}
+                  {/* Cohort Code Display, Lock Switch & Delete Action */}
                   <div className="flex flex-col sm:flex-row sm:items-center gap-4 shrink-0">
                     {/* Code Display */}
                     <div className="flex items-center gap-2">
@@ -793,6 +835,21 @@ export function AdvisorDashboard() {
                         className="data-[state=checked]:bg-rose-600 cursor-pointer"
                       />
                     </div>
+
+                    {/* Delete Action Button */}
+                    <button
+                      onClick={() => handleDeleteCohort(cohort.id, studentCount)}
+                      disabled={isDeleting}
+                      type="button"
+                      className="inline-flex items-center justify-center p-2 rounded-lg text-rose-500 hover:text-rose-700 hover:bg-rose-50 border border-gray-200 bg-white hover:border-rose-200 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-xs"
+                      title={studentCount > 0 ? "Cannot delete: Cohort has assigned students" : "Delete Cohort"}
+                    >
+                      {isDeleting ? (
+                        <Loader2 className="w-4 h-4 animate-spin text-rose-600" />
+                      ) : (
+                        <Trash2 className="w-4 h-4" />
+                      )}
+                    </button>
                   </div>
                 </div>
               );
