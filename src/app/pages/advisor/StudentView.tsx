@@ -30,51 +30,17 @@ export function StudentView({ student, onBack }: StudentViewProps) {
   const [pastLogs, setPastLogs] = useState<any[]>([]);
   const [fetchedRecords, setFetchedRecords] = useState<any[]>([]);
 
-  // Guard against null/undefined student prop rendering blankly
-  if (!student) {
-    console.error("MODAL_CRASH_DUMP: StudentView rendered with missing/null student prop:", student);
-    return (
-      <div className="p-8 text-center text-rose-600 bg-rose-50 rounded-xl border border-rose-200">
-        <p className="font-bold">Error loading student profile.</p>
-        <button onClick={onBack} className="mt-3 text-xs underline text-blue-900 cursor-pointer">
-          Return to Advisee List
-        </button>
-      </div>
-    );
-  }
-
-  // Extract real metrics safely passed downwards or fetched from academic_records
-  const recordsSource = student.rawResults || student.records || (fetchedRecords.length > 0 ? fetchedRecords : []);
-  const courseResults: CourseLedgerRecord[] = recordsSource.map((r: any) => ({
-    code: r.course_code || r.code || "",
-    name: r.course_name || r.name || "Unknown Module",
-    credits: Number(r.credits) || 0,
-    grade: r.grade || "N/A",
-    grade_point: Number(r.grade_point ?? r.pointValue) || undefined,
-    semester: r.semester || r.session_semester || r.semester_id || "—",
-    status: r.status || "N/A",
-    prerequisite_met: r.prerequisite_met,
-    missing_prerequisites: r.missing_prerequisites,
-    is_ai_parsed: r.is_ai_parsed,
-  }));
-
-  const totalRequiredCredits =
-    student.total_credits_required ||
-    student.required_credits ||
-    student.degree_template?.total_credits_required ||
-    student.cohorts?.degree_templates?.total_credits_required ||
-    120;
-  const currentCredits = Number(student.credits || student.total_earned_credits) || 0;
-  const creditProgressPercentage = Math.min((currentCredits / totalRequiredCredits) * 100, 100);
-
   // Diagnostic Hook: Robust try/catch blocks with explicit MODAL_CRASH_DUMP logs
+  // Placed unconditionally before any early returns to strictly follow the Rules of Hooks
   useEffect(() => {
     let isMounted = true;
 
     const fetchModalData = async () => {
       try {
         if (!student?.matric_no) {
-          console.error("MODAL_CRASH_DUMP: Student object is missing matric_no identifier:", student);
+          if (student) {
+            console.error("MODAL_CRASH_DUMP: Student object is missing matric_no identifier:", student);
+          }
           return;
         }
 
@@ -96,7 +62,7 @@ export function StudentView({ student, onBack }: StudentViewProps) {
         }
 
         // 2. Fetch Academic Records if not provided in student prop
-        if (!student.rawResults && !student.records) {
+        if (!student?.rawResults && !student?.records) {
           try {
             const { data: recData, error: recError } = await db
               .from("academic_records")
@@ -124,6 +90,43 @@ export function StudentView({ student, onBack }: StudentViewProps) {
       isMounted = false;
     };
   }, [student?.matric_no]);
+
+  // Guard against null/undefined student prop rendering blankly (safely called AFTER all hooks)
+  if (!student) {
+    console.error("MODAL_CRASH_DUMP: StudentView rendered with missing/null student prop:", student);
+    return (
+      <div className="p-8 text-center text-rose-600 bg-rose-50 rounded-xl border border-rose-200">
+        <p className="font-bold">Error loading student profile.</p>
+        <button onClick={onBack} className="mt-3 text-xs underline text-blue-900 cursor-pointer">
+          Return to Advisee List
+        </button>
+      </div>
+    );
+  }
+
+  // Extract real metrics safely passed downwards or fetched from academic_records
+  const recordsSource = student?.rawResults || student?.records || (fetchedRecords.length > 0 ? fetchedRecords : []);
+  const courseResults: CourseLedgerRecord[] = (Array.isArray(recordsSource) ? recordsSource : []).filter(Boolean).map((r: any) => ({
+    code: r.course_code || r.code || "",
+    name: r.course_name || r.name || "Unknown Module",
+    credits: Number(r.credits) || 0,
+    grade: r.grade || "N/A",
+    grade_point: Number(r.grade_point ?? r.pointValue) || undefined,
+    semester: r.semester || r.session_semester || r.semester_id || "—",
+    status: r.status || "N/A",
+    prerequisite_met: r.prerequisite_met,
+    missing_prerequisites: r.missing_prerequisites,
+    is_ai_parsed: r.is_ai_parsed,
+  }));
+
+  const totalRequiredCredits =
+    student?.total_credits_required ||
+    student?.required_credits ||
+    student?.degree_template?.total_credits_required ||
+    student?.cohorts?.degree_templates?.total_credits_required ||
+    120;
+  const currentCredits = Number(student?.credits || student?.total_earned_credits) || 0;
+  const creditProgressPercentage = Math.min((currentCredits / totalRequiredCredits) * 100, 100);
 
   const handleSaveNotes = async () => {
     if (!notes.trim()) return;
@@ -203,11 +206,14 @@ export function StudentView({ student, onBack }: StudentViewProps) {
       headerClassName: "text-center whitespace-nowrap",
       cellClassName: "text-center font-mono text-gray-600 whitespace-nowrap",
       render: (c) => {
-        const isNeutral = ["HL", "PC", "EX"].includes(c.grade?.toUpperCase() || "");
+        const gradeStr = String(c.grade || "");
+        const isNeutral = ["HL", "PC", "EX"].includes(gradeStr.toUpperCase());
         if (isNeutral) return <span className="text-blue-600 font-semibold">—</span>;
+        const gp = Number(c.grade_point);
+        const hasGp = c.grade_point !== undefined && c.grade_point !== null && !isNaN(gp);
         return (
-          <span className={`font-bold ${(c.grade_point ?? 0) < 2.0 ? "text-rose-600" : "text-gray-800"}`}>
-            {c.grade_point !== undefined && c.grade_point !== null ? c.grade_point.toFixed(2) : "—"}
+          <span className={`font-bold ${(hasGp ? gp : 0) < 2.0 ? "text-rose-600" : "text-gray-800"}`}>
+            {hasGp ? gp.toFixed(2) : "—"}
           </span>
         );
       },
@@ -223,10 +229,13 @@ export function StudentView({ student, onBack }: StudentViewProps) {
       cellClassName: "text-center whitespace-nowrap",
       render: (c) => {
         if (c.prerequisite_met === false) {
+          const missing = Array.isArray(c.missing_prerequisites)
+            ? c.missing_prerequisites.join(", ")
+            : String(c.missing_prerequisites || "");
           return (
             <span
               className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200"
-              title={(c.missing_prerequisites || []).join(", ")}
+              title={missing}
             >
               <AlertTriangle size={9} /> UNMET
             </span>
@@ -254,36 +263,38 @@ export function StudentView({ student, onBack }: StudentViewProps) {
       headerClassName: "text-right whitespace-nowrap",
       cellClassName: "text-right whitespace-nowrap",
       render: (c) => {
-        const isHL = c.grade?.toUpperCase() === "HL";
-        const isPC = c.grade?.toUpperCase() === "PC" || c.grade?.toUpperCase() === "EX";
-        const isPassed = ["Passed", "Pass", "Pass/Approved", "Approved"].includes(c.status);
-        const isExempted = c.status === "Exempted" || isHL || isPC;
-        const isFailed = ["Failed", "Fail"].includes(c.status) || c.grade === "E" || c.grade === "TL";
+        const gradeStr = String(c.grade || "").toUpperCase();
+        const statusStr = String(c.status || "");
+        const isHL = gradeStr === "HL";
+        const isPC = gradeStr === "PC" || gradeStr === "EX";
+        const isPassed = ["Passed", "Pass", "Pass/Approved", "Approved"].includes(statusStr);
+        const isExempted = statusStr === "Exempted" || isHL || isPC;
+        const isFailed = ["Failed", "Fail"].includes(statusStr) || gradeStr === "E" || gradeStr === "TL";
 
         if (isExempted) {
           return (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-              EXEMPT ({c.grade})
+              EXEMPT ({gradeStr || "N/A"})
             </span>
           );
         }
         if (isPassed) {
           return (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-              PASSED ({c.grade})
+              PASSED ({gradeStr || "N/A"})
             </span>
           );
         }
         if (isFailed) {
           return (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
-              <AlertTriangle size={10} /> FAILED ({c.grade})
+              <AlertTriangle size={10} /> FAILED ({gradeStr || "N/A"})
             </span>
           );
         }
         return (
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-gray-100 text-gray-600 border border-gray-200">
-            {c.status || "—"}
+            {statusStr || "—"}
           </span>
         );
       },

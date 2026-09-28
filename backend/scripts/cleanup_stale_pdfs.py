@@ -28,7 +28,7 @@ import sys
 import argparse
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 from dotenv import load_dotenv
 
 # Ensure backend root is on sys.path
@@ -54,13 +54,25 @@ except ImportError:
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="PDPA Maintenance: Purge unapproved academic PDF transcripts older than 7 days."
+        description="PDPA Maintenance: Purge unapproved academic PDF transcripts under tiered retention."
+    )
+    parser.add_argument(
+        "--pending-days",
+        type=int,
+        default=30,
+        help="Retention threshold in days for documents in pending review status (default: 30 days)"
+    )
+    parser.add_argument(
+        "--failed-days",
+        type=int,
+        default=7,
+        help="Retention threshold in days for failed, rejected, error, or unapproved draft documents (default: 7 days)"
     )
     parser.add_argument(
         "--days",
         type=int,
-        default=7,
-        help="Retention threshold in days (default: 7 days)"
+        default=None,
+        help="Legacy retention threshold in days (if provided, overrides both pending and failed days)"
     )
     parser.add_argument(
         "--dry-run",
@@ -174,16 +186,92 @@ def delete_storage_file_with_confirmation(svc: SupabaseService, file_path: str) 
         return False
 
 
-def run_cleanup(days: int = 7, dry_run: bool = False, batch_size: int = 100) -> Dict[str, Any]:
+PENDING_STATUS_SET = {
+    "pending_advisor_approval",
+    "pending_verification",
+    "pending_student_verification",
+    "pending",
+    "pending_approval",
+    "under_review",
+    "needs_review"
+}
+
+
+def is_document_stale(
+    doc: Dict[str, Any],
+    time_col: str,
+    pending_cutoff_dt: datetime,
+    failed_cutoff_dt: datetime
+) -> Tuple[bool, str]:
+    """
+    Evaluates whether an uploaded document record is eligible for PDPA cleanup under tiered retention.
+    - Records with processing_status = 'Approved' must NEVER be purged.
+    - Records with processing_status in PENDING_STATUS_SET (or starting with 'pending') are retained for pending_days (default: 30 days).
+    - Records with processing_status in ('Failed', 'Rejected', 'Error', 'Uploaded') or other unapproved
+      abandoned drafts are retained for failed_days (default: 7 days).
+    """
+    raw_status = (doc.get("processing_status") or "").strip()
+    status_lower = raw_status.lower()
+
+    # Rule: Records with processing_status = 'Approved' must NEVER be purged
+    if status_lower == "approved":
+        return False, "Exempt from purge: processing_status is 'Approved'"
+
+    raw_ts = doc.get(time_col)
+    if not raw_ts:
+        return True, "Eligible: missing timestamp on unapproved document"
+
+    try:
+        ts_str = str(raw_ts).replace("Z", "+00:00")
+        doc_dt = datetime.fromisoformat(ts_str)
+        if doc_dt.tzinfo is None:
+            doc_dt = doc_dt.replace(tzinfo=timezone.utc)
+    except Exception:
+        return True, f"Eligible: invalid timestamp format '{raw_ts}' on unapproved document"
+
+    is_pending_review = (
+        status_lower in PENDING_STATUS_SET
+        or status_lower.startswith("pending")
+    )
+
+    if is_pending_review:
+        if doc_dt < pending_cutoff_dt:
+            return True, f"Eligible: pending review document older than pending threshold ({pending_cutoff_dt.isoformat()})"
+        return False, f"Retained: pending review document within pending retention threshold ({pending_cutoff_dt.isoformat()})"
+    else:
+        # Failed, Rejected, Error, Uploaded, or unapproved abandoned drafts
+        if doc_dt < failed_cutoff_dt:
+            return True, f"Eligible: failed/abandoned document older than failed threshold ({failed_cutoff_dt.isoformat()})"
+        return False, f"Retained: failed/abandoned document within failed retention threshold ({failed_cutoff_dt.isoformat()})"
+
+
+def run_cleanup(
+    pending_days: int = 30,
+    failed_days: int = 7,
+    dry_run: bool = False,
+    batch_size: int = 100,
+    days: Optional[int] = None
+) -> Dict[str, Any]:
+    # Support backwards compatibility with legacy `days` argument
+    if days is not None:
+        pending_days = days
+        failed_days = days
+
     start_time = datetime.now(timezone.utc)
-    cutoff_dt = start_time - timedelta(days=days)
-    cutoff_iso = cutoff_dt.isoformat()
+    pending_cutoff_dt = start_time - timedelta(days=pending_days)
+    failed_cutoff_dt = start_time - timedelta(days=failed_days)
+
+    pending_cutoff_iso = pending_cutoff_dt.isoformat()
+    failed_cutoff_iso = failed_cutoff_dt.isoformat()
+    # Query using the more recent cutoff threshold so any document older than either limit is retrieved
+    query_cutoff_iso = max(pending_cutoff_dt, failed_cutoff_dt).isoformat()
 
     logger.info("=" * 70)
-    logger.info("PDPA Stale Document Cleanup Initiated")
-    logger.info("Cutoff Threshold : Older than %d days (%s)", days, cutoff_iso)
-    logger.info("Execution Mode   : %s", "DRY-RUN (Simulated)" if dry_run else "LIVE PURGE")
-    logger.info("Batch Limit      : %d records", batch_size)
+    logger.info("PDPA Stale Document Cleanup Initiated (Tiered Retention)")
+    logger.info("Pending Review Retention: %d days (Cutoff: %s)", pending_days, pending_cutoff_iso)
+    logger.info("Failed/Draft Retention  : %d days (Cutoff: %s)", failed_days, failed_cutoff_iso)
+    logger.info("Execution Mode          : %s", "DRY-RUN (Simulated)" if dry_run else "LIVE PURGE")
+    logger.info("Batch Limit             : %d records", batch_size)
     logger.info("=" * 70)
 
     svc = SupabaseService()
@@ -192,17 +280,18 @@ def run_cleanup(days: int = 7, dry_run: bool = False, batch_size: int = 100) -> 
         return {"success": False, "error": "Client unavailable"}
 
     try:
-        stale_docs, time_col = fetch_stale_documents(svc, cutoff_iso, batch_size=batch_size)
+        stale_docs, time_col = fetch_stale_documents(svc, query_cutoff_iso, batch_size=batch_size)
     except Exception as e:
         logger.error("Error querying stale documents from 'uploaded_documents': %s", e)
         return {"success": False, "error": str(e)}
 
     total_found = len(stale_docs)
-    logger.info("Identified %d stale unapproved document(s) matching criteria.", total_found)
+    logger.info("Identified %d candidate document(s) matching initial query criteria.", total_found)
 
     deleted_storage_count = 0
     deleted_db_count = 0
     skipped_count = 0
+    retained_count = 0
     errors_count = 0
 
     for idx, doc in enumerate(stale_docs, 1):
@@ -216,6 +305,18 @@ def run_cleanup(days: int = 7, dry_run: bool = False, batch_size: int = 100) -> 
             "[%d/%d] Inspecting Doc ID: %s | Matric: %s | Status: %s | Timestamp: %s | Path: %s",
             idx, total_found, doc_id, matric_no, status_val, created_time, file_path
         )
+
+        is_stale, reason = is_document_stale(
+            doc=doc,
+            time_col=time_col,
+            pending_cutoff_dt=pending_cutoff_dt,
+            failed_cutoff_dt=failed_cutoff_dt
+        )
+
+        if not is_stale:
+            retained_count += 1
+            logger.info("  [RETENTION SAFE] %s. Preserving document row '%s'.", reason, doc_id)
+            continue
 
         if dry_run:
             logger.info("  [DRY-RUN] Would delete physical file '%s' and remove document row '%s'.", file_path, doc_id)
@@ -256,7 +357,8 @@ def run_cleanup(days: int = 7, dry_run: bool = False, batch_size: int = 100) -> 
 
     logger.info("=" * 70)
     logger.info("PDPA Stale Document Cleanup Completed in %.2f seconds", duration)
-    logger.info("Total Found          : %d", total_found)
+    logger.info("Total Candidates     : %d", total_found)
+    logger.info("Retained by Policy   : %d", retained_count)
     if not dry_run:
         logger.info("Storage Files Purged : %d", deleted_storage_count)
         logger.info("Database Rows Purged : %d", deleted_db_count)
@@ -270,6 +372,7 @@ def run_cleanup(days: int = 7, dry_run: bool = False, batch_size: int = 100) -> 
         "success": True,
         "dry_run": dry_run,
         "total_found": total_found,
+        "retained_by_policy": retained_count,
         "storage_deleted": deleted_storage_count,
         "db_deleted": deleted_db_count,
         "skipped": skipped_count,
@@ -280,7 +383,13 @@ def run_cleanup(days: int = 7, dry_run: bool = False, batch_size: int = 100) -> 
 
 def main():
     args = parse_args()
-    result = run_cleanup(days=args.days, dry_run=args.dry_run, batch_size=args.batch_size)
+    result = run_cleanup(
+        pending_days=args.pending_days,
+        failed_days=args.failed_days,
+        dry_run=args.dry_run,
+        batch_size=args.batch_size,
+        days=args.days
+    )
     if not result.get("success"):
         sys.exit(1)
 

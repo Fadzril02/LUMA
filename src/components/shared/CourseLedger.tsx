@@ -36,14 +36,16 @@ export interface CourseLedgerProps {
 }
 
 export function CourseLedger({
-  records,
-  columns,
+  records = [],
+  columns = [],
   title = "Course Ledger",
   subtitle,
   emptyMessage,
   icon,
   getRowClassName,
 }: CourseLedgerProps) {
+  const safeRecords = Array.isArray(records) ? records : [];
+  const safeColumns = Array.isArray(columns) ? columns : [];
   const ledgerIcon = icon || <Layers size={16} className="text-blue-900" />;
 
   return (
@@ -57,11 +59,11 @@ export function CourseLedger({
         {subtitle !== undefined ? (
           <span className="text-xs font-mono text-gray-500">{subtitle}</span>
         ) : (
-          <span className="text-xs font-mono text-gray-500">{records.length} Courses</span>
+          <span className="text-xs font-mono text-gray-500">{safeRecords.length} Courses</span>
         )}
       </div>
 
-      {records.length === 0 ? (
+      {safeRecords.length === 0 ? (
         <div className="p-10 text-center flex flex-col items-center justify-center">
           <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-gray-400 mb-3">
             <Clock size={20} />
@@ -76,7 +78,7 @@ export function CourseLedger({
           <table className="w-full text-left text-xs">
             <thead className="bg-gray-50/60 text-gray-500 border-b border-gray-200">
               <tr>
-                {columns.map((col) => (
+                {safeColumns.map((col) => (
                   <th
                     key={col.key}
                     className={`px-5 py-3 font-semibold uppercase tracking-wider ${col.headerClassName || ""}`}
@@ -87,14 +89,14 @@ export function CourseLedger({
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {records.map((course, idx) => (
+              {safeRecords.map((course, idx) => (
                 <tr
-                  key={course.code ? `${course.code}-${idx}` : idx}
+                  key={course?.code ? `${course.code}-${idx}` : idx}
                   className={`hover:bg-gray-50/60 transition-colors ${
                     getRowClassName ? getRowClassName(course) : ""
                   }`}
                 >
-                  {columns.map((col) => (
+                  {safeColumns.map((col) => (
                     <td
                       key={col.key}
                       className={`px-5 py-3 ${col.cellClassName || ""}`}

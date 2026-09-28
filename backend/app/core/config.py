@@ -2,9 +2,9 @@
 Smart Academic Assessment System - Centralized Configuration Module
 """
 
-from typing import List, Optional
+from typing import List, Optional, Union
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import model_validator
+from pydantic import model_validator, field_validator
 
 
 class Settings(BaseSettings):
@@ -30,12 +30,17 @@ class Settings(BaseSettings):
 
     # Frontend URL & CORS
     FRONTEND_URL: str = "http://localhost:5173"
-    CORS_ORIGINS: List[str] = [
+    BACKEND_CORS_ORIGINS: Union[List[str], str] = [
+        # Production Custom Domains
+        "https://syngrad.my",
+        "https://www.syngrad.my",
+        "https://syngrad.vercel.app",
+        # Local Development & Loopback
         "http://localhost:5173",
+        "http://127.0.0.1:5173",
         "http://localhost:3000",
         "http://localhost:4173",
         # Production deployments
-        "https://syngrad.vercel.app",
         "https://syngrad.onrender.com",
         "https://luma-two-theta.vercel.app",
         "https://luma-xswf.onrender.com",
@@ -44,11 +49,23 @@ class Settings(BaseSettings):
         "https://*.netlify.app",
         "https://*.pages.dev",
     ]
+    CORS_ORIGINS: Optional[Union[List[str], str]] = None
+
+    @field_validator("BACKEND_CORS_ORIGINS", "CORS_ORIGINS", mode="before")
+    @classmethod
+    def assemble_cors_origins(cls, v: Union[str, List[str], None]) -> Union[List[str], None]:
+        if isinstance(v, str) and not v.strip().startswith("["):
+            return [i.strip() for i in v.split(",") if i.strip()]
+        return v
 
     @model_validator(mode="after")
     def populate_fallback_keys(self) -> "Settings":
         if not self.LLM_API_KEY and self.GROQ_API_KEY:
             self.LLM_API_KEY = self.GROQ_API_KEY
+        if self.CORS_ORIGINS is not None:
+            self.BACKEND_CORS_ORIGINS = self.CORS_ORIGINS
+        else:
+            self.CORS_ORIGINS = self.BACKEND_CORS_ORIGINS
         return self
 
     model_config = SettingsConfigDict(

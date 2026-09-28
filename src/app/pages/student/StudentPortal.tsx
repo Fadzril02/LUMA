@@ -716,23 +716,23 @@ export function StudentPortal() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {stagedData.courses.map((course: any, index: number) => (
+                      {(stagedData?.courses || []).map((course: any, index: number) => (
                         <tr key={index} className="hover:bg-gray-50/50">
                           <td className="px-4 py-2">
                             <Input 
-                              value={course.course_code} 
+                              value={course?.course_code || ""} 
                               onChange={(e) => handleStagedDataChange(index, "course_code", e.target.value)} 
                               className="font-mono text-sm max-w-[140px] bg-gray-50 border-gray-200 focus:ring-2 focus:ring-blue-900 focus:border-transparent text-gray-900" 
                             />
                           </td>
                           <td className="px-4 py-2">
                             <Input 
-                              value={course.grade} 
+                              value={course?.grade || ""} 
                               onChange={(e) => handleStagedDataChange(index, "grade", e.target.value)} 
                               className="font-bold text-sm max-w-[80px] bg-gray-50 border-gray-200 focus:ring-2 focus:ring-blue-900 focus:border-transparent text-gray-900 uppercase" 
                             />
                           </td>
-                          <td className="px-4 py-2 font-mono text-sm text-gray-700">{course.credit_hour}</td>
+                          <td className="px-4 py-2 font-mono text-sm text-gray-700">{course?.credit_hour ?? course?.credits ?? 0}</td>
                         </tr>
                       ))}
                     </tbody>

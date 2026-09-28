@@ -34,6 +34,7 @@ export function CorrectionsQueue({ queue, roster, onApproved }: CorrectionsQueue
   const approvedCount = liveQueue.filter((item) => item.processing_status === "Approved").length;
 
   const handleOpenAudit = async (doc: any) => {
+    if (!doc) return;
     // Security: Use signed URL (1-hour expiry) instead of public URL.
     // Advisor boundary is enforced upstream — AdvisorPortal.tsx filters the queue
     // to only include documents whose matric_no belongs to this advisor's students.
@@ -45,8 +46,8 @@ export function CorrectionsQueue({ queue, roster, onApproved }: CorrectionsQueue
     }
     setPdfUrl(data.signedUrl);
     setActiveAuditDoc(doc);
-    const courses = doc.extracted_data?.courses || [];
-    setStagedCourses([...courses]);
+    const courses = Array.isArray(doc.extracted_data?.courses) ? doc.extracted_data.courses : [];
+    setStagedCourses([...courses.filter(Boolean)]);
     setShowAddForm(false);
     setManualCode("");
     setManualName("");
@@ -81,12 +82,12 @@ export function CorrectionsQueue({ queue, roster, onApproved }: CorrectionsQueue
   const handleReject = async () => {
     if (!activeAuditDoc) return;
     await db.from("uploaded_documents").update({ processing_status: "Rejected" }).eq("id", activeAuditDoc.id);
-    setLiveQueue(prev => prev.map(item => item.id === activeAuditDoc.id ? { ...item, processing_status: "Rejected" } : item));
+    setLiveQueue(prev => (prev || []).map(item => item?.id === activeAuditDoc.id ? { ...item, processing_status: "Rejected" } : item));
     setActiveAuditDoc(null);
   };
 
   const handleApprove = async () => {
-    if (!activeAuditDoc || !activeAuditDoc.extracted_data) return;
+    if (!activeAuditDoc) return;
     if (!stagedCourses || stagedCourses.length === 0) {
       alert("No course records provided for approval. Please add courses manually before approving.");
       return;
@@ -96,12 +97,12 @@ export function CorrectionsQueue({ queue, roster, onApproved }: CorrectionsQueue
     // if user closes the modal while the API call is in-flight.
     const docId = activeAuditDoc.id;
     const docMatricNo = activeAuditDoc.matric_no;
-    const studentData = activeAuditDoc.extracted_data;
+    const studentData = activeAuditDoc.extracted_data || {};
 
     setIsSaving(true);
     
     try {
-      const matchingStudent = roster.find((s) => s.id === docMatricNo || s.matric_no === docMatricNo);
+      const matchingStudent = roster?.find((s) => s?.id === docMatricNo || s?.matric_no === docMatricNo);
       
       // Route through FastAPI Zero-Waste engine for DAG verification & persistence into academic_records.
       // Note: advisor_id is strictly derived from the verified JWT payload on the backend.
@@ -110,15 +111,15 @@ export function CorrectionsQueue({ queue, roster, onApproved }: CorrectionsQueue
         document_id: docId,
         matric_number: docMatricNo,
         tenant_id: tenantId,
-        student_name: matchingStudent ? matchingStudent.name : studentData.student_name,
+        student_name: matchingStudent ? matchingStudent.name : (studentData.student_name || docMatricNo),
         academic_session: studentData.academic_session || "2024/2025",
         semester: studentData.semester || 1,
-        courses: stagedCourses.map(c => ({
-          course_code: c.course_code.replace(/\s+/g, "").toUpperCase(),
-          course_name: c.course_name || c.course_code,
-          grade: c.grade.trim().toUpperCase(),
-          credit_hour: Number(c.credit_hour || c.credits || 3),
-          credits: Number(c.credits || c.credit_hour || 3),
+        courses: stagedCourses.filter(Boolean).map(c => ({
+          course_code: String(c.course_code || "").replace(/\s+/g, "").toUpperCase() || "UNKNOWN",
+          course_name: String(c.course_name || c.course_code || "Unknown Course"),
+          grade: String(c.grade || "N/A").trim().toUpperCase(),
+          credit_hour: Number(c.credit_hour ?? c.credits ?? 3) || 3,
+          credits: Number(c.credits ?? c.credit_hour ?? 3) || 3,
           status: c.status || "Pass"
         }))
       });
@@ -127,7 +128,7 @@ export function CorrectionsQueue({ queue, roster, onApproved }: CorrectionsQueue
       // reflects the approval without waiting for a parent refetch.
       // Then call onApproved() so the parent (AdvisorPortal) also refetches
       // fresh queue data from the server, keeping everything in sync.
-      setLiveQueue(prev => (prev || []).filter(item => item.id !== docId));
+      setLiveQueue(prev => (prev || []).filter(item => item?.id !== docId));
       setActiveAuditDoc(null);
 
       // Notify parent to refetch — console.log here is intentional for verification;
@@ -336,16 +337,16 @@ export function CorrectionsQueue({ queue, roster, onApproved }: CorrectionsQueue
                           </tr>
                         </thead>
                         <tbody className="divide-y text-xs">
-                          {stagedCourses.map((course: any, idx: number) => (
+                          {stagedCourses.filter(Boolean).map((course: any, idx: number) => (
                             <tr key={idx} className="hover:bg-slate-50/50">
-                              <td className="px-4 py-2.5 font-mono font-bold text-gray-900">{course.course_code}</td>
-                              <td className="px-4 py-2.5 text-gray-600 truncate max-w-[140px]">{course.course_name || "-"}</td>
-                              <td className="px-4 py-2.5 font-bold text-[#990033]">{course.grade}</td>
-                              <td className="px-4 py-2.5 font-mono">{course.credit_hour || course.credits}</td>
+                              <td className="px-4 py-2.5 font-mono font-bold text-gray-900">{course.course_code || "—"}</td>
+                              <td className="px-4 py-2.5 text-gray-600 truncate max-w-[140px]">{course.course_name || course.course_code || "—"}</td>
+                              <td className="px-4 py-2.5 font-bold text-[#990033]">{course.grade || "N/A"}</td>
+                              <td className="px-4 py-2.5 font-mono">{course.credit_hour ?? course.credits ?? "—"}</td>
                               <td className="px-2 py-2.5 text-center">
                                 <button
                                   onClick={() => handleRemoveCourse(idx)}
-                                  className="text-gray-400 hover:text-rose-600 p-1"
+                                  className="text-gray-400 hover:text-rose-600 p-1 cursor-pointer"
                                   title="Remove Course"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />

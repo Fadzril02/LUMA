@@ -2,9 +2,10 @@
 Smart Academic Assessment System - Degree Audit Processing Endpoints
 """
 
+import uuid
 import fitz  # PyMuPDF
 from fastapi import APIRouter, HTTPException, status, Depends
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 try:
     from app.schemas.audit import (
@@ -152,17 +153,69 @@ def _check_advisor_identity(jwt_payload: dict, claimed_advisor_id: str) -> str:
     return actual_staff_id
 
 
+UTM_SEEDED_UUID = "00000000-0000-0000-0000-000000000001"
+
+
+def _resolve_university_code(university_id_or_code: str) -> Optional[str]:
+    """
+    Resolves raw tenant_id or university_id into an institutional code string (e.g. 'UTM').
+    - If the value is a known institution code or alphanumeric short code, returns it directly.
+    - If it is a UUID:
+      * If it matches the seeded UTM UUID ('00000000-0000-0000-0000-000000000001'), returns 'UTM'.
+      * Otherwise queries 'universities' table (select code from universities where id = university_id)
+        to resolve the actual institution code.
+      * Falls back to 'UTM' if the resolved code is empty or lookup fails.
+    """
+    raw_val = str(university_id_or_code).strip()
+    if not raw_val:
+        return None
+
+    is_uuid = False
+    try:
+        uuid.UUID(raw_val)
+        is_uuid = True
+    except (ValueError, AttributeError, TypeError):
+        is_uuid = False
+
+    if not is_uuid:
+        return raw_val
+
+    if raw_val.lower() == UTM_SEEDED_UUID.lower():
+        return "UTM"
+
+    if supabase_svc.client:
+        try:
+            res = (
+                supabase_svc.client.table("universities")
+                .select("code")
+                .eq("id", raw_val)
+                .limit(1)
+                .execute()
+            )
+            if res.data and len(res.data) > 0 and res.data[0].get("code"):
+                resolved_code = str(res.data[0]["code"]).strip()
+                if resolved_code:
+                    return resolved_code
+        except Exception as e:
+            print(f"[_resolve_university_code] University code lookup error: {e}")
+
+    return "UTM"
+
+
 def _extract_tenant_id(jwt_payload: dict) -> str:
     """
     Extract tenant_id server-side strictly from verified JWT app_metadata
     or by querying the advisors table using the verified sub claim.
+    Resolves UUIDs to institutional codes (e.g. 'UTM') via the universities table.
     Completely removes all references to user_metadata or unverified payload.
     Hard-fails with 403 Forbidden if not securely verified.
     """
     app_metadata = jwt_payload.get("app_metadata") or {}
-    tenant_id = app_metadata.get("tenant_id") or app_metadata.get("university_id")
-    if tenant_id and str(tenant_id).strip():
-        return str(tenant_id).strip()
+    tenant_val = app_metadata.get("tenant_id") or app_metadata.get("university_id")
+    if tenant_val and str(tenant_val).strip():
+        resolved = _resolve_university_code(str(tenant_val).strip())
+        if resolved:
+            return resolved
 
     jwt_sub = jwt_payload.get("sub")
     if supabase_svc.client and jwt_sub:
@@ -175,7 +228,9 @@ def _extract_tenant_id(jwt_payload: dict) -> str:
                 .execute()
             )
             if res.data and len(res.data) > 0 and res.data[0].get("university_id"):
-                return str(res.data[0]["university_id"]).strip()
+                resolved = _resolve_university_code(str(res.data[0]["university_id"]).strip())
+                if resolved:
+                    return resolved
         except Exception as e:
             print(f"[_extract_tenant_id] Advisor university_id lookup error: {e}")
 

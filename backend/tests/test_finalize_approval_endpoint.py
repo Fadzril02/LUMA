@@ -287,3 +287,99 @@ def test_finalize_approval_unverifiable_tenant_raises_403():
             "app_metadata": {"staff_id": "STAFF-001", "tenant_id": "UTM"}
         }
 
+
+def test_finalize_approval_resolves_seeded_utm_uuid():
+    """Verify that a seeded UTM UUID ('00000000-0000-0000-0000-000000000001') in university_id resolves to 'UTM'."""
+    app.dependency_overrides[verify_advisor_jwt] = lambda: {
+        "email": "advisor@utm.edu.my",
+        "sub": "mock-advisor-uid",
+        "app_metadata": {"staff_id": "STAFF-001", "university_id": "00000000-0000-0000-0000-000000000001"}
+    }
+    mock_supabase = MagicMock()
+    mock_catalog = {
+        "SECJ1013": {"course_code": "SECJ1013", "prerequisites": {"type": "AND", "courses": []}}
+    }
+    mock_student = {
+        "id": "550e8400-e29b-41d4-a716-446655440000",
+        "matric_number": "A24CS0001",
+        "student_name": "Test Student"
+    }
+    payload = {
+        "document_id": "99999999-9999-9999-9999-999999999999",
+        "matric_number": "A24CS0001",
+        "advisor_id": "STAFF-001",
+        "courses": [{"course_code": "SECJ1013", "grade": "A", "credit_hour": 3}]
+    }
+
+    patch_target = "app.v1.endpoints.audit.supabase_svc" if "app.v1.endpoints.audit" in sys.modules else "backend.app.v1.endpoints.audit.supabase_svc"
+    try:
+        with patch(patch_target) as mock_svc:
+            mock_svc.get_university_course_catalog.return_value = mock_catalog
+            mock_svc.get_or_create_student.return_value = mock_student
+            mock_svc.persist_audit_results.return_value = "audit-uuid-test"
+            mock_svc.get_student_block_exempted_credits.return_value = (0, None)
+            mock_svc.client = mock_supabase
+
+            response = client.post("/api/v1/audit/finalize-approval", json=payload, headers=AUTH_HEADERS)
+            assert response.status_code == 200
+
+            mock_svc.persist_audit_results.assert_called_once()
+            call_kwargs = mock_svc.persist_audit_results.call_args[1]
+            assert call_kwargs["tenant_id"] == "UTM"
+    finally:
+        app.dependency_overrides[verify_advisor_jwt] = lambda: {
+            "email": "advisor@university.edu.my",
+            "sub": "mock-advisor-uid",
+            "app_metadata": {"staff_id": "STAFF-001", "tenant_id": "UTM"}
+        }
+
+
+def test_finalize_approval_resolves_custom_university_uuid_from_db():
+    """Verify that a custom university UUID resolves to its institution code string via universities table."""
+    custom_uuid = "22222222-2222-2222-2222-222222222222"
+    app.dependency_overrides[verify_advisor_jwt] = lambda: {
+        "email": "advisor@usm.edu.my",
+        "sub": "mock-advisor-uid",
+        "app_metadata": {"staff_id": "STAFF-001", "university_id": custom_uuid}
+    }
+    mock_supabase = MagicMock()
+    # Mock universities table query returning code 'USM'
+    mock_supabase.table().select().eq().limit().execute.return_value.data = [{"code": "USM"}]
+
+    mock_catalog = {
+        "SECJ1013": {"course_code": "SECJ1013", "prerequisites": {"type": "AND", "courses": []}}
+    }
+    mock_student = {
+        "id": "550e8400-e29b-41d4-a716-446655440000",
+        "matric_number": "A24CS0002",
+        "student_name": "Test USM Student"
+    }
+    payload = {
+        "document_id": "99999999-9999-9999-9999-999999999999",
+        "matric_number": "A24CS0002",
+        "advisor_id": "STAFF-001",
+        "courses": [{"course_code": "SECJ1013", "grade": "A", "credit_hour": 3}]
+    }
+
+    patch_target = "app.v1.endpoints.audit.supabase_svc" if "app.v1.endpoints.audit" in sys.modules else "backend.app.v1.endpoints.audit.supabase_svc"
+    try:
+        with patch(patch_target) as mock_svc:
+            mock_svc.get_university_course_catalog.return_value = mock_catalog
+            mock_svc.get_or_create_student.return_value = mock_student
+            mock_svc.persist_audit_results.return_value = "audit-uuid-usm"
+            mock_svc.get_student_block_exempted_credits.return_value = (0, None)
+            mock_svc.client = mock_supabase
+
+            response = client.post("/api/v1/audit/finalize-approval", json=payload, headers=AUTH_HEADERS)
+            assert response.status_code == 200
+
+            mock_svc.persist_audit_results.assert_called_once()
+            call_kwargs = mock_svc.persist_audit_results.call_args[1]
+            assert call_kwargs["tenant_id"] == "USM"
+    finally:
+        app.dependency_overrides[verify_advisor_jwt] = lambda: {
+            "email": "advisor@university.edu.my",
+            "sub": "mock-advisor-uid",
+            "app_metadata": {"staff_id": "STAFF-001", "tenant_id": "UTM"}
+        }
+
