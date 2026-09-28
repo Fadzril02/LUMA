@@ -331,7 +331,7 @@ export function LandingPage() {
               <GraduationCap className="w-5 h-5" />
             </div>
             <div className="flex items-baseline space-x-2">
-              <span className="font-extrabold text-xl text-blue-900 tracking-tight">LUMA</span>
+              <span className="font-extrabold text-xl text-blue-900 tracking-tight">SynGrad</span>
               <span className="hidden sm:inline-block text-xs font-medium text-gray-500 border-l border-gray-200 pl-2">
                 Academic Advising Platform
               </span>
@@ -357,7 +357,7 @@ export function LandingPage() {
           </div>
 
           <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-blue-900">
-            LUMA Academic Advising
+            SynGrad Academic Advising
           </h1>
 -
           <p className="text-lg text-gray-600 mt-4 max-w-2xl mx-auto leading-relaxed">
@@ -942,7 +942,7 @@ export function LandingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-gray-500">
           <div className="flex items-center space-x-2">
             <GraduationCap className="w-4 h-4 text-blue-900" />
-            <span className="font-semibold text-gray-800">LUMA Academic Advising Platform</span>
+            <span className="font-semibold text-gray-800">SynGrad Academic Advising Platform</span>
           </div>
         </div>
       </footer>

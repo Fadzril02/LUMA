@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-LUMA Phase 0 Pre-Launch Gate - Strict Curriculum Data Verification Script
+SynGrad Phase 0 Pre-Launch Gate - Strict Curriculum Data Verification Script
 =========================================================================
 Target Program: Universiti Teknologi Malaysia (UTM) - Software Engineering (SECJ)
 
@@ -35,7 +35,7 @@ from app.core.supabase_client import SupabaseService
 
 def run_curriculum_verification():
     print("=" * 80)
-    print("LUMA PHASE 0 PRE-LAUNCH GATE: CURRICULUM INTEGRITY VERIFICATION")
+    print("SYNGRAD PHASE 0 PRE-LAUNCH GATE: CURRICULUM INTEGRITY VERIFICATION")
     print("Target Program: UTM Software Engineering (SECJ)")
     print("=" * 80)
 

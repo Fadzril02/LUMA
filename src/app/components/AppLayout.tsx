@@ -138,7 +138,7 @@ export function AppLayout({ children, userRole = "advisor", userName = "System U
             </button>
             <div className="h-8 w-px bg-gray-200 hidden lg:block" />
             <div className="text-sm text-gray-500 hidden sm:block">
-              <span className="font-medium text-gray-900">{userProfile?.university_name || 'LUMA'}</span> / {userProfile?.program_name || userProfile?.department || 'Academic Advising'}
+              <span className="font-medium text-gray-900">{userProfile?.university_name || 'SynGrad'}</span> / {userProfile?.program_name || userProfile?.department || 'Academic Advising'}
             </div>
           </div>
           <div className="flex items-center space-x-4">

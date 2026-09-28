@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-LUMA Phase 0 — Founding Advisor Flag Setter & Verifier
+SynGrad Phase 0 — Founding Advisor Flag Setter & Verifier
 =======================================================
 Founding Advisor: testing@utm.com (staff_id: TEST123)
 
@@ -37,7 +37,7 @@ def print_row(label: str, row: dict):
 
 def main(dry_run: bool):
     print("=" * 70)
-    print("LUMA: Founding Advisor Flag Setter")
+    print("SynGrad: Founding Advisor Flag Setter")
     print(f"Target: {FOUNDING_ADVISOR_EMAIL} (staff_id={FOUNDING_ADVISOR_STAFF_ID})")
     print("=" * 70)
 

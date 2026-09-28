@@ -583,8 +583,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.clear();
     } catch (_) {}
 
-    // 2. Synchronously nuke ALL Session Storage (including luma_degree_templates cache)
+    // 2. Synchronously nuke ALL Session Storage (including syngrad_degree_templates cache)
     try {
+      sessionStorage.removeItem("syngrad_degree_templates");
       sessionStorage.removeItem("luma_degree_templates");
       sessionStorage.clear();
     } catch (_) {}

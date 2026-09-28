@@ -54,7 +54,7 @@ export function AdvisorLogin() {
 
   const handleQuickDemo = () => {
     setEmail('advisor@university.edu');
-    setPassword('LumaAdvisor2026!');
+    setPassword('SynGradAdvisor2026!');
   };
 
   return (

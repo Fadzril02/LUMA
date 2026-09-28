@@ -1,10 +1,10 @@
-# LUMA • Technical Architecture & Database Schema Document
+# SynGrad • Technical Architecture & Database Schema Document
 ## Multi-Tenant Smart Academic Advising Architecture Specification
 
 ---
 
 ### Document Metadata
-* **System:** LUMA Academic Advising Engine
+* **System:** SynGrad Academic Advising Engine
 * **Classification:** Architectural Design Document (ADD)
 * **Author:** Principal Staff Engineer & Core Infrastructure Team
 * **Status:** Active Production Specification
@@ -14,7 +14,7 @@
 
 ## 1. Technology Stack & Topology
 
-LUMA is engineered around a hybrid cloud architecture combining a high-performance, single-page application (SPA), a managed backend-as-a-service (BaaS) for persistence and authentication, and an asynchronous analytical Python microservice for computer vision, natural language processing, and Directed Acyclic Graph (DAG) graph resolution.
+SynGrad is engineered around a hybrid cloud architecture combining a high-performance, single-page application (SPA), a managed backend-as-a-service (BaaS) for persistence and authentication, and an asynchronous analytical Python microservice for computer vision, natural language processing, and Directed Acyclic Graph (DAG) graph resolution.
 
 ```mermaid
 graph TB
@@ -77,7 +77,7 @@ graph TB
 
 ## 2. Multi-Tenant Blueprint Database Schema
 
-The core architectural breakthrough in LUMA is the **Multi-Tenant Blueprint Architecture** introduced in Migration `08_multi_tenant_blueprint_architecture.sql`. This separates universal curriculum standards from individual advisor cohorts, preventing syllabus versioning errors.
+The core architectural breakthrough in SynGrad is the **Multi-Tenant Blueprint Architecture** introduced in Migration `08_multi_tenant_blueprint_architecture.sql`. This separates universal curriculum standards from individual advisor cohorts, preventing syllabus versioning errors.
 
 ### 2.1 Entity-Relationship (ER) Diagram
 
@@ -290,7 +290,7 @@ CREATE INDEX idx_registration_disputes_advisor ON registration_disputes(advisor_
 
 ### 2.2 The "Two Doors, One House" Dual-Ingress Architecture (B2B2C Model)
 
-LUMA is engineered around a unified **"Two Doors, One House"** dual-ingress data architecture. This model enables seamless coexistence between institutional, cohort-led advising (B2B) and direct student self-serve progression auditing (B2C) without duplicating graduation audit logic or database structures.
+SynGrad is engineered around a unified **"Two Doors, One House"** dual-ingress data architecture. This model enables seamless coexistence between institutional, cohort-led advising (B2B) and direct student self-serve progression auditing (B2C) without duplicating graduation audit logic or database structures.
 
 ```mermaid
 graph TD
@@ -320,7 +320,7 @@ graph TD
 | Ingress Path | Target Persona | Blueprint Resolution Mechanism | Governance & Access Control |
 | :--- | :--- | :--- | :--- |
 | **Door 1: Cohort-Linked (B2B)** | Advisees assigned to an official university lecturer. | **Indirect Inheritance:** Student record stores `cohort_id`. The degree blueprint is resolved via `cohorts.template_id` (`students.cohort_id -> cohorts.id -> cohorts.template_id`). | The cohort's advisor controls registration capacity, lock toggles (`is_locked`), student surveillance, and transcript approval queues. |
-| **Door 2: Single-Player (B2C - Roadmap)** | Independent students using LUMA for self-guided degree audits. | **Direct Binding:** Student record stores a nullable direct foreign key `students.template_id REFERENCES degree_templates(id)`. | Self-serve access governed directly by student auth, without advisor gatekeeping or cohort lock constraints. |
+| **Door 2: Single-Player (B2C - Roadmap)** | Independent students using SynGrad for self-guided degree audits. | **Direct Binding:** Student record stores a nullable direct foreign key `students.template_id REFERENCES degree_templates(id)`. | Self-serve access governed directly by student auth, without advisor gatekeeping or cohort lock constraints. |
 | **The One House** | Both Student Categories | **Shared Analytical Core:** Both ingress doors converge into the identical prerequisite DAG engine, Malaysian transcript regex parser, PyMuPDF extraction, and forensic tamper provenance tracking. | Zero duplicate schemas. Both doors write to `academic_records` and generate identical `degree_audits` snapshots. |
 
 ---
@@ -413,7 +413,7 @@ Cryptographic validity alone does not prevent parameter tampering (e.g. Lecturer
 
 In multi-user campus environments (shared computer lab terminals, advisor department workstations), client-side session termination must be absolute to prevent session replay and token leakage.
 
-LUMA implements **hard client-side session invalidation encompassing storage and cookies** across five sequential enforcement steps in [`AuthContext.tsx`](file:///d:/smart-aa-system/src/context/AuthContext.tsx):
+SynGrad implements **hard client-side session invalidation encompassing storage and cookies** across five sequential enforcement steps in [`AuthContext.tsx`](file:///d:/smart-aa-system/src/context/AuthContext.tsx):
 
 ```typescript
 const signOut = async () => {
@@ -528,7 +528,7 @@ $$;
 
 ### 3.4 Privileged Revocation Edge Function (`revoke-student`)
 
-Because client tokens and standard advisor logins are bounded by RLS, deleting a user from `auth.users` requires a privileged execution environment. LUMA implements this via the `revoke-student` Supabase Edge Function:
+Because client tokens and standard advisor logins are bounded by RLS, deleting a user from `auth.users` requires a privileged execution environment. SynGrad implements this via the `revoke-student` Supabase Edge Function:
 
 ```mermaid
 sequenceDiagram

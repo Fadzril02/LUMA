@@ -1,10 +1,10 @@
-# LUMA • Engineering Standards & Core Principles (Essentials)
-## The Non-Negotiable Rules of the LUMA Codebase
+# SynGrad • Engineering Standards & Core Principles (Essentials)
+## The Non-Negotiable Rules of the SynGrad Codebase
 
 ---
 
 ### Document Information
-* **Document:** LUMA Engineering Charter & Coding Standards
+* **Document:** SynGrad Engineering Charter & Coding Standards
 * **Author:** Principal Staff Engineer & Technical Architecture Team
 * **Scope:** All Frontend (React/TypeScript), Backend (Python/FastAPI), and Database (PostgreSQL/Supabase) Contributions
 * **Status:** Mandatory Repository Policy
@@ -18,7 +18,7 @@ Every pull request, architectural decision, and line of code committed to this r
 
 ```
 ┌───────────────────────────────────────────────────────────────────────────┐
-│                        THE FOUR PILLARS OF LUMA                           │
+│                      THE FOUR PILLARS OF SYNGRAD                          │
 ├─────────────────────────────────────┬─────────────────────────────────────┤
 │ 1. ACADEMIC MINIMALISM (UI/UX)      │ 2. DATA INTEGRITY OVER UX           │
 │ Clean institutional utility. Deep   │ Hard database constraints govern.   │
@@ -34,7 +34,7 @@ Every pull request, architectural decision, and line of code committed to this r
 
 ## 2. Pillar 1: UI/UX Standard — "Academic Minimalist"
 
-LUMA is an institutional academic advising platform, not an entertainment app, marketing website, or generic venture-funded SaaS product. Its visual design must command institutional authority, clarity, and utilitarian density.
+SynGrad is an institutional academic advising platform, not an entertainment app, marketing website, or generic venture-funded SaaS product. Its visual design must command institutional authority, clarity, and utilitarian density.
 
 ### 2.1 The Palette
 * **Primary Deep Navy:** `bg-blue-950` (`#0F172A` / `#172554`), `text-blue-900` (`#1E3A8A`), `border-blue-900`.
@@ -125,7 +125,7 @@ newData.courses[index][field] = value.toUpperCase();
 
 ## 5. Pillar 4: Variable-Driven Rendering (No Hardcoded Fallbacks)
 
-LUMA is a multi-tenant blueprint engine designed to support multiple faculties, syllabus years, and universities without codebase modifications.
+SynGrad is a multi-tenant blueprint engine designed to support multiple faculties, syllabus years, and universities without codebase modifications.
 
 ### 5.1 The Rule of Zero Hardcoded Curricula
 * **Prohibited Code Patterns:**

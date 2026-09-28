@@ -289,7 +289,7 @@ export function CohortSetup() {
                 <div>
                   <h2 className="text-base font-bold text-slate-900">Step 2: Upload Course Syllabus</h2>
                   <p className="text-xs text-slate-500">
-                    Upload the curriculum CSV so LUMA can map prerequisite DAG rules and 5-skill domains.
+                    Upload the curriculum CSV so SynGrad can map prerequisite DAG rules and 5-skill domains.
                   </p>
                 </div>
               </div>

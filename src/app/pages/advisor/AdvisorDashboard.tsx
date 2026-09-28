@@ -132,7 +132,7 @@ export function AdvisorDashboard() {
       try {
         // 1. Fetch degree templates for Create Cohort modal (strictly check sessionStorage first)
         let templatesData: DegreeTemplate[] = [];
-        const cachedTemplates = sessionStorage.getItem("luma_degree_templates");
+        const cachedTemplates = sessionStorage.getItem("syngrad_degree_templates") || sessionStorage.getItem("luma_degree_templates");
 
         if (cachedTemplates) {
           try {
@@ -140,9 +140,11 @@ export function AdvisorDashboard() {
             if (Array.isArray(parsed) && parsed.length > 0) {
               templatesData = parsed;
             } else {
+              sessionStorage.removeItem("syngrad_degree_templates");
               sessionStorage.removeItem("luma_degree_templates");
             }
           } catch (parseErr) {
+            sessionStorage.removeItem("syngrad_degree_templates");
             sessionStorage.removeItem("luma_degree_templates");
           }
         }
@@ -157,7 +159,7 @@ export function AdvisorDashboard() {
           if (!tmplError && tmplData && Array.isArray(tmplData)) {
             templatesData = tmplData;
             if (tmplData.length > 0) {
-              sessionStorage.setItem("luma_degree_templates", JSON.stringify(tmplData));
+              sessionStorage.setItem("syngrad_degree_templates", JSON.stringify(tmplData));
             }
           } else {
             templatesData = [];
@@ -169,11 +171,12 @@ export function AdvisorDashboard() {
         // (e.g., 106 phantom students from old test data) without TTL or invalidation.
         // The cache key is now only written for cross-component hydration within the
         // same page session, never read as a substitute for the initial fetch.
-        const rosterCacheKey = `luma_advisee_roster_${advisorStaffId}`;
+        const rosterCacheKey = `syngrad_advisee_roster_${advisorStaffId}`;
         let rawRosterData: any[] | null = null;
 
         // Clear any stale cache on dashboard mount to prevent phantom data
         sessionStorage.removeItem(rosterCacheKey);
+        sessionStorage.removeItem(`luma_advisee_roster_${advisorStaffId}`);
 
         {
           const studentsRes = await db
@@ -488,7 +491,7 @@ export function AdvisorDashboard() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.setAttribute("download", `luma_curriculum_template_${advisorStaffId}.csv`);
+    link.setAttribute("download", `syngrad_curriculum_template_${advisorStaffId}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -525,6 +528,7 @@ export function AdvisorDashboard() {
       const insertedCount = result.total_inserted ?? result.total_parsed ?? 0;
 
       // Invalidate sessionStorage cache after successful upload
+      sessionStorage.removeItem("syngrad_degree_templates");
       sessionStorage.removeItem("luma_degree_templates");
 
       // Refresh degree templates in dropdown immediately in an isolated try/catch block
@@ -534,7 +538,7 @@ export function AdvisorDashboard() {
           .select("id, university_name, program_code, program_name, syllabus_year, total_credits_required")
           .order("program_code", { ascending: true });
         if (updatedTemplates) {
-          sessionStorage.setItem("luma_degree_templates", JSON.stringify(updatedTemplates));
+          sessionStorage.setItem("syngrad_degree_templates", JSON.stringify(updatedTemplates));
           setDegreeTemplates(updatedTemplates);
         }
       } catch (refreshErr) {

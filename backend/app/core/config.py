@@ -9,7 +9,7 @@ from pydantic import model_validator
 
 class Settings(BaseSettings):
     # Global Identity & Metadata
-    PROJECT_NAME: str = "Smart-AA-System"
+    PROJECT_NAME: str = "SynGrad"
     COMPANY_NAME: str = "Academic Advising"
     PROJECT_DOMAIN: str = "localhost"
     API_V1_STR: str = "/api/v1"
@@ -35,6 +35,8 @@ class Settings(BaseSettings):
         "http://localhost:3000",
         "http://localhost:4173",
         # Production deployments
+        "https://syngrad.vercel.app",
+        "https://syngrad.onrender.com",
         "https://luma-two-theta.vercel.app",
         "https://luma-xswf.onrender.com",
         # Preview/branch deployments

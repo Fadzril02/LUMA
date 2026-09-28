@@ -432,7 +432,7 @@ export function StudentPortal() {
             <GraduationCap className="w-5 h-5" />
           </div>
           <div>
-            <span className="font-extrabold text-lg text-blue-900 tracking-tight leading-none block">LUMA</span>
+            <span className="font-extrabold text-lg text-blue-900 tracking-tight leading-none block">SynGrad</span>
             <span className="text-[11px] text-gray-500 font-medium">Student Advising</span>
           </div>
         </div>

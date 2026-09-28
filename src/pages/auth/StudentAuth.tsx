@@ -224,7 +224,7 @@ export function StudentAuth() {
               <GraduationCap className="h-8 w-8 text-[#990033]" />
             </div>
             <div>
-              <h1 className="text-xl font-bold tracking-wider uppercase">LUMA Academic Advising</h1>
+              <h1 className="text-xl font-bold tracking-wider uppercase">SynGrad Academic Advising</h1>
               <p className="text-xs text-white/70 tracking-widest uppercase">Smart Academic Advising System</p>
             </div>
           </div>

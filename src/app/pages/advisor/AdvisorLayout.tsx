@@ -126,7 +126,7 @@ export function AdvisorLayout({
               </div>
               <div>
                 <div className="flex items-center space-x-1.5">
-                  <span className="font-extrabold text-xl text-blue-900 tracking-tight">LUMA</span>
+                  <span className="font-extrabold text-xl text-blue-900 tracking-tight">SynGrad</span>
                   <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-blue-50 text-blue-900 border border-blue-200 font-semibold">
                     Advisor
                   </span>

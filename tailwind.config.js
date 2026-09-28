@@ -7,7 +7,7 @@ export default {
     theme: {
       extend: {
         colors: {
-          // Centralized LUMA Design System Colors
+          // Centralized SynGrad Design System Colors
           base: "var(--bg-base)",
           surface: "var(--bg-surface)",
           "surface-elevated": "var(--bg-surface-elevated)",

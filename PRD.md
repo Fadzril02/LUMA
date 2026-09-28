@@ -1,10 +1,10 @@
-# LUMA • Product Requirements Document (PRD)
+# SynGrad • Product Requirements Document (PRD)
 ## Multi-Tenant Smart Academic Advising Software as a Service (SaaS)
 
 ---
 
 ### Document Information
-* **Product Name:** LUMA (Smart Academic Advising System)
+* **Product Name:** SynGrad (Smart Academic Advising System)
 * **Author:** Principal Staff Engineer & Technical Architecture Team
 * **Target Institution:** Universiti Teknologi Malaysia (UTM) & Partner Universities
 * **Status:** Production Architecture Specification
@@ -15,12 +15,12 @@
 ## 1. Executive Summary & Product Vision
 
 ### 1.1 Executive Summary
-**LUMA** is an enterprise-grade, multi-tenant Smart Academic Advising SaaS designed to eliminate the manual, paper-driven friction in university degree audits, prerequisite tracking, and cohort management. By bridging student-submitted academic slips with computer vision OCR, micro-LLM extraction, and deterministic Directed Acyclic Graph (DAG) prerequisite verification, LUMA automates degree progression audits while introducing zero-trust tamper detection and advisor surveillance.
+**SynGrad** is an enterprise-grade, multi-tenant Smart Academic Advising SaaS designed to eliminate the manual, paper-driven friction in university degree audits, prerequisite tracking, and cohort management. By bridging student-submitted academic slips with computer vision OCR, micro-LLM extraction, and deterministic Directed Acyclic Graph (DAG) prerequisite verification, SynGrad automates degree progression audits while introducing zero-trust tamper detection and advisor surveillance.
 
 ### 1.2 Core Product Vision
 Traditional academic advising relies on students manually interpreting fragmented syllabus handbooks and advisors physically reviewing printed grade slips. This leads to human error, syllabus drift, delayed graduation eligibility checks, and academic record forgery.
 
-LUMA replaces this obsolete model with:
+SynGrad replaces this obsolete model with:
 1. **The Tinkercad Model:** Self-service student registration governed by 6-character, advisor-managed "Cohort Codes" that dynamically bind advisees to immutable degree blueprints without manual configuration.
 2. **AI-Assisted Transcript Intelligence:** Automated extraction of course codes, credit hours, and grades via fast in-memory PDF stream parsing and zero-temperature LLM fallbacks.
 3. **Forensic Tamper Trap:** Transparent staging interfaces that quietly capture student UI manipulations, preserving provenance flags (`is_altered`, `ai_grade`) to expose fraudulent grade edits to advisors.
@@ -41,14 +41,14 @@ Academic advising across tertiary institutions faces critical structural challen
 | **Advising Onboarding Friction** | Manual student roster initialization requires batch CSV processing by central IT. | New semester cohorts experience weeks of delay before advisor allocations are established. |
 | **Race Conditions in Registration** | Lack of atomic locks allows cohort over-subscription and matric collisions. | Duplicate student accounts, corrupted student records, and orphaned database states. |
 
-### 2.2 The LUMA Solution
-LUMA solves these systemic vulnerabilities through a decoupled, zero-trust cloud architecture. By separating **Degree Structures** (`degree_templates`) from **Cohort Deployments** (`cohorts`), universities maintain absolute curricular integrity while providing advisors granular control over student cohorts.
+### 2.2 The SynGrad Solution
+SynGrad solves these systemic vulnerabilities through a decoupled, zero-trust cloud architecture. By separating **Degree Structures** (`degree_templates`) from **Cohort Deployments** (`cohorts`), universities maintain absolute curricular integrity while providing advisors granular control over student cohorts.
 
 ---
 
 ## 3. User Personas & Role Matrix
 
-LUMA enforces strict role-based isolation between two primary institutional actors: **Students** and **Academic Advisors**.
+SynGrad enforces strict role-based isolation between two primary institutional actors: **Students** and **Academic Advisors**.
 
 ```mermaid
 graph LR
@@ -174,7 +174,7 @@ graph TD
 
 ### 4.3 The "Tamper Trap" (Forensic Provenance Verification)
 
-To combat student fraud without degrading legitimate usability, LUMA implements a silent forensic provenance tracking mechanism:
+To combat student fraud without degrading legitimate usability, SynGrad implements a silent forensic provenance tracking mechanism:
 
 ```mermaid
 sequenceDiagram
@@ -302,11 +302,11 @@ stateDiagram-v2
 
 ## 6. Product Roadmap & Phased Rollout Strategy
 
-LUMA is developed and released in four distinct phases to ensure uncompromising data integrity, security validation, and controlled institutional adoption.
+SynGrad is developed and released in four distinct phases to ensure uncompromising data integrity, security validation, and controlled institutional adoption.
 
 ```mermaid
 timeline
-    title LUMA Phased Rollout Roadmap
+    title SynGrad Phased Rollout Roadmap
     Phase 0 (Pre-Launch Gate) : Schema Migrations (10_add_founding_advisor_flag) : DAG Prerequisite Depth & min_grade Check : Live ES256 JWT & RLS Security Verification : Documentation Sync
     Phase 1 (UAT Pilot) : Cap at 5 Founding Advisors : is_founding_advisor=true Permanent Free Access : UTM Software Engineering Pilot (Advisor #1) : Zero-Waste In-Memory Transcript OCR : Forensic Tamper Trap
     Phase 2 (Commercial Self-Serve) : Stripe Billing & Subscriptions : Single-Player B2C Mode (students.template_id) : Multi-Cohort Archival : Department Audit Analytics

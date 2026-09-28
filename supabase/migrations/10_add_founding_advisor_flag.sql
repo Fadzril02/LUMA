@@ -3,7 +3,7 @@
 -- Version: 10_add_founding_advisor_flag.sql
 -- Description:
 --   Adds is_founding_advisor boolean flag to the advisors table.
---   When set to true, grants permanently free, full access to LUMA features
+--   When set to true, grants permanently free, full access to SynGrad features
 --   for the Phase 1 UAT Pilot Founding Advisors (capped at 5 advisors).
 -- ==============================================================================
 
