@@ -116,8 +116,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const fetchUserProfile = async (currentUser: User): Promise<{ success: boolean; profile?: Profile; error?: Error }> => {
     try {
-      const email = (currentUser.email || '').toLowerCase();
-      
       // 1. Check if user is a Student
       const { data: studentData, error: uidErr } = await supabase
         .from('students')
@@ -155,7 +153,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { data: advisorData, error: advErr } = await supabase
         .from('advisors')
         .select('*')
-        .or(`user_id.eq.${currentUser.id},institutional_email.eq.${email}`)
+        .eq('user_id', currentUser.id)
         .maybeSingle();
 
       if (advErr) {
@@ -252,7 +250,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // 2. Auth state change listener handling all events ('INITIAL_SESSION', 'SIGNED_IN', 'SIGNED_OUT', 'TOKEN_REFRESHED')
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, currentSession) => {
+      (event, session) => {
         if (!isMounted) return;
 
         try {
@@ -267,32 +265,48 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
             case 'INITIAL_SESSION':
             case 'SIGNED_IN': {
-              if (currentSession?.user) {
-                setSession(currentSession);
-                setUser(currentSession.user);
+              if (session?.user) {
+                setSession(session);
+                setUser(session.user);
                 if (!isRegistering.current) {
-                  await fetchUserProfile(currentSession.user);
+                  setTimeout(async () => {
+                    try {
+                      await fetchUserProfile(session.user);
+                    } finally {
+                      if (isMounted) {
+                        setIsLoading(false);
+                        setIsInitializing(false);
+                      }
+                    }
+                  }, 0);
+                } else if (isMounted) {
+                  setIsLoading(false);
+                  setIsInitializing(false);
                 }
               } else {
                 setSession(null);
                 setUser(null);
                 setProfile(null);
+                if (isMounted) {
+                  setIsLoading(false);
+                  setIsInitializing(false);
+                }
               }
               break;
             }
 
             case 'TOKEN_REFRESHED': {
-              if (currentSession?.user) {
-                setSession(currentSession);
-                setUser(currentSession.user);
+              if (session?.user) {
+                setSession(session);
+                setUser(session.user);
               }
               break;
             }
 
             default: {
-              if (currentSession?.user) {
-                setSession(currentSession);
-                setUser(currentSession.user);
+              if (session?.user) {
+                setSession(session);
+                setUser(session.user);
               }
               break;
             }
@@ -300,10 +314,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } catch (err) {
           console.error(`[AuthContext] onAuthStateChange ${event} error:`, err);
         } finally {
-          // Unconditional loading completion across ALL auth events
-          if (isMounted) {
-            setIsLoading(false);
-            setIsInitializing(false);
+          // Loading completion for other events (SIGNED_OUT, TOKEN_REFRESHED, etc.)
+          if (event !== 'INITIAL_SESSION' && event !== 'SIGNED_IN') {
+            if (isMounted) {
+              setIsLoading(false);
+              setIsInitializing(false);
+            }
           }
         }
       }

@@ -20,7 +20,7 @@ import {
 
 export function CompleteRegistration() {
   const navigate = useNavigate();
-  const { user, profile, role, loading, refreshProfile, signOut } = useAuth();
+  const { user, profile, role, loading, signOut } = useAuth();
 
   const [roleType, setRoleType] = useState<'student' | 'advisor'>('student');
 
@@ -115,8 +115,7 @@ export function CompleteRegistration() {
       });
 
       setIsSuccess(true);
-      await refreshProfile();
-      navigate('/student');
+      window.location.assign('/student');
     } catch (err: any) {
       console.error('[CompleteRegistration] Student registration error:', err);
       setInlineError(parseBackendError(err));
@@ -161,8 +160,7 @@ export function CompleteRegistration() {
       });
 
       setIsSuccess(true);
-      await refreshProfile();
-      navigate('/advisor');
+      window.location.assign('/advisor');
     } catch (err: any) {
       console.error('[CompleteRegistration] Advisor registration error:', err);
       setInlineError(parseBackendError(err));
