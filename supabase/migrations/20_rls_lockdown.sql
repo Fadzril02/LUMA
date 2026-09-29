@@ -131,7 +131,7 @@ STABLE
 SECURITY DEFINER
 SET search_path = public
 AS $$
-    SELECT staff_id FROM advisors WHERE user_id = auth.uid();
+    SELECT staff_id::text FROM advisors WHERE user_id = auth.uid();
 $$;
 
 CREATE OR REPLACE FUNCTION my_advisor_staff_ids()
@@ -141,7 +141,7 @@ STABLE
 SECURITY DEFINER
 SET search_path = public
 AS $$
-    SELECT advisor_staff_id FROM students WHERE user_id = auth.uid();
+    SELECT advisor_staff_id::text FROM students WHERE user_id = auth.uid();
 $$;
 
 DROP FUNCTION IF EXISTS my_matric_nos();
@@ -152,7 +152,7 @@ STABLE
 SECURITY DEFINER
 SET search_path = public
 AS $$
-    SELECT s.tenant_id, s.matric_no 
+    SELECT s.tenant_id::text, s.matric_no::text 
     FROM students s 
     WHERE s.user_id = auth.uid();
 $$;
@@ -165,7 +165,7 @@ STABLE
 SECURITY DEFINER
 SET search_path = public
 AS $$
-    SELECT s.tenant_id, s.matric_no 
+    SELECT s.tenant_id::text, s.matric_no::text 
     FROM students s
     JOIN advisors a ON s.advisor_staff_id = a.staff_id AND s.tenant_id = a.tenant_id
     WHERE a.user_id = auth.uid();
