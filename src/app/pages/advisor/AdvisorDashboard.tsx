@@ -1354,7 +1354,7 @@ export function AdvisorDashboard() {
               </div>
             </div>
 
-            <form onSubmit={handleUploadSubmit} className="p-6 space-y-6">
+            <form onSubmit={(e) => { e.preventDefault(); handleUploadSubmit(e); }} className="p-6 space-y-6">
               <div className="bg-amber-50/70 border border-amber-200/90 rounded-lg p-3 text-xs text-amber-900 flex items-start space-x-2.5">
                 <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
                 <div className="space-y-0.5">
@@ -1474,7 +1474,8 @@ export function AdvisorDashboard() {
                   Cancel
                 </button>
                 <button
-                  type="submit"
+                  type="button"
+                  onClick={handleUploadSubmit}
                   disabled={!selectedFile || uploadStatus === "uploading"}
                   className="px-4 py-2.5 rounded-lg bg-blue-900 text-xs font-semibold text-white hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm transition-colors"
                 >
