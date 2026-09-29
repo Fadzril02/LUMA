@@ -47,10 +47,10 @@ export interface AdvisorProfile extends BaseProfile {
 export type Profile = StudentProfile | AdvisorProfile | null;
 
 export interface StudentRegistrationData {
-  matricNo: string;
   fullName: string;
   password: string;
-  cohortCode: string;
+  matricNo?: string;
+  cohortCode?: string;
   institutionalEmail?: string;
   email?: string;
   registrationCode?: string; // backwards compatibility alias
@@ -77,9 +77,10 @@ export interface AuthContextType {
     email: string;
     password: string;
     fullName: string;
-    staffId: string;
+    staffId?: string;
     universityId?: string;
     department?: string;
+    inviteCode?: string;
   }) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
   logout: () => Promise<void>; // Backwards-compatible alias for signOut
@@ -169,7 +170,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           email: advisorData.institutional_email,
           department: advisorData.department,
           university_id: advisorData.university_id,
-          tenant_id: advisorData.tenant_id || advisorData.university_id || 'UTM',
+          tenant_id: advisorData.tenant_id || advisorData.university_id,
           tier: advisorData.tier || 'freemium',
           monthly_audit_count: advisorData.monthly_audit_count || 0,
           name: advisorData.name,
@@ -179,139 +180,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { success: true, profile: advisorProfile };
       }
 
-      // 3. Fallback to user_metadata if database query returned no record yet
-      const userMeta = currentUser.user_metadata || {};
-      const appMeta = currentUser.app_metadata || {};
-      const metaRole = (userMeta.role || appMeta.role) as UserRole;
-
-      if (metaRole === 'student') {
-        const studentProfile: StudentProfile = {
-          role: 'student',
-          matric_no: userMeta.matric_no || extractMatricFromEmail(email),
-          full_name: userMeta.full_name || email.split('@')[0],
-          email: currentUser.email,
-          advisor_staff_id: userMeta.advisor_staff_id || '',
-          program: userMeta.program || 'General',
-          curriculum_year: userMeta.syllabus_type || '2024/2025',
-          academic_status: 'Good Standing',
-          current_semester: '1',
-          name: userMeta.full_name || email.split('@')[0],
-          program_code: userMeta.program || 'General',
-          syllabus_type: userMeta.syllabus_type || '2024/2025',
-        };
-        setProfile(studentProfile);
-        setAuthError(null);
-        return { success: true, profile: studentProfile };
-      }
-
-      if (metaRole === 'advisor') {
-        const advisorProfile: AdvisorProfile = {
-          role: 'advisor',
-          staff_id: userMeta.staff_id || 'ADV-001',
-          full_name: userMeta.full_name || email.split('@')[0],
-          email: currentUser.email || '',
-          department: userMeta.department || 'Academic Advisory',
-          university_id: userMeta.university_id || '00000000-0000-0000-0000-000000000001',
-          tenant_id: userMeta.tenant_id || userMeta.university_id || 'UTM',
-          tier: 'freemium',
-          monthly_audit_count: 0,
-          name: userMeta.full_name || email.split('@')[0],
-        };
-        setProfile(advisorProfile);
-        setAuthError(null);
-        return { success: true, profile: advisorProfile };
-      }
-
-      // 4. Handle ongoing registration
-      if (isRegistering.current) {
-        console.log("[AuthContext] Registration in progress, bypassing ghost check.");
-        return { success: true }; 
-      }
-
-      // 5. Fallback profile if neither database record nor explicit role matched:
-      // DO NOT call supabase.auth.signOut(). Retain user and session from localStorage.
-      console.warn(`[AuthContext] Unassigned database record for user_id=${currentUser.id}; constructing fallback profile.`);
-      const isAdvisor = 
-        metaRole === 'advisor' ||
-        email.includes('advisor') ||
-        email.includes('staff') ||
-        (email.endsWith('@utm.my') && !email.endsWith('@graduate.utm.my'));
-
-      if (isAdvisor) {
-        const fallbackAdvisor: AdvisorProfile = {
-          role: 'advisor',
-          staff_id: userMeta.staff_id || 'ADV-001',
-          full_name: userMeta.full_name || email.split('@')[0],
-          email: currentUser.email || '',
-          department: userMeta.department || 'Academic Advisory',
-          university_id: userMeta.university_id || '00000000-0000-0000-0000-000000000001',
-          tier: 'freemium',
-          monthly_audit_count: 0,
-          name: userMeta.full_name || email.split('@')[0],
-        };
-        setProfile(fallbackAdvisor);
-        setAuthError(null);
-        return { success: true, profile: fallbackAdvisor };
-      } else {
-        const fallbackStudent: StudentProfile = {
-          role: 'student',
-          matric_no: userMeta.matric_no || extractMatricFromEmail(email),
-          full_name: userMeta.full_name || email.split('@')[0],
-          email: currentUser.email,
-          advisor_staff_id: userMeta.advisor_staff_id || '',
-          program: userMeta.program || 'General',
-          curriculum_year: userMeta.syllabus_type || '2024/2025',
-          academic_status: 'Good Standing',
-          current_semester: '1',
-          name: userMeta.full_name || email.split('@')[0],
-          program_code: userMeta.program || 'General',
-          syllabus_type: userMeta.syllabus_type || '2024/2025',
-        };
-        setProfile(fallbackStudent);
-        setAuthError(null);
-        return { success: true, profile: fallbackStudent };
-      }
-
-    } catch (err: any) {
-      console.warn('[AuthContext] fetchUserProfile exception during profile lookup, falling back gracefully:', err);
-      // Retain user and session from localStorage — NEVER call signOut()
-      const userMeta = currentUser.user_metadata || {};
-      const appMeta = currentUser.app_metadata || {};
-      const metaRole = (userMeta.role || appMeta.role) as UserRole;
-      const email = (currentUser.email || '').toLowerCase();
-      const isAdvisor = 
-        metaRole === 'advisor' ||
-        email.includes('advisor') ||
-        email.includes('staff') ||
-        (email.endsWith('@utm.my') && !email.endsWith('@graduate.utm.my'));
-
-      const fallbackProfile: Profile = isAdvisor ? {
-        role: 'advisor',
-        staff_id: userMeta.staff_id || 'ADV-001',
-        full_name: userMeta.full_name || (currentUser.email || '').split('@')[0],
-        email: currentUser.email || '',
-        department: userMeta.department || 'Academic Advisory',
-        tier: 'freemium',
-        monthly_audit_count: 0,
-        name: userMeta.full_name || (currentUser.email || '').split('@')[0],
-      } : {
-        role: 'student',
-        matric_no: userMeta.matric_no || extractMatricFromEmail(email),
-        full_name: userMeta.full_name || (currentUser.email || '').split('@')[0],
-        email: currentUser.email,
-        advisor_staff_id: userMeta.advisor_staff_id || '',
-        program: userMeta.program || 'General',
-        curriculum_year: userMeta.syllabus_type || '2024/2025',
-        academic_status: 'Good Standing',
-        current_semester: '1',
-        name: userMeta.full_name || (currentUser.email || '').split('@')[0],
-        program_code: userMeta.program || 'General',
-        syllabus_type: userMeta.syllabus_type || '2024/2025',
-      };
-
-      setProfile(fallbackProfile);
+      // 3. User has no students or advisors row yet (needs to complete registration)
+      setProfile(null);
       setAuthError(null);
-      return { success: true, profile: fallbackProfile };
+      return { success: true, profile: null };
+    } catch (err: any) {
+      console.warn('[AuthContext] fetchUserProfile exception during profile lookup:', err);
+      setAuthError('An error occurred while loading your profile.');
+      return { success: false, error: new Error('An error occurred while loading your profile.') };
     }
   };
 
@@ -465,7 +341,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       };
     }
 
-    const detectedRole: UserRole = profileRes.profile?.role ?? (data.user.user_metadata?.role === 'student' ? 'student' : 'advisor');
+    const detectedRole: UserRole = profileRes.profile?.role ?? null;
     return { error: null, role: detectedRole };
   };
 
@@ -478,115 +354,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true);
 
     try {
-      const matricNo = data.matricNo.trim().toUpperCase();
-
-      const matricRegex = /^[A-Z0-9]{5,15}$/i;
-      if (!matricRegex.test(matricNo)) {
-        return { error: new Error("Invalid matric format. Expected format: 5-15 letters and numbers") };
+      const finalEmail = (data.institutionalEmail || data.email || '').trim().toLowerCase();
+      if (!finalEmail) {
+        return { error: new Error('Email is required.') };
       }
 
-      const rawEmail = (data.institutionalEmail || data.email || '').trim().toLowerCase();
-      if (!rawEmail || !rawEmail.includes('@')) {
-        return { error: new Error("Institutional email is required and must be a valid email address.") };
-      }
-      const finalEmail = rawEmail;
-      const providedCode = (data.cohortCode || data.registrationCode || data.advisorId || '').trim().toUpperCase();
-
-      // Validate that a cohort code was provided
-      if (!providedCode) {
-        return { error: new Error("Please enter your 6-character Cohort Code.") };
-      }
-
-      // 1. Validation Update: Query cohorts table JOIN degree_templates where cohort_code = providedCode
-      const { data: cohortRow, error: cohortLookupError } = await supabase
-        .from('cohorts')
-        .select(`
-          id,
-          cohort_name,
-          cohort_code,
-          is_locked,
-          advisor_staff_id,
-          template_id,
-          degree_templates (
-            program_code,
-            program_name,
-            syllabus_year
-          )
-        `)
-        .eq('cohort_code', providedCode)
-        .maybeSingle();
-
-      // If the cohort is not found (or is locked, per RLS / is_locked flag), throw exact required error
-      if (cohortLookupError || !cohortRow || cohortRow.is_locked === true) {
-        if (cohortLookupError) {
-          console.warn('[signUpStudent] Cohort lookup error:', cohortLookupError.message);
-        }
-        return { error: new Error("Invalid or locked Cohort Code.") };
-      }
-
-      // 2. Extract blueprint metadata from linked degree_templates
-      const degreeTemplate = Array.isArray(cohortRow.degree_templates) 
-        ? cohortRow.degree_templates[0] 
-        : cohortRow.degree_templates;
-      const programCode = (degreeTemplate as any)?.program_code || data.program || 'Unassigned';
-      const syllabusYear = (degreeTemplate as any)?.syllabus_year || data.syllabusType || '2024/2025';
-      const advisorStaffId = cohortRow.advisor_staff_id;
-      const cohortId = cohortRow.id;
-
-      // 3. Call supabase.auth.signUp, storing extracted program_code and syllabus_year in user metadata
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: finalEmail,
         password: data.password,
         options: {
           data: {
-            role: 'student',
-            matric_no: matricNo,
             full_name: data.fullName,
-            advisor_staff_id: advisorStaffId,
-            program: programCode,
-            syllabus_type: syllabusYear,
-            cohort_id: cohortId,
           },
         },
       });
 
-      // 4. If signUp fails, return the error
       if (authError || !authData.user) {
         return { error: authError ?? new Error('Sign-up failed: no user returned.') };
       }
 
-      // 5. Immediately execute INSERT into students table, including program, syllabus_type, advisor_staff_id, and cohort_id
-      const { error: insertError } = await supabase.from('students').insert([
-        {
-          matric_no: matricNo,
-          user_id: authData.user.id,
-          name: data.fullName,
-          institutional_email: finalEmail,
-          advisor_staff_id: advisorStaffId,
-          program: programCode,
-          syllabus_type: syllabusYear,
-          cohort_id: cohortId,
-        },
-      ]);
-
-      // 6. If INSERT fails (duplicate matric, constraint violation), return error without signing out
-      if (insertError) {
-        console.error('[signUpStudent] Student record INSERT failed:', insertError.message);
-        return {
-          error: new Error(
-            insertError.message.includes('duplicate') || insertError.message.includes('unique')
-              ? `Matric number "${matricNo}" is already registered.`
-              : `Registration failed (database error): ${insertError.message}`
-          ),
-        };
-      }
-
-      // 7. Retain session if active and populate profile
-      if (authData.user) {
-        setUser(authData.user);
-        setSession(authData.session);
-        await fetchUserProfile(authData.user);
-      }
       return { error: null };
     } catch (err: any) {
       console.error('[signUpStudent] Unexpected registration failure:', err);
@@ -603,21 +389,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     email: string;
     password: string;
     fullName: string;
-    staffId: string;
+    staffId?: string;
     universityId?: string;
     department?: string;
+    inviteCode?: string;
   }) => {
     isRegistering.current = true;
     setIsLoading(true);
 
     try {
+      const finalEmail = data.email.trim().toLowerCase();
+      if (!finalEmail) {
+        return { error: new Error('Email is required.') };
+      }
+
       const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: data.email.trim().toLowerCase(),
+        email: finalEmail,
         password: data.password,
         options: {
           data: {
-            role: 'advisor',
-            staff_id: data.staffId,
             full_name: data.fullName,
           },
         },
@@ -627,30 +417,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: authError ?? new Error('Advisor sign-up failed: no user returned.') };
       }
 
-      // Insert/Upsert Advisor Profile in advisors table
-      const { error: dbError } = await supabase.from('advisors').upsert({
-        staff_id: data.staffId,
-        name: data.fullName,
-        institutional_email: data.email.trim().toLowerCase(),
-        department: data.department || 'Computer Science',
-      }, { onConflict: 'staff_id' });
-
-      if (dbError) {
-        console.error('[signUpAdvisor] DB upsert failed:', dbError.message);
-        return {
-          error: new Error(
-            `Account created but profile could not be saved: ${dbError.message}. ` +
-            `Please contact your administrator.`
-          ),
-        };
-      }
-
-      // Retain session if active and populate profile
-      if (authData.user) {
-        setUser(authData.user);
-        setSession(authData.session);
-        await fetchUserProfile(authData.user);
-      }
       return { error: null };
     } catch (err: any) {
       console.error('[signUpAdvisor] Unexpected registration failure:', err);
@@ -708,7 +474,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const currentRole: UserRole =
     profile?.role ??
-    (user?.user_metadata?.role as UserRole) ??
     (user?.app_metadata?.role as UserRole) ??
     null;
   const advisorProfile = profile?.role === 'advisor' ? (profile as AdvisorProfile) : null;

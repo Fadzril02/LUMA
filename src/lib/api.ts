@@ -158,5 +158,23 @@ export const api = {
     });
     return res.data;
   },
+
+  // Validate Cohort
+  validateCohort: async (code: string) => {
+    const res = await apiClient.get(`/api/v1/register/validate-cohort/${code}`);
+    return res.data;
+  },
+
+  // Register Student
+  registerStudent: async (payload: { cohort_code: string; matric_no: string; full_name: string }) => {
+    const res = await apiClient.post('/api/v1/register/student', payload);
+    return res.data;
+  },
+
+  // Register Advisor
+  registerAdvisor: async (payload: { invite_code: string; full_name: string; staff_id: string; department: string }) => {
+    const res = await apiClient.post('/api/v1/register/advisor', payload);
+    return res.data;
+  },
 };
 

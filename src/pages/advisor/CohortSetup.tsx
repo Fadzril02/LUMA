@@ -23,11 +23,11 @@ import {
 export function CohortSetup() {
   const navigate = useNavigate();
   const { advisor, user } = useAuth();
-  const tenantId = (advisor as any)?.tenant_id || advisor?.university_id || (user as any)?.user_metadata?.tenant_id || "UTM";
-  const universityId = advisor?.university_id || '00000000-0000-0000-0000-000000000001';
+  const tenantId = (advisor as any)?.tenant_id || advisor?.university_id;
+  const universityId = advisor?.university_id;
   // FIX #6: Use advisor.staff_id (the FK stored in cohorts.advisor_staff_id),
   // NOT user.id (the auth UUID which is a different column).
-  const advisorStaffId = advisor?.staff_id || '';
+  const advisorStaffId = advisor?.staff_id;
 
   // Step state (1: Cohort Details, 2: Course CSV Upload, 3: Completed)
   const [currentStep, setCurrentStep] = useState<number>(1);

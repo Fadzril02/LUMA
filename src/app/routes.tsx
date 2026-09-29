@@ -3,6 +3,7 @@ import { LandingPage } from "./pages/LandingPage";
 import { Showcase } from "./pages/Showcase";
 import { StudentPortal } from "./pages/student/StudentPortal";
 import { StudentAuth } from "../pages/auth/StudentAuth";
+import { CompleteRegistration } from "../pages/auth/CompleteRegistration";
 import { AdvisorPortal } from "./pages/advisor/AdvisorPortal";
 import { AdvisorDashboard } from "./pages/advisor/AdvisorDashboard";
 import { StudentsList } from "./pages/advisor/StudentsList";
@@ -18,6 +19,10 @@ export const router = createBrowserRouter([
   {
     path: "/showcase",
     Component: Showcase,
+  },
+  {
+    path: "/complete-registration",
+    Component: CompleteRegistration,
   },
   {
     path: "/student",

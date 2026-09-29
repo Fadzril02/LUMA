@@ -292,7 +292,7 @@ export function StudentPortal() {
         )
       );
 
-      const tenantId = (profile as any)?.tenant_id || (profile as any)?.university_id || (user as any)?.user_metadata?.tenant_id || "UTM";
+      const tenantId = (profile as any)?.tenant_id || (profile as any)?.university_id;
       const result = (await Promise.race([
         api.extractTranscript(filePath, tenantId),
         timeoutSafeguard

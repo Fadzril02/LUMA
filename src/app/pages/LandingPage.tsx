@@ -25,10 +25,6 @@ export function LandingPage() {
   const navigate = useNavigate();
   const { user, role, signInWithEmail, signUpStudent, signUpAdvisor, authError, clearAuthError } = useAuth();
 
-  if (user && role === 'advisor') return <Navigate replace to="/advisor" />;
-  if (user && role === 'student') return <Navigate replace to="/student" />;
-  if (user && !role) return <LoadingScreen />; // Safely wait for the role to resolve
-
   // Navigation / View State: 'login' | 'register'
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
 
@@ -46,15 +42,8 @@ export function LandingPage() {
   // Student Registration Form State
   const [studentFullName, setStudentFullName] = useState("");
   const [studentEmail, setStudentEmail] = useState("");
-  const [studentMatric, setStudentMatric] = useState("");
   const [studentPassword, setStudentPassword] = useState("");
-  const [cohortCode, setCohortCode] = useState("");
   const [showStudentPassword, setShowStudentPassword] = useState(false);
-
-  // Live Matric Validation
-  const MATRIC_REGEX = /^[A-Z0-9]{5,15}$/i;
-  const isStudentMatricValid = MATRIC_REGEX.test(studentMatric.trim());
-  const showStudentMatricError = studentMatric.trim().length > 0 && !isStudentMatricValid;
 
   // Collision & Dispute Contest States
   const [isDuplicate, setIsDuplicate] = useState(false);
@@ -67,7 +56,6 @@ export function LandingPage() {
   // Advisor Registration Form State
   const [advisorFullName, setAdvisorFullName] = useState("");
   const [advisorEmail, setAdvisorEmail] = useState("");
-  const [advisorStaffId, setAdvisorStaffId] = useState("");
   const [advisorPassword, setAdvisorPassword] = useState("");
   const [showAdvisorPassword, setShowAdvisorPassword] = useState(false);
 
@@ -75,6 +63,11 @@ export function LandingPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
+
+  // Early returns strictly below all hook calls
+  if (user && role === 'advisor') return <Navigate replace to="/advisor" />;
+  if (user && role === 'student') return <Navigate replace to="/student" />;
+  if (user && !role) return <Navigate replace to="/complete-registration" />;
 
   const resetFormFeedback = () => {
     setErrorMessage(null);
@@ -115,8 +108,10 @@ export function LandingPage() {
         navigate("/student");
       } else if (loggedInRole === "advisor") {
         navigate("/advisor");
-      } else {
+      } else if (loggedInRole === "admin") {
         navigate("/admin");
+      } else {
+        navigate("/complete-registration");
       }
     } catch (err: any) {
       let friendlyError = "Invalid credentials. Please verify your credentials.";
@@ -145,8 +140,6 @@ export function LandingPage() {
     if (registrationRole === "student") {
       const sanitizedFullName = studentFullName.trim();
       const sanitizedEmail = studentEmail.trim().toLowerCase();
-      const sanitizedMatric = studentMatric.trim().toUpperCase();
-      const sanitizedCohortCode = cohortCode.trim().toUpperCase();
 
       if (!sanitizedFullName) {
         toast.error("Please enter your full name.");
@@ -158,60 +151,35 @@ export function LandingPage() {
         setErrorMessage("Please enter your email address.");
         return;
       }
-      if (!sanitizedMatric) {
-        toast.error("Please enter your matric number.");
-        setErrorMessage("Please enter your matric number.");
-        return;
-      }
-      if (!isStudentMatricValid) {
-        toast.error("Expected format: 5-15 letters and numbers");
-        setErrorMessage("Expected format: 5-15 letters and numbers");
-        return;
-      }
       if (!studentPassword || studentPassword.length < 6) {
         toast.error("Password must be at least 6 characters.");
         setErrorMessage("Password must be at least 6 characters.");
-        return;
-      }
-      if (!sanitizedCohortCode) {
-        toast.error("Please enter your 6-character Cohort Code.");
-        setErrorMessage("Please enter your 6-character Cohort Code.");
         return;
       }
 
       setProcessing(true);
 
       try {
-        // Direct registration: Dynamic variable-driven payload with no manual program/syllabus input
         const { error } = await signUpStudent({
-          matricNo: sanitizedMatric,
           fullName: sanitizedFullName,
           institutionalEmail: sanitizedEmail,
           email: sanitizedEmail,
           password: studentPassword,
-          cohortCode: sanitizedCohortCode,
         });
 
         if (error) throw error;
 
-        toast.success("Registration successful. Please log in with your new credentials.");
+        toast.success("Check your email to confirm.");
+        setSuccessMessage("Check your email to confirm.");
         setStudentFullName("");
         setStudentEmail("");
-        setStudentMatric("");
         setStudentPassword("");
-        setCohortCode("");
         setLoginEmail(sanitizedEmail);
         setLoginRole("student");
         setAuthMode("login");
         resetFormFeedback();
       } catch (err: any) {
         let friendlyError = err.message || "Student registration failed. Please verify your details.";
-        if (friendlyError.toLowerCase().includes("already registered")) {
-          friendlyError = `Matric number "${sanitizedMatric}" is already registered. If this is you, please sign in.`;
-          setIsDuplicate(true);
-        } else if (friendlyError.includes("pre-registered") || friendlyError.includes("not found")) {
-          friendlyError = `Matric number "${sanitizedMatric}" not found in institutional roster. Contact your advisor to initialize your record.`;
-        }
         toast.error(friendlyError);
         setErrorMessage(friendlyError);
       } finally {
@@ -220,7 +188,6 @@ export function LandingPage() {
     } else {
       const sanitizedFullName = advisorFullName.trim();
       const sanitizedEmail = advisorEmail.trim().toLowerCase();
-      const sanitizedStaffId = advisorStaffId.trim().toUpperCase();
 
       if (!sanitizedFullName) {
         toast.error("Please enter your full name.");
@@ -230,11 +197,6 @@ export function LandingPage() {
       if (!sanitizedEmail) {
         toast.error("Please enter your email address.");
         setErrorMessage("Please enter your email address.");
-        return;
-      }
-      if (!sanitizedStaffId) {
-        toast.error("Please enter your staff ID.");
-        setErrorMessage("Please enter your staff ID.");
         return;
       }
       if (!advisorPassword || advisorPassword.length < 6) {
@@ -249,16 +211,15 @@ export function LandingPage() {
         const { error } = await signUpAdvisor({
           fullName: sanitizedFullName,
           email: sanitizedEmail,
-          staffId: sanitizedStaffId,
           password: advisorPassword,
         });
 
         if (error) throw error;
 
-        toast.success("Registration successful. Please log in with your new credentials.");
+        toast.success("Check your email to confirm.");
+        setSuccessMessage("Check your email to confirm.");
         setAdvisorFullName("");
         setAdvisorEmail("");
-        setAdvisorStaffId("");
         setAdvisorPassword("");
         setLoginEmail(sanitizedEmail);
         setLoginRole("advisor");
@@ -267,7 +228,7 @@ export function LandingPage() {
       } catch (err: any) {
         let friendlyError = err.message || "Advisor registration failed. Please verify your details.";
         if (friendlyError.includes("already registered")) {
-          friendlyError = "An account with this email or staff ID already exists. Please sign in.";
+          friendlyError = "An account with this email already exists. Please sign in.";
         }
         toast.error(friendlyError);
         setErrorMessage(friendlyError);
@@ -720,31 +681,6 @@ export function LandingPage() {
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label htmlFor="studentMatric" className="text-xs font-semibold text-gray-700">
-                      Matric Number
-                    </Label>
-                    <Input
-                      id="studentMatric"
-                      type="text"
-                      value={studentMatric}
-                      onChange={(e) => {
-                        setStudentMatric(e.target.value.toUpperCase());
-                        if (isDuplicate) setIsDuplicate(false);
-                      }}
-                      placeholder="e.g. CS12345 or A24CS0001"
-                      required
-                      className={`bg-gray-50 border-gray-200 focus:ring-2 focus:ring-blue-900 focus:border-transparent text-gray-900 h-10 text-sm uppercase font-mono ${
-                        showStudentMatricError ? "border-red-500 focus:ring-red-500" : ""
-                      }`}
-                    />
-                    {showStudentMatricError && (
-                      <p className="text-xs text-red-600 font-medium mt-1">
-                        Expected format: 5-15 letters and numbers
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="space-y-1.5">
                     <Label htmlFor="studentPassword" className="text-xs font-semibold text-gray-700">
                       Password
                     </Label>
@@ -772,25 +708,6 @@ export function LandingPage() {
                         )}
                       </button>
                     </div>
-                  </div>
-
-                  {/* 6-Character Cohort Code */}
-                  <div className="space-y-1.5">
-                    <Label htmlFor="cohortCode" className="text-xs font-semibold text-gray-700">
-                      Cohort Code
-                    </Label>
-                    <Input
-                      id="cohortCode"
-                      type="text"
-                      value={cohortCode}
-                      onChange={(e) => setCohortCode(e.target.value.toUpperCase())}
-                      placeholder="e.g. ABC-123"
-                      required
-                      className="bg-gray-50 border-gray-200 focus:ring-2 focus:ring-blue-900 focus:border-transparent text-gray-900 h-10 text-sm uppercase font-mono"
-                    />
-                    <p className="text-[11px] text-gray-500">
-                      Enter the 6-character Cohort Code provided by your advisor. Degree Program and Syllabus are automatically configured.
-                    </p>
                   </div>
                 </>
               ) : (
@@ -823,21 +740,6 @@ export function LandingPage() {
                       placeholder="e.g. advisor@university.edu"
                       required
                       className="bg-gray-50 border-gray-200 focus:ring-2 focus:ring-blue-900 focus:border-transparent text-gray-900 h-10 text-sm"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label htmlFor="advisorStaffId" className="text-xs font-semibold text-gray-700">
-                      Staff ID
-                    </Label>
-                    <Input
-                      id="advisorStaffId"
-                      type="text"
-                      value={advisorStaffId}
-                      onChange={(e) => setAdvisorStaffId(e.target.value.toUpperCase())}
-                      placeholder="e.g. STAFF-001"
-                      required
-                      className="bg-gray-50 border-gray-200 focus:ring-2 focus:ring-blue-900 focus:border-transparent text-gray-900 h-10 text-sm uppercase font-mono"
                     />
                   </div>
 

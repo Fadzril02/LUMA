@@ -1,37 +1,38 @@
 import React, { useState } from 'react';
 import { useNavigate, Navigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { LoadingScreen } from '../../components/shared/LoadingScreen';
-import { GraduationCap, ShieldCheck, ArrowRight, Loader2, BookOpen, CheckCircle } from 'lucide-react';
+import { GraduationCap, ShieldCheck, ArrowRight, Loader2, CheckCircle } from 'lucide-react';
 
 export function AdvisorLogin() {
   const navigate = useNavigate();
   const { user, role, signInWithEmail, signUpAdvisor } = useAuth();
 
-  if (user && role === 'advisor') return <Navigate replace to="/advisor" />;
-  if (user && role === 'student') return <Navigate replace to="/student" />;
-  if (user && !role) return <LoadingScreen />; // Safely wait for the role to resolve
-
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
-  const [staffId, setStaffId] = useState('');
-  const [universityId, setUniversityId] = useState('00000000-0000-0000-0000-000000000001'); // UTM Default
-  const [department, setDepartment] = useState('Software Engineering');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Early returns strictly below all hook calls
+  if (user && role === 'advisor') return <Navigate replace to="/advisor" />;
+  if (user && role === 'student') return <Navigate replace to="/student" />;
+  if (user && !role) return <Navigate replace to="/complete-registration" />;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
+    setSuccessMsg(null);
     setIsSubmitting(true);
 
     try {
       if (mode === 'login') {
-        const { error } = await signInWithEmail(email, password);
+        const { error, role: loggedInRole } = await signInWithEmail(email, password);
         if (error) {
           setErrorMsg(error.message);
+        } else if (!loggedInRole) {
+          navigate('/complete-registration');
         } else {
           navigate('/advisor');
         }
@@ -40,14 +41,13 @@ export function AdvisorLogin() {
           email,
           password,
           fullName,
-          staffId,
-          universityId,
-          department,
         });
         if (error) {
           setErrorMsg(error.message);
         } else {
-          navigate('/advisor');
+          setSuccessMsg('Check your email to confirm.');
+          setMode('login');
+          setPassword('');
         }
       }
     } catch (err: any) {
@@ -111,66 +111,28 @@ export function AdvisorLogin() {
             </div>
           )}
 
+          {successMsg && (
+            <div className="mb-5 p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm flex items-start gap-2">
+              <CheckCircle className="w-5 h-5 flex-shrink-0 text-emerald-500" />
+              <span>{successMsg}</span>
+            </div>
+          )}
+
           <form className="space-y-4" onSubmit={handleSubmit}>
             {mode === 'register' && (
-              <>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                    Full Name
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    placeholder="Dr. Ahmad Fazril"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm text-slate-900"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                      Staff ID
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={staffId}
-                      onChange={(e) => setStaffId(e.target.value)}
-                      placeholder="STAFF-8842"
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm text-slate-900"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                      Department
-                    </label>
-                    <input
-                      type="text"
-                      value={department}
-                      onChange={(e) => setDepartment(e.target.value)}
-                      placeholder="Software Engineering"
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm text-slate-900"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                    University / Institution
-                  </label>
-                  <select
-                    value={universityId}
-                    onChange={(e) => setUniversityId(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm text-slate-900 bg-white"
-                  >
-                    <option value="00000000-0000-0000-0000-000000000001">Universiti Teknologi Malaysia (UTM)</option>
-                    <option value="00000000-0000-0000-0000-000000000002">Universiti Malaya (UM)</option>
-                    <option value="00000000-0000-0000-0000-000000000003">Universiti Sains Malaysia (USM)</option>
-                  </select>
-                </div>
-              </>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+                  Full Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="Dr. Ahmad Fazril"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm text-slate-900"
+                />
+              </div>
             )}
 
             <div>
@@ -213,7 +175,7 @@ export function AdvisorLogin() {
                 </>
               ) : (
                 <>
-                  <span>{mode === 'login' ? 'Access Advisor Dashboard' : 'Complete Registration'}</span>
+                  <span>{mode === 'login' ? 'Access Advisor Dashboard' : 'Create Account'}</span>
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}

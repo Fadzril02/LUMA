@@ -108,10 +108,9 @@ export function AdvisorDashboard() {
   const [programCode, setProgramCode] = useState<string>("");
   const [totalCredits, setTotalCredits] = useState<number>(130);
 
-  const advisorStaffId = (profile as any)?.staff_id || (user as any)?.user_metadata?.staff_id || "";
-  const tenantId = (profile as any)?.tenant_id || (profile as any)?.university_id || (user as any)?.user_metadata?.tenant_id || "UTM";
-  const universityName = resolveUniName(tenantId);
-
+  const advisorStaffId = (profile as any)?.staff_id;
+  const tenantId = (profile as any)?.tenant_id || (profile as any)?.university_id;
+  
   // Helper: Generate random 6-character alphanumeric cohort_code (e.g. "SECJ99")
   const generateCohortCode = (programCode: string = "SECJ"): string => {
     const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -715,7 +714,7 @@ export function AdvisorDashboard() {
               </span>
               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-indigo-50 text-indigo-800 text-xs font-medium border border-indigo-200">
                 <GraduationCap className="w-3.5 h-3.5 text-indigo-700" />
-                {universityName}
+                {resolveUniName(tenantId)}
               </span>
             </div>
             <h3 className="text-xl font-bold tracking-tight text-gray-900">
@@ -1370,7 +1369,7 @@ export function AdvisorDashboard() {
               </div>
             </div>
 
-            <form onSubmit={(e) => { e.preventDefault(); handleUploadSubmit(e); }} className="p-6 space-y-6">
+            <div className="p-6 space-y-6">
               <div className="bg-amber-50/70 border border-amber-200/90 rounded-lg p-3 text-xs text-amber-900 flex items-start space-x-2.5">
                 <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
                 <div className="space-y-0.5">
@@ -1497,7 +1496,7 @@ export function AdvisorDashboard() {
                   Confirm &amp; Ingest
                 </button>
               </div>
-            </form>
+            </div>
           </div>
         </div>
       )}

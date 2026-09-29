@@ -151,7 +151,7 @@ export function CorrectionsQueue({ queue, roster, onApproved, onRefresh }: Corre
       
       // Route through FastAPI Zero-Waste engine for DAG verification & persistence into academic_records.
       // Note: advisor_id is strictly derived from the verified JWT payload on the backend.
-      const tenantId = (profile as any)?.tenant_id || (profile as any)?.university_id || (user as any)?.user_metadata?.tenant_id || "UTM";
+      const tenantId = (profile as any)?.tenant_id || (profile as any)?.university_id;
       await api.finalizeApproval({
         document_id: docId,
         matric_number: docMatricNo,

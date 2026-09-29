@@ -37,7 +37,7 @@ export function AdvisorLayout({
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
-  const tenantId = (profile as any)?.tenant_id || (profile as any)?.university_id || (user as any)?.user_metadata?.tenant_id || "UTM";
+  const tenantId = (profile as any)?.tenant_id || (profile as any)?.university_id;
   const universityName = resolveUniName(tenantId);
 
   const handleLogout = async () => {

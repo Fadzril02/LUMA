@@ -4,11 +4,12 @@ Smart Academic Assessment System - API v1 Router Aggregator
 
 from fastapi import APIRouter
 try:
-    from app.v1.endpoints import audit, health, courses
+    from app.v1.endpoints import audit, health, courses, register
 except ImportError:
-    from backend.app.v1.endpoints import audit, health, courses
+    from backend.app.v1.endpoints import audit, health, courses, register
 
 api_router = APIRouter()
 api_router.include_router(health.router)
 api_router.include_router(audit.router)
 api_router.include_router(courses.router)
+api_router.include_router(register.router)

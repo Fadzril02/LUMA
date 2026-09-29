@@ -62,8 +62,8 @@ interface StudentRosterItem {
 export function AdvisorDashboard() {
   const navigate = useNavigate();
   const { advisor, user, signOut } = useAuth();
-  const tenantId = (advisor as any)?.tenant_id || advisor?.university_id || (user as any)?.user_metadata?.tenant_id || "UTM";
-  const universityId = advisor?.university_id || '00000000-0000-0000-0000-000000000001';
+  const tenantId = (advisor as any)?.tenant_id || advisor?.university_id;
+  const universityId = advisor?.university_id;
   const universityName = resolveUniName(tenantId);
 
   const handleLogout = async () => {
@@ -103,7 +103,7 @@ export function AdvisorDashboard() {
     setIsLoading(true);
     try {
       // 1. Fetch Cohorts strictly for this advisor
-      const advisorStaffId = (advisor as any)?.staff_id || '';
+      const advisorStaffId = (advisor as any)?.staff_id;
       let cohortsQuery = supabase
         .from('cohorts')
         .select('*')
@@ -330,7 +330,7 @@ export function AdvisorDashboard() {
 
       if (uploadErr) throw new Error(`Storage upload failed: ${uploadErr.message}`);
 
-      const tenantId = (advisor as any)?.tenant_id || advisor?.university_id || (user as any)?.user_metadata?.tenant_id || "UTM";
+      const tenantId = (advisor as any)?.tenant_id || advisor?.university_id;
       const auditRes = await api.processStorageAudit({
         storage_path: `transcripts/${uploadData.path}`,
         advisor_id: user.id,

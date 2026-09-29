@@ -8,6 +8,7 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 const LandingPage = React.lazy(() => import('./pages/LandingPage').then(module => ({ default: module.LandingPage })));
 const AdvisorPortal = React.lazy(() => import('./pages/advisor/AdvisorPortal').then(module => ({ default: module.AdvisorPortal })));
 const StudentPortal = React.lazy(() => import('./pages/student/StudentPortal').then(module => ({ default: module.StudentPortal })));
+const CompleteRegistration = React.lazy(() => import('../pages/auth/CompleteRegistration').then(module => ({ default: module.CompleteRegistration })));
 
 // ── Role-gated route wrapper ─────────────────────────────────────────────────
 function RoleRoute({
@@ -43,7 +44,7 @@ export default function App() {
                   ) : user && role === 'student' ? (
                     <Navigate to="/student" replace />
                   ) : user && !role ? (
-                    <LoadingScreen />
+                    <Navigate to="/complete-registration" replace />
                   ) : (
                     <LandingPage />
                   )
@@ -51,6 +52,8 @@ export default function App() {
               />
               {/* /login kept as alias for backwards-compat links */}
               <Route path="/login" element={<Navigate to="/" replace />} />
+              {/* /complete-registration route */}
+              <Route path="/complete-registration" element={<CompleteRegistration />} />
               {/* /landing kept so deep-links still work */}
               <Route path="/landing" element={<LandingPage />} />
 

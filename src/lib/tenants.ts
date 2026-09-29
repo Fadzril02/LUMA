@@ -16,7 +16,7 @@ export const TENANT_NAME_MAP: Record<string, string> = {
 };
 
 export const resolveUniName = (tenantId?: string | null): string => {
-  if (!tenantId) return 'Universiti Teknologi Malaysia';
+  if (!tenantId) return 'Unknown Institution';
   return TENANT_NAME_MAP[tenantId] || tenantId;
 };
 

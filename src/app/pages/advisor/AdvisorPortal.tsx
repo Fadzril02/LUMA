@@ -17,7 +17,7 @@ export function AdvisorPortal() {
   const [auditQueue, setAuditQueue] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const advisorStaffId = (profile as any)?.staff_id || (user as any)?.user_metadata?.staff_id || "";
+  const advisorStaffId = (profile as any)?.staff_id;
 
   const fetchAdvisorData = async () => {
     // Security Check: Guard to ensure advisor context is loaded before querying
