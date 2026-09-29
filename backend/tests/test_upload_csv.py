@@ -191,3 +191,98 @@ def test_upload_csv_courses_insert_failure_rollback(mock_supabase_class):
     # Verify template was deleted for rollback
     mock_query.delete.assert_called_once()
     mock_query.eq.assert_called_with("id", "tmpl-uuid-rollback")
+
+
+@patch("backend.app.v1.endpoints.courses.SupabaseService")
+def test_upload_csv_with_elective_slots_and_real_courses(mock_supabase_class):
+    """
+    Test requirement: CSV with 3x SXXXXXX3 + 1 alternative slot + real courses -> 200,
+    and the slot fields (is_elective_slot, slot_no, match_patterns) are in the insert payload.
+    """
+    mock_svc, mock_query = create_mock_supabase()
+    mock_supabase_class.return_value = mock_svc
+
+    app.dependency_overrides[verify_advisor_jwt] = lambda: {
+        "sub": "mock-advisor-uid",
+        "email": "advisor@utm.my"
+    }
+
+    mock_query.execute.side_effect = [
+        # 1. advisors table lookup
+        MagicMock(data=[{"tenant_id": "UTM"}]),
+        # 2. tenants table lookup
+        MagicMock(data=[{"name": "Universiti Teknologi Malaysia", "default_prereq_min_grade": "C"}]),
+        # 3. existing degree_templates check
+        MagicMock(data=[]),
+        # 4. degree_templates insert
+        MagicMock(data=[{"id": "tmpl-uuid-slots"}]),
+        # 5. template_courses insert
+        MagicMock(data=[{"id": f"tc-{i}"} for i in range(6)])
+    ]
+
+    csv_data = (
+        b"course_code,course_name,credits,category,prerequisites\n"
+        b"SECJ1013,Programming Technique I,3,Core,None\n"
+        b"MATX1023,Engineering Mathematics,3,Core,None\n"
+        b"SXXXXXX3,Free Elective 1,3,Elective,None\n"
+        b"SXXXXXX3,Free Elective 2,3,Elective,None\n"
+        b"SXXXXXX3,Free Elective 3,3,Elective,None\n"
+        b"SECR5XX3/SECP5XX3/SECJ5XX3,Specialization Elective,3,Elective,None\n"
+    )
+
+    response = client.post("/api/v1/courses/upload-csv", data={
+        "template_name": "Software Engineering 2024/2025",
+        "program_code": "SECJ",
+        "syllabus_year": "2024/2025",
+        "total_credits": 130
+    }, files={"file": ("curriculum.csv", csv_data, "text/csv")})
+
+    assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+    res_json = response.json()
+    assert res_json["template_id"] == "tmpl-uuid-slots"
+    assert res_json["total_parsed"] == 6
+    assert res_json["total_inserted"] == 6
+
+    # Verify template_courses insert payload includes slot fields and preserves course_code
+    insert_calls = mock_query.insert.call_args_list
+    assert len(insert_calls) == 2
+
+    courses_payload = insert_calls[1][0][0]
+    assert len(courses_payload) == 6
+
+    # 1. Real course (SECJ1013)
+    assert courses_payload[0]["course_code"] == "SECJ1013"
+    assert courses_payload[0]["is_elective_slot"] is False
+    assert courses_payload[0]["slot_no"] is None
+    assert courses_payload[0]["match_patterns"] is None
+
+    # 2. Real course with single 'X' (MATX1023)
+    assert courses_payload[1]["course_code"] == "MATX1023"
+    assert courses_payload[1]["is_elective_slot"] is False
+    assert courses_payload[1]["slot_no"] is None
+    assert courses_payload[1]["match_patterns"] is None
+
+    # 3. Slot 1 (SXXXXXX3)
+    assert courses_payload[2]["course_code"] == "SXXXXXX3"
+    assert courses_payload[2]["is_elective_slot"] is True
+    assert courses_payload[2]["slot_no"] == 1
+    assert courses_payload[2]["match_patterns"] == ["SXXXXXX3"]
+
+    # 4. Slot 2 (SXXXXXX3)
+    assert courses_payload[3]["course_code"] == "SXXXXXX3"
+    assert courses_payload[3]["is_elective_slot"] is True
+    assert courses_payload[3]["slot_no"] == 2
+    assert courses_payload[3]["match_patterns"] == ["SXXXXXX3"]
+
+    # 5. Slot 3 (SXXXXXX3)
+    assert courses_payload[4]["course_code"] == "SXXXXXX3"
+    assert courses_payload[4]["is_elective_slot"] is True
+    assert courses_payload[4]["slot_no"] == 3
+    assert courses_payload[4]["match_patterns"] == ["SXXXXXX3"]
+
+    # 6. Alternative slot (SECR5XX3/SECP5XX3/SECJ5XX3)
+    assert courses_payload[5]["course_code"] == "SECR5XX3/SECP5XX3/SECJ5XX3"
+    assert courses_payload[5]["is_elective_slot"] is True
+    assert courses_payload[5]["slot_no"] == 4
+    assert courses_payload[5]["match_patterns"] == ["SECR5XX3", "SECP5XX3", "SECJ5XX3"]
+

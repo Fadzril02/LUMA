@@ -77,13 +77,14 @@ class CSVCourseParser:
         if not code_key or not name_key:
             return [], ["Missing required columns: 'course_code' and 'course_name' are mandatory."]
 
-        seen_codes = set()
+        slot_counter = 0
+        seen_real_codes = set()
         for row_idx, row in enumerate(reader, start=2):
             raw_code = (row.get(code_key) or "").strip().upper().replace(" ", "")
             raw_name = (row.get(name_key) or "").strip().title()
             raw_credits = (row.get(credit_key) or "3").strip() if credit_key else "3"
             raw_prereqs = (row.get(prereq_key) or "").strip() if prereq_key else ""
-            raw_category = (row.get(cat_key) or "Core").strip().title() if cat_key else "Core"
+            raw_category = (row.get(cat_key) or "").strip().title() if cat_key else ""
 
             if not raw_code:
                 errors.append(f"Row {row_idx}: Empty course_code.")
@@ -103,10 +104,45 @@ class CSVCourseParser:
                 errors.append(f"Row {row_idx}: Invalid credits format '{raw_credits}'. Must be an integer.")
                 continue
 
-            if raw_code in seen_codes:
-                errors.append(f"Row {row_idx}: Duplicate course code '{raw_code}'.")
-                continue
-            seen_codes.add(raw_code)
+            # Determine if this row is an elective slot (contains '/' or 'XX')
+            is_elective_slot = ("/" in raw_code) or ("XX" in raw_code)
+
+            if is_elective_slot:
+                # Slot parsing: split by '/'
+                raw_patterns = [p.strip() for p in raw_code.split("/") if p.strip()]
+                if not raw_patterns:
+                    errors.append(f"Row {row_idx}: Invalid empty elective slot pattern '{raw_code}'.")
+                    continue
+
+                # Validate each pattern: must be uppercase alphanumeric (X is wildcard character)
+                invalid_patterns = [p for p in raw_patterns if not re.fullmatch(r'^[A-Z0-9]+$', p)]
+                if invalid_patterns:
+                    errors.append(
+                        f"Row {row_idx}: Invalid pattern '{invalid_patterns[0]}' in '{raw_code}'. "
+                        f"Patterns must contain only alphanumeric characters."
+                    )
+                    continue
+
+                slot_counter += 1
+                slot_no = slot_counter
+                category = raw_category if raw_category else "Elective"
+                patterns = raw_patterns
+            else:
+                # Real course code validation: must be alphanumeric (e.g. SECJ1013)
+                if not re.fullmatch(r'^[A-Z0-9]+$', raw_code):
+                    errors.append(
+                        f"Row {row_idx}: Invalid course code '{raw_code}'. Must contain only alphanumeric characters."
+                    )
+                    continue
+
+                if raw_code in seen_real_codes:
+                    errors.append(f"Row {row_idx}: Duplicate course code '{raw_code}'.")
+                    continue
+                seen_real_codes.add(raw_code)
+
+                slot_no = None
+                patterns = None
+                category = raw_category if raw_category else "Core"
 
             prereq_struct = cls.parse_prerequisite_string(raw_prereqs)
 
@@ -114,7 +150,10 @@ class CSVCourseParser:
                 "code": raw_code,
                 "name": raw_name,
                 "credits": credits_int,
-                "category": raw_category,
+                "category": category,
+                "is_elective_slot": is_elective_slot,
+                "slot_no": slot_no,
+                "match_patterns": patterns,
                 "prerequisites": prereq_struct
             })
 
