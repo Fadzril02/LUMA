@@ -19,7 +19,7 @@ export function AdvisorPortal() {
 
   const advisorStaffId = (profile as any)?.staff_id;
 
-  const fetchAdvisorData = async () => {
+  const fetchAdvisorData = async (isSilent: boolean = false) => {
     // Security Check: Guard to ensure advisor context is loaded before querying
     if (!advisorStaffId) {
       setIsLoading(false);
@@ -27,7 +27,8 @@ export function AdvisorPortal() {
     }
 
     try {
-      setIsLoading(true);
+      // Only show the full-page spinner on first load; background refreshes must not unmount children (e.g. open upload modal)
+      if (!isSilent) setIsLoading(true);
 
       // 1. Fetch assigned students strictly filtered by advisor_staff_id
       const { data: studentsData } = await db
@@ -116,7 +117,7 @@ export function AdvisorPortal() {
   useEffect(() => {
     const handleFocus = () => {
       console.log("Tab regained focus. Refreshing advisor portal data...");
-      fetchAdvisorData();
+      fetchAdvisorData(true);
     };
     window.addEventListener('focus', handleFocus);
     return () => window.removeEventListener('focus', handleFocus);
@@ -125,7 +126,7 @@ export function AdvisorPortal() {
   // Task 3: Unblocked side-menu tab change handler
   const handleTabChange = (newTab: string) => {
     setActiveTab(newTab);
-    fetchAdvisorData();
+    fetchAdvisorData(true);
   };
 
   const atRiskCount = roster.filter(s => s.status === "At-Risk" || s.academic_status === "At-Risk").length;
