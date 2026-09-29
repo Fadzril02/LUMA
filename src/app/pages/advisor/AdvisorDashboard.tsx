@@ -1338,7 +1338,7 @@ export function AdvisorDashboard() {
                 <FileUp className="w-5 h-5 text-blue-900" />
                 <div>
                   <h3 className="text-sm font-semibold text-gray-900">Upload Course Structure Matrix</h3>
-                  <p className="text-[11px] text-gray-500 font-medium">{universityName}</p>
+                  <p className="text-[11px] text-gray-500 font-medium">{resolveUniName(tenantId)}</p>
                 </div>
               </div>
               <div className="flex items-center space-x-2">

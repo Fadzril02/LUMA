@@ -30,68 +30,70 @@ export default function App() {
       <Toaster />
       <BrowserRouter>
         <Suspense fallback={<LoadingScreen />}>
-          <Routes>
-            {/* ── Root / Login ────────────────────────────────────────────── */}
-            {/* Both / and /login show LandingPage when unauthenticated or role unresolved. */}
-            {/* Authenticated users with verified roles are redirected to their portal.     */}
-            <Route
-              path="/"
-              element={
-                user && role === 'advisor' ? (
-                  <Navigate to="/advisor" replace />
-                ) : user && role === 'student' ? (
-                  <Navigate to="/student" replace />
-                ) : user && !role ? (
-                  <LoadingScreen />
-                ) : (
-                  <LandingPage />
-                )
-              }
-            />
-            {/* /login kept as alias for backwards-compat links */}
-            <Route path="/login" element={<Navigate to="/" replace />} />
-            {/* /landing kept so deep-links still work */}
-            <Route path="/landing" element={<LandingPage />} />
+          <main role="main" className="flex-1 min-h-screen w-full flex flex-col">
+            <Routes>
+              {/* ── Root / Login ────────────────────────────────────────────── */}
+              {/* Both / and /login show LandingPage when unauthenticated or role unresolved. */}
+              {/* Authenticated users with verified roles are redirected to their portal.     */}
+              <Route
+                path="/"
+                element={
+                  user && role === 'advisor' ? (
+                    <Navigate to="/advisor" replace />
+                  ) : user && role === 'student' ? (
+                    <Navigate to="/student" replace />
+                  ) : user && !role ? (
+                    <LoadingScreen />
+                  ) : (
+                    <LandingPage />
+                  )
+                }
+              />
+              {/* /login kept as alias for backwards-compat links */}
+              <Route path="/login" element={<Navigate to="/" replace />} />
+              {/* /landing kept so deep-links still work */}
+              <Route path="/landing" element={<LandingPage />} />
 
-            {/* ── Student Portal ───────────────────────────────────────────── */}
-            <Route
-              path="/student"
-              element={
-                <RoleRoute allowedRole="student">
-                  <StudentPortal />
-                </RoleRoute>
-              }
-            />
-            <Route
-              path="/student/*"
-              element={
-                <RoleRoute allowedRole="student">
-                  <StudentPortal />
-                </RoleRoute>
-              }
-            />
+              {/* ── Student Portal ───────────────────────────────────────────── */}
+              <Route
+                path="/student"
+                element={
+                  <RoleRoute allowedRole="student">
+                    <StudentPortal />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/student/*"
+                element={
+                  <RoleRoute allowedRole="student">
+                    <StudentPortal />
+                  </RoleRoute>
+                }
+              />
 
-            {/* ── Advisor Portal ───────────────────────────────────────────── */}
-            <Route
-              path="/advisor"
-              element={
-                <RoleRoute allowedRole="advisor">
-                  <AdvisorPortal />
-                </RoleRoute>
-              }
-            />
-            <Route
-              path="/advisor/*"
-              element={
-                <RoleRoute allowedRole="advisor">
-                  <AdvisorPortal />
-                </RoleRoute>
-              }
-            />
+              {/* ── Advisor Portal ───────────────────────────────────────────── */}
+              <Route
+                path="/advisor"
+                element={
+                  <RoleRoute allowedRole="advisor">
+                    <AdvisorPortal />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/advisor/*"
+                element={
+                  <RoleRoute allowedRole="advisor">
+                    <AdvisorPortal />
+                  </RoleRoute>
+                }
+              />
 
-            {/* ── Catch-All ───────────────────────────────────────────────── */}
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
+              {/* ── Catch-All ───────────────────────────────────────────────── */}
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </main>
         </Suspense>
       </BrowserRouter>
     </>
