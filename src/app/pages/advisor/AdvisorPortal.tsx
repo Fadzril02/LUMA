@@ -112,6 +112,22 @@ export function AdvisorPortal() {
     return () => clearTimeout(timer);
   }, [advisorStaffId]);
 
+  // Task 4: Wake-Up Data Refresh on window focus
+  useEffect(() => {
+    const handleFocus = () => {
+      console.log("Tab regained focus. Refreshing advisor portal data...");
+      fetchAdvisorData();
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [advisorStaffId]);
+
+  // Task 3: Unblocked side-menu tab change handler
+  const handleTabChange = (newTab: string) => {
+    setActiveTab(newTab);
+    fetchAdvisorData();
+  };
+
   const atRiskCount = roster.filter(s => s.status === "At-Risk" || s.academic_status === "At-Risk").length;
   const pendingDocsCount = auditQueue.filter(
     q => q.processing_status === "Pending_Advisor_Approval" || q.processing_status === "Pending"
@@ -120,7 +136,7 @@ export function AdvisorPortal() {
   return (
     <AdvisorLayout
       activeTab={activeTab}
-      onTabChange={setActiveTab}
+      onTabChange={handleTabChange}
       badgeCounts={{
         atRisk: atRiskCount,
         pendingQueue: pendingDocsCount

@@ -10,6 +10,7 @@ export type UserRole = 'student' | 'advisor' | null;
 
 export interface BaseProfile {
   role: UserRole;
+  tenant_id?: string;
 }
 
 export interface StudentProfile extends BaseProfile {
@@ -36,6 +37,7 @@ export interface AdvisorProfile extends BaseProfile {
   email: string;
   department?: string;
   university_id?: string;
+  tenant_id?: string;
   tier?: 'freemium' | 'pro' | 'department' | 'enterprise';
   monthly_audit_count?: number;
   // UI alias for backwards compatibility
@@ -68,7 +70,7 @@ export interface AuthContextType {
   clearAuthError: () => void;
   isLoading: boolean;
   loading: boolean; // Backwards-compatible alias for isLoading
-  signInWithEmail: (emailOrMatric: string, passwordOrSessionCode: string) => Promise<{ error: Error | null; role?: UserRole }>;
+  signInWithEmail: (email: string, passwordOrSessionCode: string) => Promise<{ error: Error | null; role?: UserRole }>;
   signInStudent: (matricNo: string, sessionCode: string) => Promise<{ error: Error | null }>;
   signUpStudent: (data: StudentRegistrationData) => Promise<{ error: Error | null }>;
   signUpAdvisor: (data: {
@@ -167,6 +169,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           email: advisorData.institutional_email,
           department: advisorData.department,
           university_id: advisorData.university_id,
+          tenant_id: advisorData.tenant_id || advisorData.university_id || 'UTM',
           tier: advisorData.tier || 'freemium',
           monthly_audit_count: advisorData.monthly_audit_count || 0,
           name: advisorData.name,
@@ -209,6 +212,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           email: currentUser.email || '',
           department: userMeta.department || 'Academic Advisory',
           university_id: userMeta.university_id || '00000000-0000-0000-0000-000000000001',
+          tenant_id: userMeta.tenant_id || userMeta.university_id || 'UTM',
           tier: 'freemium',
           monthly_audit_count: 0,
           name: userMeta.full_name || email.split('@')[0],
@@ -447,24 +451,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const signInWithEmail = async (emailOrMatric: string, passwordOrSessionCode: string) => {
+  const signInWithEmail = async (email: string, passwordOrSessionCode: string) => {
     setIsLoading(true);
     setAuthError(null);
-    const input = emailOrMatric.trim();
-    let finalEmail = input.toLowerCase();
-
-    if (!input.includes('@')) {
-      // Look up student by matric_no to resolve their institutional email
-      const { data: studentRow } = await supabase
-        .from('students')
-        .select('institutional_email')
-        .eq('matric_no', input.toUpperCase())
-        .maybeSingle();
-
-      if (studentRow?.institutional_email) {
-        finalEmail = studentRow.institutional_email.toLowerCase();
-      }
-    }
+    const finalEmail = email.trim().toLowerCase();
 
     const { data, error } = await supabase.auth.signInWithPassword({
       email: finalEmail,

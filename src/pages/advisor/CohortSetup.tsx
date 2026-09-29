@@ -23,6 +23,7 @@ import {
 export function CohortSetup() {
   const navigate = useNavigate();
   const { advisor, user } = useAuth();
+  const tenantId = (advisor as any)?.tenant_id || advisor?.university_id || (user as any)?.user_metadata?.tenant_id || "UTM";
   const universityId = advisor?.university_id || '00000000-0000-0000-0000-000000000001';
   // FIX #6: Use advisor.staff_id (the FK stored in cohorts.advisor_staff_id),
   // NOT user.id (the auth UUID which is a different column).
@@ -54,10 +55,13 @@ export function CohortSetup() {
   // FIX #6: Fetch live degree templates on mount
   useEffect(() => {
     const loadTemplates = async () => {
-      const { data, error } = await supabase
+      let tmplQuery = supabase
         .from('degree_templates')
-        .select('id, program_code, program_name, syllabus_year')
-        .order('program_code', { ascending: true });
+        .select('id, program_code, program_name, syllabus_year');
+      if (tenantId) {
+        tmplQuery = tmplQuery.eq('tenant_id', tenantId);
+      }
+      const { data, error } = await tmplQuery.order('program_code', { ascending: true });
       if (!error && data && data.length > 0) {
         setDegreeTemplates(data);
         setSelectedTemplateId(data[0].id); // default to first option
@@ -96,6 +100,7 @@ export function CohortSetup() {
           // FIX #6: template_id is now the advisor-selected template, not missing.
           advisor_staff_id: advisorStaffId,
           university_id: universityId,
+          tenant_id: tenantId,
           cohort_name: cohortName.trim(),
           name: cohortName.trim(),
           invite_code: code,

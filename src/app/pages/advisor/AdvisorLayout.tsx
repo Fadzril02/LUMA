@@ -14,6 +14,8 @@ import {
 import { useAuth } from "../../../context/AuthContext";
 import { supabase } from "../../../lib/supabase";
 
+import { resolveUniName } from "../../../lib/tenants";
+
 interface AdvisorLayoutProps {
   activeTab: string;
   onTabChange: (tab: string) => void;
@@ -34,6 +36,9 @@ export function AdvisorLayout({
   const { profile, user, signOut } = useAuth();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  const tenantId = (profile as any)?.tenant_id || (profile as any)?.university_id || (user as any)?.user_metadata?.tenant_id || "UTM";
+  const universityName = resolveUniName(tenantId);
 
   const handleLogout = async () => {
     setIsLoggingOut(true);
@@ -131,8 +136,8 @@ export function AdvisorLayout({
                     Advisor
                   </span>
                 </div>
-                <p className="text-xs text-gray-500 tracking-tight mt-0.5">
-                  Academic Advising Platform
+                <p className="text-xs text-gray-500 tracking-tight mt-0.5 truncate max-w-[170px]" title={universityName}>
+                  {universityName}
                 </p>
               </div>
             </div>

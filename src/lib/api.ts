@@ -112,7 +112,8 @@ export const api = {
     universityId: string,
     templateName: string,
     programCode: string,
-    totalCredits: number
+    totalCredits: number,
+    tenantId?: string
   ) => {
     const formData = new FormData();
     formData.append('file', file);
@@ -120,6 +121,9 @@ export const api = {
     formData.append('template_name', templateName);
     formData.append('program_code', programCode);
     formData.append('total_credits', String(totalCredits));
+    if (tenantId) {
+      formData.append('tenant_id', tenantId);
+    }
 
     const res = await apiClient.post('/api/v1/courses/upload-csv', formData);
     return res.data;

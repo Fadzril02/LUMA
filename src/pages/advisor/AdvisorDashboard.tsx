@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { api } from '../../lib/api';
+import { resolveUniName } from '../../lib/tenants';
 import { StudentRadarChart } from '../../components/advisor/StudentRadarChart';
 import { TrafficLightGrid, CourseAuditItem } from '../../components/advisor/TrafficLightGrid';
 import {
@@ -61,7 +62,9 @@ interface StudentRosterItem {
 export function AdvisorDashboard() {
   const navigate = useNavigate();
   const { advisor, user, signOut } = useAuth();
+  const tenantId = (advisor as any)?.tenant_id || advisor?.university_id || (user as any)?.user_metadata?.tenant_id || "UTM";
   const universityId = advisor?.university_id || '00000000-0000-0000-0000-000000000001';
+  const universityName = resolveUniName(tenantId);
 
   const handleLogout = async () => {
     try {
@@ -107,6 +110,9 @@ export function AdvisorDashboard() {
         .order('created_at', { ascending: false });
       if (advisorStaffId) {
         cohortsQuery = cohortsQuery.eq('advisor_staff_id', advisorStaffId);
+      }
+      if (tenantId) {
+        cohortsQuery = cohortsQuery.eq('tenant_id', tenantId);
       }
       const { data: cohortsData } = await cohortsQuery;
 
@@ -236,6 +242,16 @@ export function AdvisorDashboard() {
     return () => clearTimeout(timer);
   }, [advisor]);
 
+  // Task 4: Wake-Up Data Refresh on window focus
+  useEffect(() => {
+    const handleFocus = () => {
+      console.log("Tab regained focus. Refreshing dashboard data...");
+      loadData();
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [advisor, universityId]);
+
   // Filtered Students based on Cohort Selector and Search Query
   const filteredStudents = students.filter((s) => {
     const matchesCohort = selectedCohortId === 'ALL' || s.cohort_id === selectedCohortId;
@@ -345,7 +361,7 @@ export function AdvisorDashboard() {
               <div className="flex items-center gap-2">
                 <span className="font-extrabold text-lg tracking-tight text-slate-900">L.U.M.A.</span>
                 <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100">
-                  Lecturer Triage
+                  {universityName}
                 </span>
               </div>
               <p className="text-xs text-slate-500">Degree Audit & Prerequisite Resolver</p>

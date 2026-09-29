@@ -1,11 +1,16 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Navigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { LoadingScreen } from '../../components/shared/LoadingScreen';
 import { GraduationCap, ShieldCheck, ArrowRight, Loader2, BookOpen, CheckCircle } from 'lucide-react';
 
 export function AdvisorLogin() {
   const navigate = useNavigate();
-  const { signInWithEmail, signUpAdvisor } = useAuth();
+  const { user, role, signInWithEmail, signUpAdvisor } = useAuth();
+
+  if (user && role === 'advisor') return <Navigate replace to="/advisor" />;
+  if (user && role === 'student') return <Navigate replace to="/student" />;
+  if (user && !role) return <LoadingScreen />; // Safely wait for the role to resolve
 
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');

@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { useNavigate, Link } from "react-router";
+import { useNavigate, Link, Navigate } from "react-router";
+import { LoadingScreen } from "../../components/shared/LoadingScreen";
 import { Button, Input, Label } from "../components/ui";
 import { 
   ShieldCheck, 
@@ -22,7 +23,11 @@ import { toast } from "sonner";
 
 export function LandingPage() {
   const navigate = useNavigate();
-  const { signInWithEmail, signUpStudent, signUpAdvisor, authError, clearAuthError } = useAuth();
+  const { user, role, signInWithEmail, signUpStudent, signUpAdvisor, authError, clearAuthError } = useAuth();
+
+  if (user && role === 'advisor') return <Navigate replace to="/advisor" />;
+  if (user && role === 'student') return <Navigate replace to="/student" />;
+  if (user && !role) return <LoadingScreen />; // Safely wait for the role to resolve
 
   // Navigation / View State: 'login' | 'register'
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
@@ -87,8 +92,8 @@ export function LandingPage() {
 
     const cleanEmail = loginEmail.trim().toLowerCase();
     if (!cleanEmail) {
-      toast.error("Please enter your email address or ID.");
-      setErrorMessage("Please enter your email address or ID.");
+      toast.error("Please enter your institutional email.");
+      setErrorMessage("Please enter your institutional email.");
       return;
     }
     if (!loginPassword) {
@@ -428,7 +433,7 @@ export function LandingPage() {
             </h2>
             <p className="text-xs text-gray-500 mt-1">
               {isContesting
-                ? "Verify ownership of your UTM Matric Number with your institutional email."
+                ? "Verify ownership of your Matric Number with your institutional email."
                 : authMode === "login"
                 ? "Enter your academic credentials to access your advising dashboard."
                 : "Select your role and complete details to initialize your credentials."}
@@ -587,14 +592,14 @@ export function LandingPage() {
 
               <div className="space-y-1.5">
                 <Label htmlFor="loginEmail" className="text-xs font-semibold text-gray-700">
-                  Institutional Email or Matric Number
+                  Institutional Email
                 </Label>
                 <Input
                   id="loginEmail"
-                  type="text"
+                  type="email"
                   value={loginEmail}
                   onChange={(e) => setLoginEmail(e.target.value)}
-                  placeholder="e.g. student@university.edu.my or ID"
+                  placeholder="e.g. student@university.edu.my"
                   required
                   className="bg-gray-50 border-gray-200 focus:ring-2 focus:ring-blue-900 focus:border-transparent text-gray-900 h-10 text-sm"
                 />

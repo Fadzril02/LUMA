@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { useNavigate, Link } from "react-router";
+import { useNavigate, Link, Navigate } from "react-router";
+import { LoadingScreen } from "../../components/shared/LoadingScreen";
 import { 
   GraduationCap, User, Lock, Mail, Hash, BookOpen, 
   Eye, EyeOff, ArrowRight, CheckCircle2, AlertCircle, Loader2 
@@ -10,7 +11,11 @@ import { supabase } from "../../lib/supabase";
 
 export function StudentAuth() {
   const navigate = useNavigate();
-  const { signInStudent, signUpStudent, signInWithEmail } = useAuth();
+  const { user, role, signInStudent, signUpStudent, signInWithEmail } = useAuth();
+
+  if (user && role === 'advisor') return <Navigate replace to="/advisor" />;
+  if (user && role === 'student') return <Navigate replace to="/student" />;
+  if (user && !role) return <LoadingScreen />; // Safely wait for the role to resolve
 
   const [mode, setMode] = useState<"login" | "register">("register");
   
@@ -36,7 +41,7 @@ export function StudentAuth() {
   const [contestErrorMessage, setContestErrorMessage] = useState<string | null>(null);
 
   // Login Form State
-  const [loginIdentifier, setLoginIdentifier] = useState("");
+  const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
 
   // UI States
@@ -165,9 +170,13 @@ export function StudentAuth() {
     setErrorMessage(null);
     setSuccessMessage(null);
 
-    const cleanInput = loginIdentifier.trim();
-    if (!cleanInput) {
-      setErrorMessage("Please enter your Matric Number or Email.");
+    const cleanEmail = loginEmail.trim().toLowerCase();
+    if (!cleanEmail) {
+      setErrorMessage("Please enter your institutional email.");
+      return;
+    }
+    if (!cleanEmail.includes("@")) {
+      setErrorMessage("Please enter a valid institutional email address.");
       return;
     }
     if (!loginPassword) {
@@ -177,12 +186,7 @@ export function StudentAuth() {
 
     setIsLoading(true);
     try {
-      let result;
-      if (cleanInput.includes("@")) {
-        result = await signInWithEmail(cleanInput, loginPassword);
-      } else {
-        result = await signInStudent(cleanInput, loginPassword);
-      }
+      const result = await signInWithEmail(cleanEmail, loginPassword);
 
       if (result.error) throw result.error;
 
@@ -204,7 +208,7 @@ export function StudentAuth() {
 
     } catch (err: any) {
       console.error("Student Login Error:", err);
-      setErrorMessage(err.message || "Invalid credentials. Please verify your matric number and password.");
+      setErrorMessage(err.message || "Invalid credentials. Please verify your email and password.");
     } finally {
       setIsLoading(false);
     }
@@ -311,7 +315,7 @@ export function StudentAuth() {
                   ? "Verify ownership of your Matric Number with your institutional email."
                   : mode === "register" 
                   ? "Register using your Matric Number and assigned Cohort Code." 
-                  : "Sign in with your Matric Number or registered email."}
+                  : "Sign in with your registered institutional email."}
               </p>
             </CardHeader>
 
@@ -626,16 +630,17 @@ export function StudentAuth() {
                 /* ========================================================= */
                 <form onSubmit={handleLogin} className="space-y-4">
                   <div className="space-y-1.5">
-                    <Label htmlFor="loginIdentifier" className="text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                      Matric Number or Email
+                    <Label htmlFor="loginEmail" className="text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                      Institutional Email
                     </Label>
                     <div className="relative flex items-center">
-                      <Hash className="w-4 h-4 text-gray-400 absolute left-3" />
+                      <Mail className="w-4 h-4 text-gray-400 absolute left-3" />
                       <Input
-                        id="loginIdentifier"
-                        value={loginIdentifier}
-                        onChange={(e) => setLoginIdentifier(e.target.value)}
-                        placeholder="e.g. A24EC0000 or student@university.edu.my"
+                        id="loginEmail"
+                        type="email"
+                        value={loginEmail}
+                        onChange={(e) => setLoginEmail(e.target.value)}
+                        placeholder="e.g. student@university.edu.my"
                         required
                         className="pl-9 text-sm border-gray-300 focus:border-[#990033] focus:ring-[#990033]"
                       />

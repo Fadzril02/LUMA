@@ -4,21 +4,9 @@ import { useAuth } from '../context/AuthContext';
 import { LandingPage } from './pages/LandingPage';
 import { StudentPortal } from './pages/student/StudentPortal';
 import { AdvisorPortal } from './pages/advisor/AdvisorPortal';
-import { Loader2 } from 'lucide-react';
+import { LoadingScreen } from '../components/shared/LoadingScreen';
 import { Toaster } from './components/ui/sonner';
 import { ProtectedRoute } from './components/ProtectedRoute';
-
-// ── Loading spinner ──────────────────────────────────────────────────────────
-function LoadingScreen() {
-  return (
-    <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-slate-300">
-      <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mb-3" />
-      <span className="text-xs font-mono tracking-widest text-slate-400">
-        INITIALIZING L.U.M.A. SECURE CONTEXT...
-      </span>
-    </div>
-  );
-}
 
 // ── Role-gated route wrapper ─────────────────────────────────────────────────
 function RoleRoute({
@@ -33,18 +21,8 @@ function RoleRoute({
 
 export default function App() {
   const { user, role, isLoading } = useAuth();
-  const [forceRender, setForceRender] = React.useState(false);
 
-  React.useEffect(() => {
-    // Failsafe timeout (2.5 seconds): if initialization exceeds 2.5s on a new tab,
-    // force the app to render using the existing localStorage session rather than hanging.
-    const timer = setTimeout(() => {
-      setForceRender(true);
-    }, 2500);
-    return () => clearTimeout(timer);
-  }, []);
-
-  if (isLoading && !forceRender) return <LoadingScreen />;
+  if (isLoading) return <LoadingScreen />;
 
   return (
     <>
@@ -57,12 +35,12 @@ export default function App() {
         <Route
           path="/"
           element={
-            !user || !role ? (
-              <LandingPage />
-            ) : role === 'student' ? (
-              <Navigate to="/student" replace />
-            ) : role === 'advisor' ? (
+            user && role === 'advisor' ? (
               <Navigate to="/advisor" replace />
+            ) : user && role === 'student' ? (
+              <Navigate to="/student" replace />
+            ) : user && !role ? (
+              <LoadingScreen />
             ) : (
               <LandingPage />
             )

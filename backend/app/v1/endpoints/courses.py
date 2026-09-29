@@ -41,7 +41,8 @@ async def upload_courses_csv(
     university_id: str = Form(..., description="Target University UUID"),
     template_name: str = Form(..., description="Degree template display name"),
     program_code: str = Form(..., description="Program Code (e.g. SECJ)"),
-    total_credits: int = Form(..., description="Total required credits for degree template")
+    total_credits: int = Form(..., description="Total required credits for degree template"),
+    tenant_id: Optional[str] = Form(None, description="Tenant ID (e.g. UTM, UM)")
 ):
     """
     Parses curriculum CSV and inserts prerequisite rules directly into the university catalog.
@@ -55,20 +56,31 @@ async def upload_courses_csv(
 
     # Pre-Parsing Database Injection
     supabase_svc = SupabaseService()
+    resolved_tenant = tenant_id or "UTM"
     try:
         try:
             supabase_svc.client.table("degree_templates").insert({
                 "template_name": template_name,
                 "program_code": program_code,
-                "total_credits_required": total_credits
+                "total_credits_required": total_credits,
+                "tenant_id": resolved_tenant
             }).execute()
         except Exception:
-            supabase_svc.client.table("degree_templates").insert({
-                "program_name": template_name,
-                "program_code": program_code,
-                "total_credits_required": total_credits,
-                "syllabus_year": "2024/2025"
-            }).execute()
+            try:
+                supabase_svc.client.table("degree_templates").insert({
+                    "program_name": template_name,
+                    "program_code": program_code,
+                    "total_credits_required": total_credits,
+                    "syllabus_year": "2024/2025",
+                    "tenant_id": resolved_tenant
+                }).execute()
+            except Exception:
+                supabase_svc.client.table("degree_templates").insert({
+                    "program_name": template_name,
+                    "program_code": program_code,
+                    "total_credits_required": total_credits,
+                    "syllabus_year": "2024/2025"
+                }).execute()
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

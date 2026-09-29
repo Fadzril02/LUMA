@@ -268,7 +268,7 @@ export function TrafficLightGrid({
                 <textarea
                   value={overrideNotes}
                   onChange={(e) => setOverrideNotes(e.target.value)}
-                  placeholder="e.g. Approved via Senate Meeting No. 4/2025 or Equivalent from UTM SPACE diploma."
+                  placeholder="e.g. Approved via Senate Meeting No. 4/2025 or Equivalent from recognized diploma transfer."
                   rows={3}
                   className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs text-slate-900 focus:ring-2 focus:ring-indigo-500"
                 />
