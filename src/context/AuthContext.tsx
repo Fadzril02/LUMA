@@ -318,36 +318,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let isMounted = true;
 
+    const failsafeTimer = setTimeout(() => {
+      setIsLoading(false);
+      setIsInitializing(false);
+    }, 3000);
+
     // 1. Initial Session Retrieval via getSession() with explicit .then() and .catch()
     supabase.auth
       .getSession()
       .then(async ({ data: { session: initialSession }, error: sessionErr }) => {
         if (!isMounted) return;
-
-        if (sessionErr) {
-          console.warn('[AuthContext] getSession error — treating as unauthenticated:', sessionErr.message);
-          setSession(null);
-          setUser(null);
-          setProfile(null);
-          setIsLoading(false);
-          setIsInitializing(false);
-          return;
-        }
-
-        if (!initialSession?.user) {
-          setSession(null);
-          setUser(null);
-          setProfile(null);
-          setIsLoading(false);
-          setIsInitializing(false);
-          return;
-        }
-
-        // Restore session and user optimistically
-        setSession(initialSession);
-        setUser(initialSession.user);
-
+        
         try {
+          if (sessionErr) {
+            console.warn('[AuthContext] getSession error — treating as unauthenticated:', sessionErr.message);
+            setSession(null);
+            setUser(null);
+            setProfile(null);
+            return;
+          }
+
+          if (!initialSession?.user) {
+            setSession(null);
+            setUser(null);
+            setProfile(null);
+            return;
+          }
+
+          // Restore session and user optimistically
+          setSession(initialSession);
+          setUser(initialSession.user);
+
           await fetchUserProfile(initialSession.user);
         } catch (profileErr) {
           console.error('[AuthContext] fetchUserProfile error during session restore:', profileErr);
@@ -357,6 +358,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setIsLoading(false);
             setIsInitializing(false);
           }
+          clearTimeout(failsafeTimer);
         }
       })
       .catch((err) => {
@@ -369,6 +371,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setIsLoading(false);
           setIsInitializing(false);
         }
+        clearTimeout(failsafeTimer);
       });
 
     // 2. Auth state change listener handling all events ('INITIAL_SESSION', 'SIGNED_IN', 'SIGNED_OUT', 'TOKEN_REFRESHED')
@@ -430,23 +433,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     );
 
-    // 3. Fallback Safety Timeout: Force loading to false if unresolved within 2.5 seconds
-    const safetyTimeout = setTimeout(() => {
-      if (isMounted) {
-        setIsLoading((currentLoading) => {
-          if (currentLoading) {
-            console.warn('[AuthContext] 2.5-second safety timeout triggered: forced loading to false');
-            return false;
-          }
-          return false;
-        });
-        setIsInitializing(false);
-      }
-    }, 2500);
-
     return () => {
       isMounted = false;
-      clearTimeout(safetyTimeout);
+      clearTimeout(failsafeTimer);
       subscription.unsubscribe();
     };
   }, []);

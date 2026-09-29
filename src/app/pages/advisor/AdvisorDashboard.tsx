@@ -124,14 +124,14 @@ export function AdvisorDashboard() {
     return `${prefix}${suffix}`.slice(0, 6);
   };
 
-  const fetchDashboardData = useCallback(async () => {
+  const fetchDashboardData = useCallback(async (isSilent = false) => {
     // Security Check: Guard to ensure advisor context is loaded before querying
     if (!advisorStaffId) {
-      setIsLoading(false);
+      if (!isSilent) setIsLoading(false);
       return;
     }
 
-    setIsLoading(true);
+    if (!isSilent) setIsLoading(true);
     try {
       // 1. Fetch degree templates strictly scoped by tenant_id
       let templatesData: DegreeTemplate[] = [];
@@ -274,7 +274,7 @@ export function AdvisorDashboard() {
     } catch (error) {
       console.error("Failed to load dashboard data:", error);
     } finally {
-      setIsLoading(false);
+      if (!isSilent) setIsLoading(false);
     }
   }, [advisorStaffId, tenantId, selectedTemplateId]);
 
@@ -292,7 +292,7 @@ export function AdvisorDashboard() {
   useEffect(() => {
     const handleFocus = () => {
       console.log("Tab regained focus. Refreshing dashboard data...");
-      fetchDashboardData();
+      fetchDashboardData(true);
     };
     window.addEventListener("focus", handleFocus);
     return () => window.removeEventListener("focus", handleFocus);
@@ -631,6 +631,9 @@ export function AdvisorDashboard() {
       toast.success(`Ingested ${insertedCount} courses and created template "${templateName}".`, {
         duration: 5000
       });
+
+      // Call silent refresh so new templates appear in UI immediately
+      fetchDashboardData(true);
 
       // Delay closing modal and resetting idle status so user can see success feedback
       setTimeout(() => {
