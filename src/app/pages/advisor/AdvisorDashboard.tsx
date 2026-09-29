@@ -568,9 +568,21 @@ export function AdvisorDashboard() {
   };
 
   // Handle Curriculum Upload Submission
-  const handleUploadSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedFile) return;
+  const handleUploadSubmit = async (e: React.FormEvent | any) => {
+    if (e && e.preventDefault) e.preventDefault();
+    
+    if (!selectedFile) {
+      alert("UPLOAD BLOCKED: No file selected.");
+      return;
+    }
+    if (!tenantId) {
+      alert("UPLOAD BLOCKED: Tenant ID is missing.");
+      return;
+    }
+    if (!templateName || !programCode || !totalCredits) {
+      alert("UPLOAD BLOCKED: Missing template metadata.");
+      return;
+    }
 
     setUploadStatus("uploading");
     setUploadMessage("Uploading & parsing curriculum via FastAPI prerequisite engine...");
@@ -579,18 +591,18 @@ export function AdvisorDashboard() {
       const universityId = (profile as any)?.university_id || "00000000-0000-0000-0000-000000000001";
       
       // Explicitly inject the advisor's tenant_id into the degree template record
-      try {
-        await db.from("degree_templates").insert({
-          template_name: templateName,
-          program_name: templateName,
-          program_code: programCode,
-          total_credits_required: totalCredits,
-          syllabus_year: "2024/2025",
-          tenant_id: tenantId,
-          university_id: universityId,
-        });
-      } catch (tmplErr) {
-        console.warn("[AdvisorDashboard] Direct degree template insert notice:", tmplErr);
+      const { error: tmplErr } = await db.from("degree_templates").insert({
+        template_name: templateName,
+        program_name: templateName,
+        program_code: programCode,
+        total_credits_required: totalCredits,
+        syllabus_year: "2024/2025",
+        tenant_id: tenantId,
+        university_id: universityId,
+      });
+      
+      if (tmplErr) {
+        throw new Error(`Database Insert Failed: ${tmplErr.message}`);
       }
 
       const result = await api.uploadCoursesCSV(
