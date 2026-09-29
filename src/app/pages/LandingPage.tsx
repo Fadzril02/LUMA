@@ -777,7 +777,7 @@ export function LandingPage() {
 
               <Button
                 type="submit"
-                disabled={processing || (registrationRole === "student" && !isStudentMatricValid)}
+                disabled={processing}
                 className="w-full h-10 mt-2 bg-blue-900 hover:bg-blue-800 text-white font-medium rounded-lg shadow-sm transition-colors cursor-pointer text-sm disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {processing
