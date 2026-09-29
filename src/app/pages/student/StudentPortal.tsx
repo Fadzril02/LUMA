@@ -311,7 +311,7 @@ export function StudentPortal() {
       }, 700);
 
     } catch (err: any) {
-      console.error("[StudentPortal] upload error:", err);
+      console.error("Upload error:", err);
 
       // Compensating Transaction: prevent orphaned records if extraction times out or fails
       const targetDocId = createdDocId || activeDocumentId;
@@ -383,7 +383,7 @@ export function StudentPortal() {
       toast.success("Slip verified and sent to your Advisor for official approval!");
     } catch (err: any) {
       toast.error("Failed to submit ticket. Please try again.");
-      console.error(err);
+      console.error("Upload error:", err);
     } finally {
       setIsSaving(false);
     }

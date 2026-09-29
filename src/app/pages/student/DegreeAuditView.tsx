@@ -238,17 +238,26 @@ export function DegreeAuditView({
       cellClassName: "text-right whitespace-nowrap",
       render: (c) => {
         const gradeStr = String(c.grade || "").toUpperCase();
-        const isHL = gradeStr === "HL";
-        const isPC = ["PC", "EX", "P", "LUS"].includes(gradeStr);
-        const isExempted = c.status === "Exempted" || isPC;
-        if (isHL) {
+        const isNeutralPassing = ["HL", "PC", "EX", "P", "LUS"].includes(gradeStr);
+        // Force status to Exempted if it's a neutral passing grade, overriding backend
+        const displayStatus = isNeutralPassing ? "Exempted" : c.status;
+        const isFailed = displayStatus === "Failed" || gradeStr === "E" || gradeStr === "TL";
+
+        if (isFailed) {
           return (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-              ✓ PASSED (HL)
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+              <ShieldAlert size={11} /> FAILED
             </span>
           );
         }
-        if (isExempted) {
+        if (isNeutralPassing) {
+          return (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+              ✓ PASSED ({gradeStr})
+            </span>
+          );
+        }
+        if (displayStatus === "Exempted") {
           return (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
               ✓ EXEMPT

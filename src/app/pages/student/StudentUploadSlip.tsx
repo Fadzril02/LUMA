@@ -35,8 +35,9 @@ export const StudentUploadSlip = () => {
       if (dbError) throw dbError;
       alert("Slip successfully submitted to your Advisor for review!");
 
-    } catch (error) {
-      console.error("Upload failed:", error);
+    } catch (error: any) {
+      console.error("Upload error:", error);
+      alert(`Upload failed: ${error.message || "Unknown error"}`);
     } finally {
       setUploading(false);
     }

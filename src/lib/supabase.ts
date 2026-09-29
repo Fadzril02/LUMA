@@ -14,11 +14,11 @@ if (!supabaseAnonKey || supabaseAnonKey.split('.').length !== 3) {
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    persistSession: true,
+    storage: typeof window !== 'undefined' ? window.localStorage : undefined,
     autoRefreshToken: true,
-    detectSessionInUrl: true,
-    storage: window.localStorage,
-  },
+    persistSession: true,
+    detectSessionInUrl: true
+  }
 });
 
 // Backward compatibility alias

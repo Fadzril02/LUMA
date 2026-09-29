@@ -77,15 +77,34 @@ export function AcademicHistoryView({ courseHistory = [] }: { courseHistory?: an
                           <td className="px-6 py-3.5 text-center text-gray-600 font-mono">{course.credits}</td>
                           <td className="px-6 py-3.5 text-center font-bold text-gray-900 font-mono">{course.grade}</td>
                           <td className="px-6 py-3.5 text-right">
-                            {course.status === "Pass" || course.status === "Passed" ? (
-                              <span className="inline-flex px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                PASSED
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
-                                <AlertTriangle size={11}/> FAILED
-                              </span>
-                            )}
+                            {(() => {
+                              const gradeStr = String(course.grade || "").toUpperCase();
+                              const isNeutralPassing = ["HL", "PC", "EX", "P", "LUS"].includes(gradeStr);
+                              const displayStatus = isNeutralPassing ? "Exempted" : course.status;
+                              const isFailed = displayStatus === "Failed" || gradeStr === "E" || gradeStr === "TL";
+                              
+                              if (isFailed) {
+                                return (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                                    <AlertTriangle size={11}/> FAILED
+                                  </span>
+                                );
+                              }
+                              
+                              if (isNeutralPassing) {
+                                return (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                    ✓ PASSED ({gradeStr})
+                                  </span>
+                                );
+                              }
+
+                              return (
+                                <span className="inline-flex px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                  PASSED
+                                </span>
+                              );
+                            })()}
                           </td>
                         </tr>
                       ))}
