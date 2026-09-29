@@ -14,7 +14,10 @@ def override_verify_jwt():
 def override_verify_jwt_staff():
     return {"sub": "mock-sub", "email": "staff@utm.my"}
 
-app.dependency_overrides[verify_advisor_jwt] = override_verify_jwt
+@pytest.fixture(autouse=True)
+def setup_overrides():
+    app.dependency_overrides[verify_advisor_jwt] = override_verify_jwt
+    yield
 
 def test_student_register_no_token():
     # When overriding, FastAPI doesn't check the token, so we'll bypass this test or remove override for it

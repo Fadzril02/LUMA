@@ -18,7 +18,8 @@ class CourseCreate(BaseModel):
 
 
 class CourseCSVUploadResponse(BaseModel):
-    university_id: str
+    template_id: str
+    university_id: Optional[str] = None
     total_parsed: int
     total_inserted: int
     errors: List[str] = []

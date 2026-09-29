@@ -21,7 +21,7 @@ class CSVCourseParser:
             "" or "None" -> {"type": "AND", "courses": [], "min_grade": "C", "min_credits": 0}
         """
         if not raw_prereqs or raw_prereqs.strip().lower() in ["none", "nil", "-", "n/a", ""]:
-            return {"type": "AND", "courses": [], "min_grade": "C", "min_credits": 0}
+            return {"type": "AND", "courses": [], "min_grade": "C", "min_credits": 0, "has_custom_min_grade": False}
 
         cleaned = raw_prereqs.strip()
         
@@ -30,6 +30,11 @@ class CSVCourseParser:
         min_cred_match = re.search(r'(?:min_credits|credits?|jam\s*kredit)\s*[:=]?\s*([0-9]+)', cleaned, re.IGNORECASE)
         if min_cred_match:
             min_credits = int(min_cred_match.group(1))
+
+        # Check for min grade if specified in CSV (e.g. min_grade: B or grade: B+)
+        min_grade_match = re.search(r'(?:min_grade|grade|gred)\s*[:=]?\s*([A-Za-z][+-]?)', cleaned, re.IGNORECASE)
+        has_custom = bool(min_grade_match)
+        min_grade = min_grade_match.group(1).upper() if min_grade_match else "C"
 
         # Check for OR vs AND
         prereq_type = "OR" if " OR " in cleaned.upper() else "AND"
@@ -41,8 +46,9 @@ class CSVCourseParser:
         return {
             "type": prereq_type,
             "courses": list(dict.fromkeys(normalized_codes)),  # preserve order & unique
-            "min_grade": "C",
-            "min_credits": min_credits
+            "min_grade": min_grade,
+            "min_credits": min_credits,
+            "has_custom_min_grade": has_custom
         }
 
     @classmethod
@@ -71,6 +77,7 @@ class CSVCourseParser:
         if not code_key or not name_key:
             return [], ["Missing required columns: 'course_code' and 'course_name' are mandatory."]
 
+        seen_codes = set()
         for row_idx, row in enumerate(reader, start=2):
             raw_code = (row.get(code_key) or "").strip().upper().replace(" ", "")
             raw_name = (row.get(name_key) or "").strip().title()
@@ -79,14 +86,27 @@ class CSVCourseParser:
             raw_category = (row.get(cat_key) or "Core").strip().title() if cat_key else "Core"
 
             if not raw_code:
-                errors.append(f"Row {row_idx}: Empty course_code skipped.")
+                errors.append(f"Row {row_idx}: Empty course_code.")
+                continue
+
+            if not raw_name:
+                errors.append(f"Row {row_idx}: Empty course_name.")
                 continue
 
             # Validate credits as integer
             try:
                 credits_int = int(float(raw_credits))
-            except ValueError:
-                credits_int = 3
+                if credits_int <= 0:
+                    errors.append(f"Row {row_idx}: Invalid credit hours '{raw_credits}'. Must be positive.")
+                    continue
+            except (ValueError, TypeError):
+                errors.append(f"Row {row_idx}: Invalid credits format '{raw_credits}'. Must be an integer.")
+                continue
+
+            if raw_code in seen_codes:
+                errors.append(f"Row {row_idx}: Duplicate course code '{raw_code}'.")
+                continue
+            seen_codes.add(raw_code)
 
             prereq_struct = cls.parse_prerequisite_string(raw_prereqs)
 

@@ -150,7 +150,7 @@ export function CohortSetup() {
     setCsvError(null);
 
     try {
-      const res = await api.uploadCoursesCSV(csvFile, universityId);
+      const res = await api.uploadCoursesCSV(csvFile, "General Curriculum", "CURR", 130, "2024/2025");
       setCsvResult(res);
       setCurrentStep(3);
     } catch (err: any) {

@@ -106,6 +106,7 @@ export function AdvisorDashboard() {
   const [uploadMessage, setUploadMessage] = useState<string>("");
   const [templateName, setTemplateName] = useState<string>("");
   const [programCode, setProgramCode] = useState<string>("");
+  const [syllabusYear, setSyllabusYear] = useState<string>("");
   const [totalCredits, setTotalCredits] = useState<number>(130);
 
   const advisorStaffId = (profile as any)?.staff_id;
@@ -567,55 +568,52 @@ export function AdvisorDashboard() {
   };
 
   // Handle Curriculum Upload Submission
-  const handleUploadSubmit = async (e: React.FormEvent | any) => {
+  const handleUploadSubmit = async (e?: React.FormEvent | any) => {
     if (e && e.preventDefault) e.preventDefault();
     
     if (!selectedFile) {
-      alert("UPLOAD BLOCKED: No file selected.");
+      setUploadStatus("error");
+      setUploadMessage("Please select a curriculum CSV file to upload.");
       return;
     }
-    if (!tenantId) {
-      alert("UPLOAD BLOCKED: Tenant ID is missing.");
+    if (!templateName.trim()) {
+      setUploadStatus("error");
+      setUploadMessage("Please enter the Degree Template Name.");
       return;
     }
-    if (!templateName || !programCode || !totalCredits) {
-      alert("UPLOAD BLOCKED: Missing template metadata.");
+    if (!programCode.trim()) {
+      setUploadStatus("error");
+      setUploadMessage("Please enter the Program Code.");
+      return;
+    }
+    if (!syllabusYear.trim()) {
+      setUploadStatus("error");
+      setUploadMessage("Please enter the Syllabus Year (e.g. 2024/2025).");
+      return;
+    }
+    if (!totalCredits || totalCredits <= 0) {
+      setUploadStatus("error");
+      setUploadMessage("Please enter a valid total credits requirement.");
       return;
     }
 
     setUploadStatus("uploading");
-    setUploadMessage("Uploading & parsing curriculum via FastAPI prerequisite engine...");
+    setUploadMessage("Uploading & ingesting curriculum via prerequisite engine...");
 
     try {
-      const universityId = (profile as any)?.university_id || "00000000-0000-0000-0000-000000000001";
-      
-      // Explicitly inject the advisor's tenant_id into the degree template record
-      const { error: tmplErr } = await db.from("degree_templates").insert({
-        template_name: templateName,
-        program_name: templateName,
-        program_code: programCode,
-        total_credits_required: totalCredits,
-        syllabus_year: "2024/2025",
-        tenant_id: tenantId,
-        university_id: universityId,
-      });
-      
-      if (tmplErr) {
-        throw new Error(`Database Insert Failed: ${tmplErr.message}`);
-      }
-
       const result = await api.uploadCoursesCSV(
         selectedFile,
-        universityId,
-        templateName,
-        programCode,
+        templateName.trim(),
+        programCode.trim().toUpperCase(),
         totalCredits,
-        tenantId
+        syllabusYear.trim()
       );
       const insertedCount = result.total_inserted ?? result.total_parsed ?? 0;
 
       // Invalidate sessionStorage cache after successful upload
-      sessionStorage.removeItem(`syngrad_degree_templates_${tenantId}`);
+      if (tenantId) {
+        sessionStorage.removeItem(`syngrad_degree_templates_${tenantId}`);
+      }
       sessionStorage.removeItem("syngrad_degree_templates");
       sessionStorage.removeItem("luma_degree_templates");
 
@@ -629,7 +627,9 @@ export function AdvisorDashboard() {
         }
         const { data: updatedTemplates } = await refreshQuery.order("program_code", { ascending: true });
         if (updatedTemplates) {
-          sessionStorage.setItem(`syngrad_degree_templates_${tenantId}`, JSON.stringify(updatedTemplates));
+          if (tenantId) {
+            sessionStorage.setItem(`syngrad_degree_templates_${tenantId}`, JSON.stringify(updatedTemplates));
+          }
           setDegreeTemplates(updatedTemplates);
         }
       } catch (refreshErr) {
@@ -638,8 +638,8 @@ export function AdvisorDashboard() {
 
       // Set success state and show feedback toast
       setUploadStatus("success");
-      setUploadMessage(`Successfully parsed & ingested ${insertedCount} courses into university prerequisite engine.`);
-      toast.success(`Ingested ${insertedCount} courses and created template "${templateName}".`, {
+      setUploadMessage(`Successfully parsed & ingested ${insertedCount} courses into degree template "${templateName.trim()}".`);
+      toast.success(`Ingested ${insertedCount} courses and created template "${templateName.trim()}".`, {
         duration: 5000
       });
 
@@ -652,6 +652,7 @@ export function AdvisorDashboard() {
         setSelectedFile(null);
         setTemplateName("");
         setProgramCode("");
+        setSyllabusYear("");
         setTotalCredits(130);
         setUploadMessage("");
         setUploadStatus("idle");
@@ -660,8 +661,8 @@ export function AdvisorDashboard() {
     } catch (err: any) {
       setUploadStatus("error");
       const detail = err?.response?.data?.detail || err?.message || "Failed to parse and upload course CSV.";
-      setUploadMessage(detail);
-      toast.error(`Upload failed: ${detail}`, {
+      setUploadMessage(typeof detail === "string" ? detail : JSON.stringify(detail));
+      toast.error(`Upload failed: ${typeof detail === "string" ? detail : JSON.stringify(detail)}`, {
         duration: 7000
       });
     } finally {
@@ -1357,9 +1358,6 @@ export function AdvisorDashboard() {
                 </div>
               </div>
               <div className="flex items-center space-x-2">
-                <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-300 text-[10px] font-mono font-medium">
-                  UAT Sandbox
-                </span>
                 <button
                   onClick={() => setIsUploadModalOpen(false)}
                   className="p-1 rounded-md text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
@@ -1370,16 +1368,6 @@ export function AdvisorDashboard() {
             </div>
 
             <div className="p-6 space-y-6">
-              <div className="bg-amber-50/70 border border-amber-200/90 rounded-lg p-3 text-xs text-amber-900 flex items-start space-x-2.5">
-                <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-                <div className="space-y-0.5">
-                  <span className="font-semibold text-amber-950">UAT Pilot Sandbox Notice</span>
-                  <p className="text-[11px] text-amber-800 leading-relaxed">
-                    Uploaded curriculum files are evaluated locally for matrix structure and prerequisites. Database saving is disabled during this pilot phase.
-                  </p>
-                </div>
-              </div>
-
               <div className="space-y-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
@@ -1390,12 +1378,12 @@ export function AdvisorDashboard() {
                     required
                     value={templateName}
                     onChange={(e) => setTemplateName(e.target.value)}
-                    placeholder="e.g. Software Engineering 2026"
+                    placeholder="e.g. Software Engineering 2024/2025"
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-3 gap-3">
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
                       Program Code <span className="text-rose-500">*</span>
@@ -1404,8 +1392,22 @@ export function AdvisorDashboard() {
                       type="text"
                       required
                       value={programCode}
-                      onChange={(e) => setProgramCode(e.target.value)}
+                      onChange={(e) => setProgramCode(e.target.value.toUpperCase())}
                       placeholder="e.g. SECJ"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm uppercase"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Syllabus Year <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={syllabusYear}
+                      onChange={(e) => setSyllabusYear(e.target.value)}
+                      placeholder="e.g. 2024/2025"
                       className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
                     />
                   </div>
