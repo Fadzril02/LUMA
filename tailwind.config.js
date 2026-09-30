@@ -6,7 +6,37 @@ export default {
     ],
     theme: {
       extend: {
+        fontFamily: {
+          sans: ["Inter", "ui-sans-serif", "system-ui", "sans-serif"],
+          serif: ['"Source Serif 4"', "Georgia", "serif"],
+        },
         colors: {
+          navy: {
+            DEFAULT: "#14213D",
+            hover: "#0D1629",
+            light: "#1C2E54",
+            subtle: "#EDF2F7",
+          },
+          maroon: {
+            DEFAULT: "#7A1E3A",
+            hover: "#62182E",
+            subtle: "#FAF0F2",
+          },
+          ivory: {
+            DEFAULT: "#FAF8F3",
+            warm: "#F3EFE6",
+            border: "#E7E1D4",
+          },
+          slate: {
+            DEFAULT: "#334155",
+            muted: "#64748B",
+            dark: "#1E293B",
+          },
+          gold: {
+            DEFAULT: "#C9A227",
+            subtle: "#FEF9E8",
+            border: "#E9D28B",
+          },
           // Centralized SynGrad Design System Colors
           base: "var(--bg-base)",
           surface: "var(--bg-surface)",

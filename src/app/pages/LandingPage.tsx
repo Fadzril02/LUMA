@@ -1,26 +1,17 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate, Link, Navigate } from "react-router";
-import { LoadingScreen } from "../../components/shared/LoadingScreen";
-import { Button, Input, Label } from "../components/ui";
-import { 
-  ShieldCheck, 
-  GraduationCap, 
-  Users, 
-  Eye, 
-  EyeOff, 
-  CheckCircle2, 
-  ArrowRight, 
-  AlertCircle,
-  Lock,
-  Hash,
-  Mail,
-  Loader2,
-  FileText
-} from "lucide-react";
+import { useNavigate, Navigate } from "react-router";
 import { useAuth } from "../../context/AuthContext";
 import { supabase } from "../../lib/supabase";
 import { api } from "../../lib/api";
 import { toast } from "sonner";
+
+import { LandingHeader } from "./landing/LandingHeader";
+import { LandingHero } from "./landing/LandingHero";
+import { HowItWorksSection } from "./landing/HowItWorksSection";
+import { FeaturesSection } from "./landing/FeaturesSection";
+import { FoundingAdvisorCallout } from "./landing/FoundingAdvisorCallout";
+import { AuthCard } from "./landing/AuthCard";
+import { LandingFooter } from "./landing/LandingFooter";
 
 export function LandingPage() {
   const navigate = useNavigate();
@@ -83,6 +74,19 @@ export function LandingPage() {
     setContestErrorMessage(null);
     setContestSuccess(false);
     clearAuthError();
+  };
+
+  const scrollToAuth = (mode?: "login" | "register", preselectedRole?: "student" | "advisor") => {
+    if (mode) setAuthMode(mode);
+    if (preselectedRole) {
+      setRegistrationRole(preselectedRole);
+      setLoginRole(preselectedRole);
+    }
+    resetFormFeedback();
+    const el = document.getElementById("auth-card");
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth" });
+    }
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -263,20 +267,8 @@ export function LandingPage() {
 
     setContestProcessing(true);
     try {
-      let advisorStaffIdVal: string | null = null;
-      if (cohortCode.trim()) {
-        const { data: cohortRow } = await supabase
-          .from('cohorts')
-          .select('advisor_staff_id')
-          .eq('cohort_code', cohortCode.trim().toUpperCase())
-          .maybeSingle();
-        advisorStaffIdVal = cohortRow?.advisor_staff_id ?? null;
-      }
-
       const { error } = await supabase.from('registration_disputes').insert({
-        matric_no: studentMatric.trim().toUpperCase(),
         disputed_by_email: cleanEmail,
-        advisor_staff_id: advisorStaffIdVal,
       });
 
       if (error) throw error;
@@ -294,571 +286,89 @@ export function LandingPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F9FAFB] text-gray-900 font-sans flex flex-col justify-between antialiased selection:bg-blue-900 selection:text-white">
-      {/* Top Institutional Header */}
-      <header className="w-full bg-white border-b border-gray-200 sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-lg bg-blue-900 flex items-center justify-center text-white shadow-sm">
-              <GraduationCap className="w-5 h-5" />
+    <div className="min-h-screen bg-[#FAF8F3] text-[#334155] font-sans flex flex-col justify-between antialiased selection:bg-[#14213D] selection:text-white">
+      {/* 1. Header */}
+      <LandingHeader
+        onLoginClick={() => scrollToAuth("login")}
+        onGetStartedClick={() => scrollToAuth("register")}
+      />
+
+      <main className="flex-1">
+        {/* 2 & 6. Hero and Auth Card Layout */}
+        <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 sm:py-14 lg:py-20">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-12 items-start">
+            {/* Left Column: Hero */}
+            <div className="lg:col-span-7 pt-2">
+              <LandingHero
+                onSelectAdvisor={() => scrollToAuth("register", "advisor")}
+                onSelectStudent={() => scrollToAuth("register", "student")}
+              />
             </div>
-            <div className="flex items-baseline space-x-2">
-              <span className="font-extrabold text-xl text-blue-900 tracking-tight">SynGrad</span>
-              <span className="hidden sm:inline-block text-xs font-medium text-gray-500 border-l border-gray-200 pl-2">
-                Academic Advising Platform
-              </span>
-            </div>
-          </div>
 
-          <div className="flex items-center space-x-4">
-            <div className="hidden sm:inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gray-50 border border-gray-200 text-xs font-medium text-gray-700">
-              <span className="w-2 h-2 rounded-full bg-emerald-600" />
-              <span>System Operational</span>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      {/* Main Content Viewport */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-10 sm:py-14 flex flex-col items-center">
-        {/* Authoritative Hero Section */}
-        <div className="text-center max-w-3xl mx-auto mb-10 sm:mb-12">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 border border-blue-100 text-xs font-medium text-blue-900 mb-4 shadow-xs">
-            <ShieldCheck className="w-3.5 h-3.5 text-blue-900" />
-            <span>Institutional Degree Audit &amp; Academic Intelligence Infrastructure</span>
-          </div>
-
-          <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-blue-900">
-            SynGrad Academic Advising
-          </h1>
--
-          <p className="text-lg text-gray-600 mt-4 max-w-2xl mx-auto leading-relaxed">
-            Streamlining curriculum tracking and prerequisite validation for university faculty and students.
-          </p>
-        </div>
-
-        {/* Pristine Auth Card */}
-        <div className="w-full max-w-md bg-white rounded-xl shadow-sm border border-gray-200 p-6 sm:p-8">
-          {/* Main Auth Mode Segmented Control */}
-          {!isContesting ? (
-            <div className="grid grid-cols-2 p-1 bg-gray-100 rounded-lg mb-6 border border-gray-200/80">
-              <button
-                type="button"
-                onClick={() => {
-                  setAuthMode("login");
-                  resetFormFeedback();
-                }}
-                className={`py-2 text-xs font-semibold rounded-md transition-all cursor-pointer ${
-                  authMode === "login"
-                    ? "bg-white text-blue-900 shadow-sm"
-                    : "text-gray-600 hover:text-gray-900"
-                }`}
-              >
-                Sign In
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setAuthMode("register");
-                  resetFormFeedback();
-                }}
-                className={`py-2 text-xs font-semibold rounded-md transition-all cursor-pointer ${
-                  authMode === "register"
-                    ? "bg-white text-blue-900 shadow-sm"
-                    : "text-gray-600 hover:text-gray-900"
-                }`}
-              >
-                Create Account
-              </button>
-            </div>
-          ) : (
-            <div className="mb-6 flex items-center justify-between">
-              <span className="text-xs font-semibold text-blue-900 uppercase tracking-wider bg-blue-50 px-3 py-1.5 rounded-full border border-blue-200">
-                Dispute Flow
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsContesting(false);
-                  setContestErrorMessage(null);
-                }}
-                className="text-xs text-gray-500 hover:text-gray-900 font-medium cursor-pointer"
-              >
-                ← Back to Registration
-              </button>
-            </div>
-          )}
-
-          {/* Form Header */}
-          <div className="mb-5">
-            <h2 className="text-xl font-bold tracking-tight text-gray-900">
-              {isContesting
-                ? "Contest Registration"
-                : authMode === "login"
-                ? "Sign In to Portal"
-                : "Create Institutional Account"}
-            </h2>
-            <p className="text-xs text-gray-500 mt-1">
-              {isContesting
-                ? "Verify ownership of your Matric Number with your institutional email."
-                : authMode === "login"
-                ? "Enter your academic credentials to access your advising dashboard."
-                : "Select your role and complete details to initialize your credentials."}
-            </p>
-          </div>
-
-          {/* Feedback Messages */}
-          {errorMessage && (
-            <div className="mb-5 p-3 rounded-lg bg-red-50 border border-red-200 text-xs font-medium text-red-700 leading-relaxed space-y-2">
-              <div className="flex items-start gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0 text-red-600 mt-0.5" />
-                <span>{errorMessage}</span>
-              </div>
-              {isDuplicate && (
-                <div className="pt-2 border-t border-red-200 flex items-center justify-between">
-                  <span className="text-gray-700">Is this your matric number?</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsContesting(true);
-                      setErrorMessage(null);
-                    }}
-                    className="text-blue-900 hover:text-blue-700 font-semibold underline underline-offset-2 ml-1 cursor-pointer transition-colors"
-                  >
-                    Contest this registration.
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {successMessage && (
-            <div className="mb-5 p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-xs font-medium text-emerald-700 leading-relaxed">
-              {successMessage}
-            </div>
-          )}
-
-          {/* Form Content */}
-          {isContesting ? (
-            /* ================= CONTEST REGISTRATION FORM ================= */
-            contestSuccess ? (
-              <div className="p-5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs space-y-4">
-                <div className="flex items-center space-x-2.5">
-                  <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-                  <span className="text-sm font-bold">Dispute Submitted Successfully</span>
-                </div>
-                <p className="leading-relaxed">
-                  Your registration dispute for matric number <strong className="font-mono text-emerald-900">{studentMatric.toUpperCase()}</strong> has been recorded. Your academic advisor will review your institutional claim (<strong className="font-mono text-emerald-900">{contestEmail}</strong>) and resolve the collision.
-                </p>
-                <Button
-                  type="button"
-                  onClick={() => {
-                    setIsContesting(false);
-                    setContestSuccess(false);
-                    setIsDuplicate(false);
-                    setErrorMessage(null);
-                  }}
-                  className="w-full h-10 bg-blue-900 hover:bg-blue-800 text-white font-medium text-xs rounded-lg transition-colors cursor-pointer"
-                >
-                  Return to Registration
-                </Button>
-              </div>
-            ) : (
-              <form onSubmit={handleContestSubmit} className="space-y-4">
-                {contestErrorMessage && (
-                  <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-xs font-medium text-red-700 leading-relaxed flex items-start gap-2">
-                    <AlertCircle className="w-4 h-4 shrink-0 text-red-600 mt-0.5" />
-                    <span>{contestErrorMessage}</span>
-                  </div>
-                )}
-
-                {/* Locked Matric Number */}
-                <div className="space-y-1.5">
-                  <Label htmlFor="lockedStudentMatric" className="text-xs font-semibold text-gray-700">
-                    Matric Number <span className="text-gray-400 font-normal">(Locked)</span>
-                  </Label>
-                  <div className="relative flex items-center">
-                    <Hash className="w-4 h-4 text-gray-400 absolute left-3" />
-                    <Input
-                      id="lockedStudentMatric"
-                      value={studentMatric.toUpperCase()}
-                      disabled
-                      readOnly
-                      className="pl-9 pr-9 bg-gray-100 font-mono text-sm text-gray-700 cursor-not-allowed border-gray-200 h-10"
-                    />
-                    <Lock className="w-4 h-4 text-gray-400 absolute right-3" />
-                  </div>
-                  <p className="text-[11px] text-gray-500">
-                    This matric number is locked to match the collided registration.
-                  </p>
-                </div>
-
-                {/* Institutional Email */}
-                <div className="space-y-1.5">
-                  <Label htmlFor="contestStudentEmail" className="text-xs font-semibold text-gray-700">
-                    Institutional Email <span className="text-red-500">*</span>
-                  </Label>
-                  <div className="relative flex items-center">
-                    <Mail className="w-4 h-4 text-gray-400 absolute left-3" />
-                    <Input
-                      id="contestStudentEmail"
-                      type="email"
-                      value={contestEmail}
-                      onChange={(e) => setContestEmail(e.target.value)}
-                      placeholder="e.g. student@university.edu.my"
-                      required
-                      className="pl-9 bg-gray-50 border-gray-200 focus:ring-2 focus:ring-blue-900 focus:border-transparent text-gray-900 h-10 text-sm"
-                    />
-                  </div>
-                  <p className="text-[11px] text-gray-500">
-                    Provide your official institutional email to prove ownership.
-                  </p>
-                </div>
-
-                <Button
-                  type="submit"
-                  disabled={contestProcessing || !contestEmail.trim()}
-                  className="w-full h-10 mt-2 bg-blue-900 hover:bg-blue-800 text-white font-medium rounded-lg shadow-sm transition-colors cursor-pointer text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {contestProcessing ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Submitting Dispute...</span>
-                    </span>
-                  ) : (
-                    <span className="flex items-center justify-center gap-2">
-                      <span>Submit Registration Contest</span>
-                      <ArrowRight className="w-4 h-4" />
-                    </span>
-                  )}
-                </Button>
-
-                <div className="text-center pt-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsContesting(false);
-                      setContestErrorMessage(null);
-                    }}
-                    className="text-xs text-gray-500 hover:text-gray-900 font-medium transition-colors cursor-pointer"
-                  >
-                    Cancel and return
-                  </button>
-                </div>
-              </form>
-            )
-          ) : authMode === "login" ? (
-            /* ================= LOGIN FORM ================= */
-            <form onSubmit={handleLogin} className="space-y-4">
-              {(errorMessage || authError) && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-xs font-medium flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0 text-red-600 mt-0.5" />
-                  <span className="leading-snug">{errorMessage || authError}</span>
-                </div>
-              )}
-
-              <div className="space-y-1.5">
-                <Label htmlFor="loginEmail" className="text-xs font-semibold text-gray-700">
-                  Institutional Email
-                </Label>
-                <Input
-                  id="loginEmail"
-                  type="email"
-                  value={loginEmail}
-                  onChange={(e) => setLoginEmail(e.target.value)}
-                  placeholder="e.g. student@university.edu.my"
-                  required
-                  className="bg-gray-50 border-gray-200 focus:ring-2 focus:ring-blue-900 focus:border-transparent text-gray-900 h-10 text-sm"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="loginPassword" className="text-xs font-semibold text-gray-700">
-                  Password
-                </Label>
-                <div className="relative flex items-center">
-                  <Input
-                    id="loginPassword"
-                    type={showLoginPassword ? "text" : "password"}
-                    autoComplete="current-password"
-                    value={loginPassword}
-                    onChange={(e) => setLoginPassword(e.target.value)}
-                    placeholder="••••••••"
-                    required
-                    className="bg-gray-50 border-gray-200 focus:ring-2 focus:ring-blue-900 focus:border-transparent text-gray-900 h-10 text-sm pr-10"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowLoginPassword(!showLoginPassword)}
-                    className="absolute right-3 text-gray-400 hover:text-gray-600 focus:outline-none cursor-pointer"
-                    aria-label={showLoginPassword ? "Hide password" : "Show password"}
-                  >
-                    {showLoginPassword ? (
-                      <EyeOff className="w-4 h-4" />
-                    ) : (
-                      <Eye className="w-4 h-4" />
-                    )}
-                  </button>
-                </div>
-              </div>
-
-              <Button
-                type="submit"
-                disabled={processing}
-                className="w-full h-10 mt-2 bg-blue-900 hover:bg-blue-800 text-white font-medium rounded-lg shadow-sm transition-colors cursor-pointer text-sm"
-              >
-                {processing ? "Signing In..." : "Sign In"}
-              </Button>
-            </form>
-          ) : (
-            /* ================= REGISTRATION FORM ================= */
-            <form onSubmit={handleRegistration} className="space-y-4">
-              {/* Role Toggle for Registration */}
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-gray-700">
-                  Select Role
-                </Label>
-                <div className="grid grid-cols-2 p-1 bg-gray-100 rounded-lg">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setRegistrationRole("student");
-                      resetFormFeedback();
-                    }}
-                    className={`h-9 px-3 text-xs rounded-md transition-all cursor-pointer flex items-center justify-center gap-2 ${
-                      registrationRole === "student"
-                        ? "bg-white text-blue-900 font-semibold shadow-sm"
-                        : "text-gray-600 hover:text-gray-900 font-medium"
-                    }`}
-                  >
-                    <GraduationCap className="w-4 h-4" />
-                    <span>Student</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setRegistrationRole("advisor");
-                      resetFormFeedback();
-                    }}
-                    className={`h-9 px-3 text-xs rounded-md transition-all cursor-pointer flex items-center justify-center gap-2 ${
-                      registrationRole === "advisor"
-                        ? "bg-white text-blue-900 font-semibold shadow-sm"
-                        : "text-gray-600 hover:text-gray-900 font-medium"
-                    }`}
-                  >
-                    <Users className="w-4 h-4" />
-                    <span>Advisor</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Student Registration Fields */}
-              {registrationRole === "student" ? (
-                <>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="studentFullName" className="text-xs font-semibold text-gray-700">
-                      Full Name
-                    </Label>
-                    <Input
-                      id="studentFullName"
-                      type="text"
-                      value={studentFullName}
-                      onChange={(e) => setStudentFullName(e.target.value)}
-                      placeholder="e.g. Alex Tan"
-                      required
-                      className="bg-gray-50 border-gray-200 focus:ring-2 focus:ring-blue-900 focus:border-transparent text-gray-900 h-10 text-sm"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label htmlFor="studentEmail" className="text-xs font-semibold text-gray-700">
-                      Email Address
-                    </Label>
-                    <Input
-                      id="studentEmail"
-                      type="email"
-                      value={studentEmail}
-                      onChange={(e) => setStudentEmail(e.target.value)}
-                      placeholder="e.g. alex@university.edu.my"
-                      required
-                      className="bg-gray-50 border-gray-200 focus:ring-2 focus:ring-blue-900 focus:border-transparent text-gray-900 h-10 text-sm"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label htmlFor="studentPassword" className="text-xs font-semibold text-gray-700">
-                      Password
-                    </Label>
-                    <div className="relative flex items-center">
-                      <Input
-                        id="studentPassword"
-                        type={showStudentPassword ? "text" : "password"}
-                        autoComplete="new-password"
-                        value={studentPassword}
-                        onChange={(e) => setStudentPassword(e.target.value)}
-                        placeholder="••••••••"
-                        required
-                        className="bg-gray-50 border-gray-200 focus:ring-2 focus:ring-blue-900 focus:border-transparent text-gray-900 h-10 text-sm pr-10"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowStudentPassword(!showStudentPassword)}
-                        className="absolute right-3 text-gray-400 hover:text-gray-600 focus:outline-none cursor-pointer"
-                        aria-label={showStudentPassword ? "Hide password" : "Show password"}
-                      >
-                        {showStudentPassword ? (
-                          <EyeOff className="w-4 h-4" />
-                        ) : (
-                          <Eye className="w-4 h-4" />
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                </>
-              ) : (
-                /* Advisor Registration Fields */
-                <>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="advisorFullName" className="text-xs font-semibold text-gray-700">
-                      Full Name
-                    </Label>
-                    <Input
-                      id="advisorFullName"
-                      type="text"
-                      value={advisorFullName}
-                      onChange={(e) => setAdvisorFullName(e.target.value)}
-                      placeholder="e.g. Dr. Jane Doe"
-                      required
-                      className="bg-gray-50 border-gray-200 focus:ring-2 focus:ring-blue-900 focus:border-transparent text-gray-900 h-10 text-sm"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label htmlFor="advisorEmail" className="text-xs font-semibold text-gray-700">
-                      Email Address
-                    </Label>
-                    <Input
-                      id="advisorEmail"
-                      type="email"
-                      value={advisorEmail}
-                      onChange={(e) => setAdvisorEmail(e.target.value)}
-                      placeholder="e.g. advisor@university.edu"
-                      required
-                      className="bg-gray-50 border-gray-200 focus:ring-2 focus:ring-blue-900 focus:border-transparent text-gray-900 h-10 text-sm"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label htmlFor="advisorPassword" className="text-xs font-semibold text-gray-700">
-                      Password
-                    </Label>
-                    <div className="relative flex items-center">
-                      <Input
-                        id="advisorPassword"
-                        type={showAdvisorPassword ? "text" : "password"}
-                        autoComplete="new-password"
-                        value={advisorPassword}
-                        onChange={(e) => setAdvisorPassword(e.target.value)}
-                        placeholder="••••••••"
-                        required
-                        className="bg-gray-50 border-gray-200 focus:ring-2 focus:ring-blue-900 focus:border-transparent text-gray-900 h-10 text-sm pr-10"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowAdvisorPassword(!showAdvisorPassword)}
-                        className="absolute right-3 text-gray-400 hover:text-gray-600 focus:outline-none cursor-pointer"
-                        aria-label={showAdvisorPassword ? "Hide password" : "Show password"}
-                      >
-                        {showAdvisorPassword ? (
-                          <EyeOff className="w-4 h-4" />
-                        ) : (
-                          <Eye className="w-4 h-4" />
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                </>
-              )}
-
-              <Button
-                type="submit"
-                disabled={processing}
-                className="w-full h-10 mt-2 bg-blue-900 hover:bg-blue-800 text-white font-medium rounded-lg shadow-sm transition-colors cursor-pointer text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {processing
-                  ? "Creating Account..."
-                  : registrationRole === "student"
-                  ? "Register as Student"
-                  : "Register as Advisor"}
-              </Button>
-            </form>
-          )}
-
-          {/* Bottom Switch Links */}
-          {!isContesting && (
-            <div className="mt-6 pt-5 border-t border-gray-100 flex flex-col items-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setAuthMode(authMode === "login" ? "register" : "login");
-                  resetFormFeedback();
-                }}
-                className="text-xs text-gray-600 hover:text-blue-900 font-medium transition-colors cursor-pointer"
-              >
-                {authMode === "login"
-                  ? "Don't have an account? Create one"
-                  : "Already registered? Sign in"}
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Core Engineered Capabilities (Patient Zero Pilot) */}
-        <div className="max-w-3xl w-full mx-auto mt-12 grid grid-cols-1 sm:grid-cols-2 gap-5">
-          <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-xs flex flex-col justify-between">
-            <div>
-              <div className="w-9 h-9 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-900 mb-3 shadow-xs">
-                <FileText className="w-5 h-5" />
-              </div>
-              <h3 className="text-sm font-bold text-gray-900 mb-1.5">Zero-Waste PDF Extraction</h3>
-              <p className="text-xs text-gray-600 leading-relaxed">
-                Ephemeral in-memory transcript parsing with automated binary purging immediately post-approval. Zero persistent file storage liability, eliminating data leaks and protecting student privacy.
-              </p>
-            </div>
-            <div className="mt-4 pt-3 border-t border-gray-100 flex items-center gap-1.5 text-[11px] font-mono text-blue-900 font-semibold">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              <span>Purge-on-Approval Active</span>
+            {/* Right Column: Auth Card */}
+            <div id="auth-card" className="lg:col-span-5 scroll-mt-24 w-full">
+              <AuthCard
+                authMode={authMode}
+                setAuthMode={setAuthMode}
+                registrationRole={registrationRole}
+                setRegistrationRole={setRegistrationRole}
+                loginEmail={loginEmail}
+                setLoginEmail={setLoginEmail}
+                loginPassword={loginPassword}
+                setLoginPassword={setLoginPassword}
+                showLoginPassword={showLoginPassword}
+                setShowLoginPassword={setShowLoginPassword}
+                studentFullName={studentFullName}
+                setStudentFullName={setStudentFullName}
+                studentEmail={studentEmail}
+                setStudentEmail={setStudentEmail}
+                studentPassword={studentPassword}
+                setStudentPassword={setStudentPassword}
+                showStudentPassword={showStudentPassword}
+                setShowStudentPassword={setShowStudentPassword}
+                advisorFullName={advisorFullName}
+                setAdvisorFullName={setAdvisorFullName}
+                advisorEmail={advisorEmail}
+                setAdvisorEmail={setAdvisorEmail}
+                advisorPassword={advisorPassword}
+                setAdvisorPassword={setAdvisorPassword}
+                showAdvisorPassword={showAdvisorPassword}
+                setShowAdvisorPassword={setShowAdvisorPassword}
+                errorMessage={errorMessage}
+                successMessage={successMessage}
+                authError={authError}
+                processing={processing}
+                handleLogin={handleLogin}
+                handleRegistration={handleRegistration}
+                resetFormFeedback={resetFormFeedback}
+                isDuplicate={isDuplicate}
+                isContesting={isContesting}
+                setIsContesting={setIsContesting}
+                contestEmail={contestEmail}
+                setContestEmail={setContestEmail}
+                contestProcessing={contestProcessing}
+                contestSuccess={contestSuccess}
+                contestErrorMessage={contestErrorMessage}
+                handleContestSubmit={handleContestSubmit}
+              />
             </div>
           </div>
+        </section>
 
-          <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-xs flex flex-col justify-between">
-            <div>
-              <div className="w-9 h-9 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-900 mb-3 shadow-xs">
-                <CheckCircle2 className="w-5 h-5" />
-              </div>
-              <h3 className="text-sm font-bold text-gray-900 mb-1.5">Prerequisite DAG Auditing</h3>
-              <p className="text-xs text-gray-600 leading-relaxed">
-                Deterministic Directed Acyclic Graph (DAG) validation ensuring prerequisite compliance, detecting standing anomalies, and mathematically verifying degree blueprint graduation eligibility.
-              </p>
-            </div>
-            <div className="mt-4 pt-3 border-t border-gray-100 flex items-center gap-1.5 text-[11px] font-mono text-blue-900 font-semibold">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              <span>DAG Engine Active</span>
-            </div>
-          </div>
-        </div>
+        {/* 3. How It Works Section */}
+        <HowItWorksSection />
+
+        {/* 4. For Advisors / For Students Features Section */}
+        <FeaturesSection />
+
+        {/* 5. Founding Advisor Callout */}
+        <FoundingAdvisorCallout
+          onJoinAsAdvisor={() => scrollToAuth("register", "advisor")}
+        />
       </main>
 
-      {/* Institutional Minimal Footer */}
-      <footer className="border-t border-gray-200 bg-white py-6">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-gray-500">
-          <div className="flex items-center space-x-2">
-            <GraduationCap className="w-4 h-4 text-blue-900" />
-            <span className="font-semibold text-gray-800">SynGrad Academic Advising Platform</span>
-          </div>
-        </div>
-      </footer>
+      {/* 7. Footer */}
+      <LandingFooter />
     </div>
   );
 }
