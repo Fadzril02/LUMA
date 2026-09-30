@@ -129,6 +129,11 @@ END $$;
 ALTER TABLE academic_records
     DROP CONSTRAINT IF EXISTS academic_records_tenant_id_matric_no_course_code_key;
 
+-- Drift: a second 3-column unique constraint exists in production (created outside migrations).
+-- It would still block retakes, so drop it too.
+ALTER TABLE academic_records
+    DROP CONSTRAINT IF EXISTS unique_tenant_matric_course;
+
 ALTER TABLE academic_records
     ALTER COLUMN semester SET NOT NULL;
 
