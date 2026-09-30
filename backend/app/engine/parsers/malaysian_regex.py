@@ -4,18 +4,25 @@ Smart Academic Assessment System - Malaysian University Regex Parser
 
 import re
 from typing import List, Dict, Any, Tuple, Optional
+
 try:
     from app.schemas.audit import ParsedLineItem
+    from app.engine.grading import GradingScale
 except ImportError:
     from backend.app.schemas.audit import ParsedLineItem
+    from backend.app.engine.grading import GradingScale
 
 
 # Course Regex Pattern (single-line: allows 2 to 6 letters, optional spaces/hyphens, 3 to 5 digits, optional trailing letter)
+# Supports optional grade point and optional printed status column (e.g. LULUS, GAGAL, PASS, FAIL, EXEMPT)
 COURSE_PATTERN = re.compile(
     r'(?P<code>[A-Z]{2,6}\s*[-]?\s*[0-9]{3,5}[A-Z]?)\s+'
     r'(?P<name>[\w\s\(\)\/\-\,\&]+?)\s+'
     r'(?P<credit>[1-9])\s+'
-    r'(?P<grade>[A-D][\+\-]?|[EF]|HL|PC|EX|P|LUS|TD|TS|TL)(?:\s+(?P<gp>[0-4]\.[0-9]{2}))?(?:\s+|$)',
+    r'(?P<grade>[A-D][\+\-]?|[EF]|HL|PC|EX|CT|P|LUS|TD|TS|TL)'
+    r'(?:\s+(?P<gp>[0-4]\.[0-9]{2}))?'
+    r'(?:\s+(?P<printed_status>PASS(?:ED)?|FAIL(?:ED)?|LULUS|GAGAL|EXEMPT(?:ED)?|PENGECUALIAN))?'
+    r'(?:\s+|$)',
     re.IGNORECASE
 )
 
@@ -24,15 +31,19 @@ COURSE_PATTERN_ALT = re.compile(
     r'(?P<code>[A-Z]{2,6}\s*[-]?\s*[0-9]{3,5}[A-Z]?)\s+'
     r'(?P<name>.+?)\s+'
     r'(?P<credit>[1-9])\s+'
-    r'(?P<grade>[A-D][\+\-]?|[EF]|HL|PC|EX|P|LUS|TD|TS|TL)(?:\s+(?P<gp>[0-4]\.[0-9]{2}))?(?:\s+|$)',
+    r'(?P<grade>[A-D][\+\-]?|[EF]|HL|PC|EX|CT|P|LUS|TD|TS|TL)'
+    r'(?:\s+(?P<gp>[0-4]\.[0-9]{2}))?'
+    r'(?:\s+(?P<printed_status>PASS(?:ED)?|FAIL(?:ED)?|LULUS|GAGAL|EXEMPT(?:ED)?|PENGECUALIAN))?'
+    r'(?:\s+|$)',
     re.IGNORECASE
 )
 
 # Individual Token Patterns for Multi-Line / Tabular Block Parsing
 CODE_TOKEN_PATTERN = re.compile(r'^[A-Z]{2,6}\s*[-]?\s*[0-9]{3,5}[A-Z]?$', re.IGNORECASE)
-GRADE_TOKEN_PATTERN = re.compile(r'^(?:A\+|A|A\-|B\+|B|B\-|C\+|C|C\-|D\+|D|E|HL|PC|EX|P|LUS|TD|TS|TL)$', re.IGNORECASE)
+GRADE_TOKEN_PATTERN = re.compile(r'^(?:A\+|A|A\-|B\+|B|B\-|C\+|C|C\-|D\+|D|D\-|E|F|HL|PC|EX|CT|P|LUS|TD|TS|TL)$', re.IGNORECASE)
 CREDIT_TOKEN_PATTERN = re.compile(r'^[1-9]$')
 GP_TOKEN_PATTERN = re.compile(r'^[0-4]\.[0-9]{2}$')
+STATUS_TOKEN_PATTERN = re.compile(r'^(?:PASS|PASSED|FAIL|FAILED|LULUS|GAGAL|EXEMPT|EXEMPTED|PENGECUALIAN)$', re.IGNORECASE)
 
 # Matric Number Pattern (e.g., A20EC0123, A24MJ5050, B21CS0012, SX190204)
 MATRIC_PATTERN = re.compile(
@@ -55,33 +66,22 @@ SEMESTER_PATTERN = re.compile(
 SEMESTER_SPLIT_SEM = re.compile(r'(?:SEMESTER|SEM)\s*[:.]?\s*([0-9]+)', re.IGNORECASE)
 SEMESTER_SPLIT_SES = re.compile(r'(?:SESSION|SESI)\s*[:.]?\s*([0-9]{4}\s*[\/\-]\s*[0-9]{4})', re.IGNORECASE)
 
-# Default Malaysian University Grade Point Scale
-GRADE_POINTS = {
-    "A+": 4.00, "A": 4.00, "A-": 3.67,
-    "B+": 3.33, "B": 3.00, "B-": 2.67,
-    "C+": 2.33, "C": 2.00, "C-": 1.67,
-    "D+": 1.33, "D": 1.00, "E": 0.00,
-    "HL": 0.00,  # Hadir Lulus (Pass - Neutral)
-    "PC": 0.00,  # Pengecualian Kursus (Credit Exemption - Neutral)
-    "EX": 0.00,  # Exemption (Neutral)
-    "P": 0.00,   # Pass (Neutral)
-    "LUS": 0.00, # Lulus (Neutral)
-    "TD": 0.00,  # Tarik Diri (Withdrawn)
-    "TS": 0.00,  # Tidak Selesai (Incomplete)
-    "TL": 0.00,  # Tidak Lulus (Fail)
-}
-
-PASSING_GRADES = {"A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D+", "D", "HL", "PC", "EX", "P", "LUS"}
-NEUTRAL_PASSING_GRADES = {"HL", "PC", "EX", "P", "LUS"}
-
 
 class MalaysianTranscriptParser:
     @staticmethod
-    def parse_transcript_lines(lines: List[str]) -> Tuple[Dict[str, Any], List[ParsedLineItem], List[str]]:
+    def parse_transcript_lines(
+        lines: List[str],
+        scale: GradingScale
+    ) -> Tuple[Dict[str, Any], List[ParsedLineItem], List[str]]:
         """
         Parses list of text lines extracted from a transcript.
         Normalizes non-breaking spaces and supports both single-line and tabular/multi-line block layouts.
+        Performs status cross-check if printed status is present, attaching a warning on disagreement.
+        Requires an explicit GradingScale instance.
         """
+        if scale is None:
+            raise ValueError("scale (GradingScale) is a required parameter for parse_transcript_lines.")
+
         # 1. Normalize non-breaking spaces (\xa0 -> ' ') and clean whitespace
         cleaned_lines: List[str] = []
         for line in lines:
@@ -98,37 +98,39 @@ class MalaysianTranscriptParser:
         parsed_courses: List[ParsedLineItem] = []
         unparsed_lines: List[str] = []
         
-        current_semester = "Semester 1 (Default)"
         full_text = "\n".join(cleaned_lines)
-        
+
         # 2. Extract Matric Number
         matric_match = MATRIC_PATTERN.search(full_text)
         if matric_match:
-            metadata["matric_number"] = matric_match.group(1).strip()
+            metadata["matric_number"] = matric_match.group(1).upper()
         else:
             direct_matric = MATRIC_DIRECT_PATTERN.search(full_text)
             if direct_matric:
-                metadata["matric_number"] = direct_matric.group(1).strip()
+                metadata["matric_number"] = direct_matric.group(1).upper()
 
-        # 3. Extract Student Name (strict newline/keyword termination)
+        # 3. Extract Student Name
         name_match = NAME_PATTERN.search(full_text)
         if name_match:
-            extracted_name = name_match.group(1).splitlines()[0].strip()
-            metadata["student_name"] = re.sub(r'\s+', ' ', extracted_name)
+            raw_name = name_match.group(1).strip()
+            # Clean common trailing artifacts
+            clean_name = re.sub(r'\s+', ' ', raw_name)
+            metadata["student_name"] = clean_name.strip()
 
-        # 4. Extract Semester / Session (handles multi-line and single-line)
-        sem_single = SEMESTER_PATTERN.search(full_text)
-        if sem_single:
-            sem_val = sem_single.group(1).strip()
-            ses_val = sem_single.group(2).replace(" ", "")
-            current_semester = f"Sem {sem_val} {ses_val}"
-            metadata["semesters_found"].append(current_semester)
-        else:
-            sem_m = SEMESTER_SPLIT_SEM.search(full_text)
-            ses_m = SEMESTER_SPLIT_SES.search(full_text)
-            if sem_m and ses_m:
-                current_semester = f"Sem {sem_m.group(1).strip()} {ses_m.group(1).replace(' ', '')}"
-                metadata["semesters_found"].append(current_semester)
+        # 4. Extract Global/Header Semesters
+        current_semester = "Semester 1"
+        for i, line in enumerate(cleaned_lines):
+            sem_m = SEMESTER_SPLIT_SEM.search(line)
+            if sem_m and i + 1 < len(cleaned_lines):
+                ses_m = SEMESTER_SPLIT_SES.search(cleaned_lines[i + 1])
+                if ses_m:
+                    current_semester = f"Sem {sem_m.group(1).strip()} {ses_m.group(1).replace(' ', '')}"
+                    metadata["semesters_found"].append(current_semester)
+            elif sem_m and not (i + 1 < len(cleaned_lines) and SEMESTER_SPLIT_SES.search(cleaned_lines[i + 1])):
+                inline_m = SEMESTER_PATTERN.search(line)
+                if inline_m:
+                    current_semester = f"Sem {inline_m.group(1).strip()} {inline_m.group(2).replace(' ', '')}"
+                    metadata["semesters_found"].append(current_semester)
 
         # 5. Course Extraction Loop (Single-Line + Tabular Multi-Line Block Parsing)
         i = 0
@@ -156,9 +158,34 @@ class MalaysianTranscriptParser:
                 name = single_match.group("name").strip().title()
                 credits = int(single_match.group("credit"))
                 grade = single_match.group("grade").upper()
-                gp = GRADE_POINTS.get(grade, 0.00)
+                printed_status = single_match.groupdict().get("printed_status")
 
-                status = "Exempted" if grade in NEUTRAL_PASSING_GRADES else ("Passed" if grade in PASSING_GRADES else ("In-Progress" if grade in {"TD", "TS"} else "Failed"))
+                gp = scale.grade_points(grade, raw_code)
+                is_p = scale.is_pass(grade, raw_code)
+                in_cgpa = scale.counts_in_cgpa(grade, raw_code)
+                as_comp = scale.counts_as_completed(grade, raw_code)
+
+                if is_p and not in_cgpa and as_comp:
+                    status = "Exempted"
+                elif is_p:
+                    status = "Passed"
+                elif grade in {"TD", "TS"}:
+                    status = "In-Progress"
+                else:
+                    status = "Failed"
+
+                # Status cross-check: Never auto-correct, attach warning on disagreement
+                warning: Optional[str] = None
+                if printed_status:
+                    p_clean = printed_status.upper()
+                    printed_is_pass = p_clean in {"PASS", "PASSED", "LULUS", "EXEMPT", "EXEMPTED", "PENGECUALIAN"}
+                    printed_is_fail = p_clean in {"FAIL", "FAILED", "GAGAL"}
+
+                    if printed_is_pass and not is_p:
+                        warning = f"Discrepancy: Printed transcript status '{printed_status}' indicates PASS, but tenant grading scale defines grade '{grade}' as FAIL. Requires advisor verification."
+                    elif printed_is_fail and is_p:
+                        warning = f"Discrepancy: Printed transcript status '{printed_status}' indicates FAIL, but tenant grading scale defines grade '{grade}' as PASS. Requires advisor verification."
+
                 parsed_courses.append(ParsedLineItem(
                     course_code=raw_code,
                     course_name=name,
@@ -167,6 +194,7 @@ class MalaysianTranscriptParser:
                     grade_point=gp,
                     semester=current_semester,
                     status=status,
+                    warning=warning,
                     is_ai_parsed=False,
                     raw_extracted_text=line_str
                 ))
@@ -174,7 +202,6 @@ class MalaysianTranscriptParser:
                 continue
 
             # Path B: Multi-Line / Tabular Block Parsing
-            # Detect standalone course code on this line (e.g. 'SCSE1013', 'SECJ1023')
             is_code_candidate = CODE_TOKEN_PATTERN.match(line_str) and line_str.upper() not in stop_keywords
             if is_code_candidate:
                 code_val = line_str.replace(" ", "").upper()
@@ -182,10 +209,11 @@ class MalaysianTranscriptParser:
                 block_grade: Optional[str] = None
                 block_credits: Optional[int] = None
                 block_gp: Optional[float] = None
+                block_printed_status: Optional[str] = None
                 consumed_lines: List[str] = [line_str]
 
                 j = i + 1
-                # Scan ahead up to 7 lines for title, grade, credits, grade points
+                # Scan ahead up to 7 lines for title, grade, credits, grade points, printed status
                 while j < min(i + 8, n):
                     candidate_line = cleaned_lines[j]
                     if CODE_TOKEN_PATTERN.match(candidate_line) or any(candidate_line.startswith(kw) for kw in stop_keywords):
@@ -205,6 +233,9 @@ class MalaysianTranscriptParser:
                     # Check for Single-digit Credit Hour token (e.g. '3', '2')
                     elif block_credits is None and CREDIT_TOKEN_PATTERN.match(candidate_line):
                         block_credits = int(candidate_line)
+                    # Check for Printed Status token (e.g. 'LULUS', 'GAGAL', 'PASS', 'FAIL')
+                    elif not block_printed_status and STATUS_TOKEN_PATTERN.match(candidate_line):
+                        block_printed_status = candidate_line.strip()
                     # Check for Course Title line (text longer than 2 characters, not purely numbers)
                     elif not block_title and len(candidate_line) > 2 and not re.match(r'^[0-9\.]+$', candidate_line):
                         block_title = candidate_line.strip().title()
@@ -214,9 +245,32 @@ class MalaysianTranscriptParser:
                 # If we successfully captured at least code and grade, record the parsed course
                 if block_grade:
                     final_credits = block_credits or 3
-                    final_gp = block_gp if block_gp is not None else GRADE_POINTS.get(block_grade, 0.00)
-                    status = "Exempted" if block_grade in NEUTRAL_PASSING_GRADES else ("Passed" if block_grade in PASSING_GRADES else ("In-Progress" if block_grade in {"TD", "TS"} else "Failed"))
-                    
+                    final_gp = block_gp if block_gp is not None else scale.grade_points(block_grade, code_val)
+                    is_p = scale.is_pass(block_grade, code_val)
+                    in_cgpa = scale.counts_in_cgpa(block_grade, code_val)
+                    as_comp = scale.counts_as_completed(block_grade, code_val)
+
+                    if is_p and not in_cgpa and as_comp:
+                        status = "Exempted"
+                    elif is_p:
+                        status = "Passed"
+                    elif block_grade in {"TD", "TS"}:
+                        status = "In-Progress"
+                    else:
+                        status = "Failed"
+
+                    # Status cross-check
+                    warning = None
+                    if block_printed_status:
+                        p_clean = block_printed_status.upper()
+                        printed_is_pass = p_clean in {"PASS", "PASSED", "LULUS", "EXEMPT", "EXEMPTED", "PENGECUALIAN"}
+                        printed_is_fail = p_clean in {"FAIL", "FAILED", "GAGAL"}
+
+                        if printed_is_pass and not is_p:
+                            warning = f"Discrepancy: Printed transcript status '{block_printed_status}' indicates PASS, but tenant grading scale defines grade '{block_grade}' as FAIL. Requires advisor verification."
+                        elif printed_is_fail and is_p:
+                            warning = f"Discrepancy: Printed transcript status '{block_printed_status}' indicates FAIL, but tenant grading scale defines grade '{block_grade}' as PASS. Requires advisor verification."
+
                     parsed_courses.append(ParsedLineItem(
                         course_code=code_val,
                         course_name=block_title or code_val,
@@ -225,6 +279,7 @@ class MalaysianTranscriptParser:
                         grade_point=final_gp,
                         semester=current_semester,
                         status=status,
+                        warning=warning,
                         is_ai_parsed=False,
                         raw_extracted_text=" | ".join(consumed_lines)
                     ))

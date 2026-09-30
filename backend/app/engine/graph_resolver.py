@@ -9,14 +9,20 @@ try:
         CourseAuditResult,
         AuditSummary
     )
-    from app.engine.parsers.malaysian_regex import GRADE_POINTS, NEUTRAL_PASSING_GRADES
+    from app.engine.grading import (
+        GradingScale,
+        compute_cgpa as grading_compute_cgpa
+    )
 except ImportError:
     from backend.app.schemas.audit import (
         ParsedLineItem,
         CourseAuditResult,
         AuditSummary
     )
-    from backend.app.engine.parsers.malaysian_regex import GRADE_POINTS, NEUTRAL_PASSING_GRADES
+    from backend.app.engine.grading import (
+        GradingScale,
+        compute_cgpa as grading_compute_cgpa
+    )
 
 
 DEFAULT_DOMAINS = [
@@ -48,23 +54,26 @@ def infer_course_domain(code: str, name: str, category: str = "") -> str:
 def check_course_prerequisite_satisfied(
     prereq_code: str,
     passed_courses: Dict[str, ParsedLineItem],
-    min_grade: Optional[str] = None
+    min_grade: Optional[str],
+    scale: GradingScale
 ) -> Tuple[bool, Optional[str]]:
     """
     Evaluates whether a student satisfies an individual prerequisite course requirement.
     
     Evaluation Rules:
     1. The prerequisite course must be present in passed_courses (status in ['Passed', 'Exempted']).
-    2. Neutral passing grades ('HL', 'PC', 'EX') signify credit transfer / exemptions and always
+    2. Neutral passing grades ('HL', 'PC', 'EX', 'CT') signify credit transfer / exemptions and always
        satisfy the prerequisite regardless of min_grade.
-    3. If min_grade is specified (e.g., 'C', 'B'), the student's earned letter grade is checked
-       against the required threshold using GRADE_POINTS. A pass below the required grade
-       (e.g., earned 'D' with GP 1.00 when 'C' with GP 2.00 is required) does NOT satisfy the rule.
+    3. If min_grade is specified, evaluates rank using tenant GradingScale.
     4. If min_grade is None, empty, or 'ANY', any passing grade satisfies the requirement.
+    5. An unknown grade or min_grade raises ValueError (fail loud; never turn into a False result).
     
     Returns:
         (is_satisfied: bool, failure_reason: Optional[str])
     """
+    if scale is None:
+        raise ValueError("scale (GradingScale) is required for check_course_prerequisite_satisfied.")
+
     clean_code = prereq_code.replace(" ", "").upper()
     
     # 1. Course must be completed / passed
@@ -74,22 +83,11 @@ def check_course_prerequisite_satisfied(
     student_record = passed_courses[clean_code]
     student_grade = student_record.grade.upper()
 
-    # 2. Neutral passing grades (HL, PC, EX) always satisfy prerequisites
-    if student_grade in NEUTRAL_PASSING_GRADES:
-        return True, None
-
-    # 3. If min_grade is specified, evaluate grade point threshold
-    if min_grade and min_grade.strip().upper() not in {"", "NONE", "ANY"}:
-        required_min_grade = min_grade.strip().upper()
-        min_required_gp = GRADE_POINTS.get(required_min_grade, 2.00)  # Default to 'C' (2.00) if unmapped
-        
-        # Student earned grade point
-        student_gp = student_record.grade_point if student_record.grade_point > 0.0 else GRADE_POINTS.get(student_grade, 0.00)
-        
-        if student_gp < min_required_gp:
-            return False, f"{clean_code} (Earned grade {student_grade} < Required min grade {required_min_grade})"
-
-    # 4. Default: Any passing grade satisfies prerequisite
+    # Raises ValueError on unknown grade/min_grade
+    satisfied = scale.meets_min_grade(student_grade, min_grade, clean_code)
+    if not satisfied:
+        req_label = str(min_grade).strip().upper() if min_grade else "Passing"
+        return False, f"{clean_code} (Earned grade {student_grade} < Required min grade {req_label})"
     return True, None
 
 
@@ -98,18 +96,24 @@ class PrerequisiteGraphResolver:
     def audit_student_records(
         records: List[ParsedLineItem],
         course_catalog: Dict[str, Dict[str, Any]],
+        scale: GradingScale,
         total_required_credits: int = 0,
         min_cgpa_threshold: float = 2.00,
-        block_exempted_credits: int = 0
+        block_exempted_credits: int = 0,
+        repeat_policy: str = "latest"
     ) -> tuple[List[CourseAuditResult], AuditSummary]:
         """
         Runs pure Python graph traversal & set validation on parsed courses against course catalog.
         Categorizes each course into Traffic Light Matrix (GREEN, YELLOW, RED) and computes 5-domain radar scores.
 
+        scale: Required tenant GradingScale instance.
         block_exempted_credits: Pre-approved credits for Diploma/Transfer students that are
         added to total_credits_earned AFTER the record loop. They do NOT affect CGPA math
         (no grade points, not included in gpa_credits denominator).
         """
+        if scale is None:
+            raise ValueError("scale (GradingScale) is a required parameter for audit_student_records.")
+
         # Map of passed/exempted courses: code -> ParsedLineItem
         passed_courses: Dict[str, ParsedLineItem] = {}
         for rec in records:
@@ -119,8 +123,6 @@ class PrerequisiteGraphResolver:
 
         audited_results: List[CourseAuditResult] = []
         total_credits_earned = 0
-        total_grade_points = 0.0
-        gpa_credits = 0
         
         failed_count = 0
         in_progress_count = 0
@@ -164,7 +166,8 @@ class PrerequisiteGraphResolver:
                     satisfied, failure_reason = check_course_prerequisite_satisfied(
                         prereq_code=clean_prereq,
                         passed_courses=passed_courses,
-                        min_grade=effective_min_grade
+                        min_grade=effective_min_grade,
+                        scale=scale
                     )
                     if not satisfied and failure_reason:
                         missing.append(failure_reason)
@@ -178,7 +181,8 @@ class PrerequisiteGraphResolver:
                     satisfied, failure_reason = check_course_prerequisite_satisfied(
                         prereq_code=clean_prereq,
                         passed_courses=passed_courses,
-                        min_grade=effective_min_grade
+                        min_grade=effective_min_grade,
+                        scale=scale
                     )
                     if satisfied:
                         or_satisfied = True
@@ -208,15 +212,11 @@ class PrerequisiteGraphResolver:
             else:
                 traffic_light = "GREEN"
 
-            # Neutral passing grades (HL, PC, EX) grant credits & clear prereqs, but are EXCLUDED from GPA and radar math
-            is_neutral_grade = rec.grade.upper() in NEUTRAL_PASSING_GRADES
-
+            # Check scale rules for completion & CGPA
             if rec.status in ["Passed", "Exempted"]:
                 total_credits_earned += rec.credits
 
-            if not is_neutral_grade and rec.status in ["Passed", "Failed"]:
-                total_grade_points += (rec.grade_point * rec.credits)
-                gpa_credits += rec.credits
+            if scale.counts_in_cgpa(rec.grade, rec.course_code) and rec.status in ["Passed", "Failed"]:
                 domain_grades[domain].append(rec.grade_point)
 
             audited_results.append(CourseAuditResult(
@@ -227,6 +227,7 @@ class PrerequisiteGraphResolver:
                 grade_point=rec.grade_point,
                 semester=rec.semester,
                 status=rec.status,
+                warning=getattr(rec, "warning", None),
                 domain=domain,
                 traffic_light=traffic_light,
                 prerequisite_met=prerequisite_met,
@@ -235,10 +236,8 @@ class PrerequisiteGraphResolver:
                 raw_extracted_text=rec.raw_extracted_text
             ))
 
-        # Calculate Final CGPA
-        # NOTE: block_exempted_credits are NOT included in gpa_credits — they carry no
-        # grade point value and must not inflate or deflate the GPA denominator.
-        cgpa = round(total_grade_points / gpa_credits, 2) if gpa_credits > 0 else 0.00
+        # Calculate Final CGPA via grading engine supporting repeat_policy ('latest' vs 'best')
+        cgpa = grading_compute_cgpa(records, scale, repeat_policy=repeat_policy)
 
         # Apply block exempted credits AFTER CGPA calculation.
         # Formula: Final Total Credits = (Passed/Exempted credits from records) + block_exempted_credits

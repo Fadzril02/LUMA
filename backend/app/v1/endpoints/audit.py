@@ -26,12 +26,8 @@ try:
         RejectDocumentResponse
     )
     from app.engine.extractor import PDFExtractor
-    from app.engine.parsers.malaysian_regex import (
-        MalaysianTranscriptParser,
-        GRADE_POINTS,
-        PASSING_GRADES,
-        NEUTRAL_PASSING_GRADES
-    )
+    from app.engine.parsers.malaysian_regex import MalaysianTranscriptParser
+    from app.engine.grading import load_scale, GradingScale
     from app.engine.graph_resolver import PrerequisiteGraphResolver
     from app.engine.llm_fallback import MicroLLMFallback
     from app.core.supabase_client import SupabaseService
@@ -55,12 +51,8 @@ except ImportError:
         RejectDocumentResponse
     )
     from backend.app.engine.extractor import PDFExtractor
-    from backend.app.engine.parsers.malaysian_regex import (
-        MalaysianTranscriptParser,
-        GRADE_POINTS,
-        PASSING_GRADES,
-        NEUTRAL_PASSING_GRADES
-    )
+    from backend.app.engine.parsers.malaysian_regex import MalaysianTranscriptParser
+    from backend.app.engine.grading import load_scale, GradingScale
     from backend.app.engine.graph_resolver import PrerequisiteGraphResolver
     from backend.app.engine.llm_fallback import MicroLLMFallback
     from backend.app.core.supabase_client import SupabaseService
@@ -70,7 +62,7 @@ router = APIRouter(prefix="/audit", tags=["Degree Audit"])
 supabase_svc = SupabaseService()
 llm_fallback = MicroLLMFallback()
 
-def fetch_and_merge_historical_records(matric_no: str, new_records: List[ParsedLineItem], tenant_id: str = "UTM") -> List[ParsedLineItem]:
+def fetch_and_merge_historical_records(matric_no: str, new_records: List[ParsedLineItem], tenant_id: str) -> List[ParsedLineItem]:
     if not supabase_svc.client or not matric_no:
         return new_records
     try:
@@ -203,7 +195,7 @@ def _resolve_university_code(university_id_or_code: str) -> Optional[str]:
         except Exception as e:
             print(f"[_resolve_university_code] University code lookup error: {e}")
 
-    return "UTM"
+    return None
 
 
 def _extract_tenant_id(jwt_payload: dict) -> str:
@@ -234,7 +226,8 @@ def _extract_tenant_id(jwt_payload: dict) -> str:
             if res.data and len(res.data) > 0 and res.data[0].get("tenant_id"):
                 raw_tenant = str(res.data[0]["tenant_id"]).strip()
                 resolved = _resolve_university_code(raw_tenant)
-                return resolved or raw_tenant or "UTM"
+                if resolved or raw_tenant:
+                    return resolved or raw_tenant
         except Exception as e:
             print(f"[_extract_tenant_id] Advisor tenant_id lookup error: {e}")
 
@@ -299,8 +292,12 @@ async def extract_transcript_from_storage(
             detail="Transcript PDF is empty or contains non-extractable scanned raster images."
         )
 
+    # 2b. Load tenant grading scale
+    tenant_id = _extract_tenant_id(jwt_payload)
+    scale = load_scale(tenant_id, client=supabase_svc.client)
+
     # 3. Regex Parsing
-    metadata, parsed_courses, unparsed_lines = MalaysianTranscriptParser.parse_transcript_lines(raw_lines)
+    metadata, parsed_courses, unparsed_lines = MalaysianTranscriptParser.parse_transcript_lines(raw_lines, scale=scale)
 
     # 4. Micro-LLM Fallback for ambiguous lines
     if unparsed_lines:
@@ -316,7 +313,8 @@ async def extract_transcript_from_storage(
             "grade": c.grade,
             "credit_hour": c.credits,
             "credits": c.credits,
-            "status": c.status
+            "status": c.status,
+            "warning": c.warning
         }
         for c in parsed_courses
     ]
@@ -384,7 +382,18 @@ async def finalize_approval(
             detail="No course records provided for approval."
         )
 
-    # 1. Transform Staged Courses into ParsedLineItem objects
+    # 1. Transform Staged Courses into ParsedLineItem objects using Tenant Grading Scale
+    scale = load_scale(tenant_id, client=supabase_svc.client)
+
+    repeat_policy = "latest"
+    if supabase_svc.client:
+        try:
+            t_res = supabase_svc.client.table("tenants").select("repeat_policy").eq("id", tenant_id).limit(1).execute()
+            if t_res.data and t_res.data[0].get("repeat_policy"):
+                repeat_policy = t_res.data[0]["repeat_policy"]
+        except Exception:
+            pass
+
     parsed_items: List[ParsedLineItem] = []
     current_semester = f"Sem {request.semester} {request.academic_session}"
 
@@ -392,11 +401,16 @@ async def finalize_approval(
         code = c.course_code.replace(" ", "").upper()
         grade = c.grade.strip().upper()
         credits_val = c.credits or c.credit_hour or 3
-        gp = GRADE_POINTS.get(grade, 0.00)
+        gp = scale.grade_points(grade, code)
+        is_p = scale.is_pass(grade, code)
+        in_cgpa = scale.counts_in_cgpa(grade, code)
+        as_comp = scale.counts_as_completed(grade, code)
 
-        # Status determination
-        if grade in PASSING_GRADES:
-            item_status = "Exempted" if grade in NEUTRAL_PASSING_GRADES else "Passed"
+        # Status determination via grading scale rules
+        if is_p and not in_cgpa and as_comp:
+            item_status = "Exempted"
+        elif is_p:
+            item_status = "Passed"
         elif grade in {"TD", "TS"}:
             item_status = "In-Progress"
         else:
@@ -410,6 +424,7 @@ async def finalize_approval(
             grade_point=gp,
             semester=c.session_semester or current_semester,
             status=item_status,
+            warning=getattr(c, "warning", None),
             is_ai_parsed=False,
             raw_extracted_text=f"[ADVISOR APPROVED] {code} {grade} ({credits_val} cr)"
         ))
@@ -451,7 +466,9 @@ async def finalize_approval(
         records=parsed_items,
         course_catalog=catalog,
         total_required_credits=total_required_credits,
-        block_exempted_credits=block_exempted_credits
+        block_exempted_credits=block_exempted_credits,
+        scale=scale,
+        repeat_policy=repeat_policy
     )
 
     # 4. Upsert Student Record & Persist Audits to Supabase
@@ -579,8 +596,20 @@ async def process_storage_transcript(
             detail="Uploaded transcript PDF appears to be empty or an unsupported scanned image."
         )
 
+    # 2b. Load tenant grading scale & repeat policy
+    scale = load_scale(tenant_id, client=supabase_svc.client)
+
+    repeat_policy = "latest"
+    if supabase_svc.client:
+        try:
+            t_res = supabase_svc.client.table("tenants").select("repeat_policy").eq("id", tenant_id).limit(1).execute()
+            if t_res.data and t_res.data[0].get("repeat_policy"):
+                repeat_policy = t_res.data[0]["repeat_policy"]
+        except Exception:
+            pass
+
     # 3. Regex Parsing (Zero AI Cost)
-    metadata, parsed_courses, unparsed_lines = MalaysianTranscriptParser.parse_transcript_lines(raw_lines)
+    metadata, parsed_courses, unparsed_lines = MalaysianTranscriptParser.parse_transcript_lines(raw_lines, scale=scale)
 
     matric_no = request.matric_number or metadata.get("matric_number")
     if not matric_no or matric_no == "UNKNOWN_MATRIC":
@@ -624,7 +653,9 @@ async def process_storage_transcript(
         records=parsed_courses,
         course_catalog=catalog,
         total_required_credits=total_required_credits,
-        block_exempted_credits=block_exempted_credits
+        block_exempted_credits=block_exempted_credits,
+        scale=scale,
+        repeat_policy=repeat_policy
     )
 
     # 7. Upsert Student Record & Persist Audits to Supabase

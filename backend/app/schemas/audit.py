@@ -55,6 +55,7 @@ class ParsedLineItem(BaseModel):
     grade_point: float
     semester: str
     status: str  # 'Passed', 'Failed', 'Exempted', 'In-Progress'
+    warning: Optional[str] = None
     is_ai_parsed: bool = False
     raw_extracted_text: Optional[str] = None
 
@@ -67,6 +68,7 @@ class CourseAuditResult(BaseModel):
     grade_point: float
     semester: str
     status: str
+    warning: Optional[str] = None
     domain: str = "Core Development"  # Logic & Math, Core Development, Systems & Architecture, Soft Skills, Project Management
     traffic_light: str  # 'GREEN', 'YELLOW', 'RED'
     prerequisite_met: bool
@@ -116,6 +118,7 @@ class ExtractedCourseItem(BaseModel):
     credit_hour: Optional[int] = 3
     credits: Optional[int] = None
     status: Optional[str] = "Pass"
+    warning: Optional[str] = None
     session_semester: Optional[str] = None
 
 

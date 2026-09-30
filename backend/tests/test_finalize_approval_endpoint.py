@@ -32,6 +32,36 @@ app.dependency_overrides[verify_advisor_jwt] = lambda: {
 
 AUTH_HEADERS = {"Authorization": "Bearer mock-test-token"}
 
+try:
+    from app.engine.grading import GradingScale, GradeDefinition
+except ImportError:
+    from backend.app.engine.grading import GradingScale, GradeDefinition
+
+
+@pytest.fixture(autouse=True)
+def mock_load_scale_fixture():
+    test_scale = GradingScale("TEST_FIXTURE_TENANT", [
+        GradeDefinition("A+", 4.00, 1, True, True, True),
+        GradeDefinition("A",  4.00, 2, True, True, True),
+        GradeDefinition("A-", 3.67, 3, True, True, True),
+        GradeDefinition("B+", 3.33, 4, True, True, True),
+        GradeDefinition("B",  3.00, 5, True, True, True),
+        GradeDefinition("B-", 2.67, 6, True, True, True),
+        GradeDefinition("C+", 2.33, 7, True, True, True),
+        GradeDefinition("C",  2.00, 8, True, True, True),
+        GradeDefinition("C-", 1.67, 9, True, True, True),
+        GradeDefinition("D+", 1.33, 10, True, True, True),
+        GradeDefinition("D",  1.00, 11, False, True, False),
+        GradeDefinition("D-", 0.67, 12, False, True, False),
+        GradeDefinition("E",  0.00, 13, False, True, False),
+        GradeDefinition("HL", None, None, True, False, True),
+        GradeDefinition("EX", None, None, True, False, True),
+        GradeDefinition("CT", None, None, True, False, True),
+    ])
+    patch_target = "app.v1.endpoints.audit.load_scale" if "app.v1.endpoints.audit" in sys.modules else "backend.app.v1.endpoints.audit.load_scale"
+    with patch(patch_target, return_value=test_scale):
+        yield
+
 
 def test_finalize_approval_fastapi_endpoint_flow():
     """Test that finalize-approval endpoint audits courses, sets traffic light, and creates records."""
