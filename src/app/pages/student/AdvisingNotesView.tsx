@@ -42,13 +42,13 @@ export function AdvisingNotesView() {
         try {
           const { data: advisorsData } = await db
             .from("advisors")
-            .select("staff_id, full_name");
+            .select("staff_id, name");
 
           if (advisorsData && isMounted) {
             const map: Record<string, string> = {};
             advisorsData.forEach((adv: any) => {
               if (adv.staff_id) {
-                map[adv.staff_id] = adv.full_name || adv.staff_id;
+                map[adv.staff_id] = adv.name || adv.staff_id;
               }
             });
             setAdvisorNames(map);
