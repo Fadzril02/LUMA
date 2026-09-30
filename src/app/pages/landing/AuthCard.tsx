@@ -103,20 +103,20 @@ export function AuthCard({
   handleContestSubmit,
 }: AuthCardProps) {
   return (
-    <div className="w-full max-w-md mx-auto bg-white rounded-2xl border border-[#E7E1D4] shadow-sm p-6 sm:p-8">
+    <div className="w-full max-w-md mx-auto bg-white rounded-2xl border border-[#E5E7EB] shadow-sm p-6 sm:p-8">
       {/* Tab Switcher: Log In | Create Account */}
       {!isContesting && (
-        <div className="grid grid-cols-2 p-1 bg-[#FAF8F3] rounded-xl mb-6 border border-[#E7E1D4]">
+        <div className="grid grid-cols-2 p-1 bg-[#F9FAFB] rounded-xl mb-6 border border-[#E5E7EB]">
           <button
             type="button"
             onClick={() => {
               setAuthMode("login");
               resetFormFeedback();
             }}
-            className={`py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#14213D] ${
+            className={`py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E3A8A] ${
               authMode === "login"
-                ? "bg-white text-[#14213D] shadow-xs font-bold"
-                : "text-ink-muted hover:text-[#14213D]"
+                ? "bg-white text-[#1E3A8A] shadow-xs font-bold"
+                : "text-ink-muted hover:text-[#1E3A8A]"
             }`}
           >
             Log in
@@ -127,10 +127,10 @@ export function AuthCard({
               setAuthMode("register");
               resetFormFeedback();
             }}
-            className={`py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#14213D] ${
+            className={`py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E3A8A] ${
               authMode === "register"
-                ? "bg-white text-[#14213D] shadow-xs font-bold"
-                : "text-ink-muted hover:text-[#14213D]"
+                ? "bg-white text-[#1E3A8A] shadow-xs font-bold"
+                : "text-ink-muted hover:text-[#1E3A8A]"
             }`}
           >
             Create account
@@ -140,7 +140,7 @@ export function AuthCard({
 
       {/* Form Heading & Subtext */}
       <div className="mb-6">
-        <h2 className="font-serif text-xl sm:text-2xl font-bold tracking-tight text-[#14213D]">
+        <h2 className="font-serif text-xl sm:text-2xl font-bold tracking-tight text-[#1E3A8A]">
           {isContesting
             ? "Contest Registration"
             : authMode === "login"
@@ -172,7 +172,7 @@ export function AuthCard({
                   setIsContesting(true);
                   resetFormFeedback();
                 }}
-                className="text-[#14213D] hover:text-[#7A1E3A] font-semibold underline underline-offset-2 cursor-pointer"
+                className="text-[#1E3A8A] hover:text-[#1E3A8A] font-semibold underline underline-offset-2 cursor-pointer"
               >
                 Contest registration
               </button>
@@ -206,7 +206,7 @@ export function AuthCard({
                 setIsContesting(false);
                 resetFormFeedback();
               }}
-              className="w-full py-2.5 px-4 bg-[#14213D] hover:bg-[#0D1629] text-white font-semibold text-xs rounded-xl transition-colors cursor-pointer"
+              className="w-full py-2.5 px-4 bg-[#1E3A8A] hover:bg-[#1E40AF] text-white font-semibold text-xs rounded-xl transition-colors cursor-pointer"
             >
               Return to registration
             </button>
@@ -220,7 +220,7 @@ export function AuthCard({
               </div>
             )}
             <div className="space-y-1.5">
-              <label htmlFor="contestEmail" className="block text-xs font-semibold text-[#14213D]">
+              <label htmlFor="contestEmail" className="block text-xs font-semibold text-[#1E3A8A]">
                 Institutional Email Address
               </label>
               <div className="relative">
@@ -232,7 +232,7 @@ export function AuthCard({
                   onChange={(e) => setContestEmail(e.target.value)}
                   placeholder="e.g. yourname@university.edu"
                   required
-                  className="w-full pl-9 pr-3 py-2.5 text-xs bg-[#FAF8F3] border border-[#E7E1D4] rounded-xl text-[#14213D] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#14213D] transition-colors"
+                  className="w-full pl-9 pr-3 py-2.5 text-xs bg-[#F9FAFB] border border-[#E5E7EB] rounded-xl text-[#1E3A8A] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1E3A8A] transition-colors"
                 />
               </div>
             </div>
@@ -240,7 +240,7 @@ export function AuthCard({
             <button
               type="submit"
               disabled={contestProcessing || !(contestEmail || "").trim()}
-              className="w-full py-3 px-4 bg-[#7A1E3A] hover:bg-[#62182E] active:bg-[#4E1325] text-white text-xs font-semibold rounded-xl transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              className="w-full py-3 px-4 bg-[#1E3A8A] hover:bg-[#1E40AF] active:bg-[#1E40AF] text-white text-xs font-semibold rounded-xl transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
             >
               {contestProcessing ? (
                 <>
@@ -262,7 +262,7 @@ export function AuthCard({
                   setIsContesting(false);
                   resetFormFeedback();
                 }}
-                className="text-xs text-ink-muted hover:text-[#14213D] transition-colors cursor-pointer"
+                className="text-xs text-ink-muted hover:text-[#1E3A8A] transition-colors cursor-pointer"
               >
                 Cancel and return
               </button>
@@ -273,7 +273,7 @@ export function AuthCard({
         /* Login Form */
         <form onSubmit={handleLogin} className="space-y-4">
           <div className="space-y-1.5">
-            <label htmlFor="loginEmail" className="block text-xs font-semibold text-[#14213D]">
+            <label htmlFor="loginEmail" className="block text-xs font-semibold text-[#1E3A8A]">
               Institutional Email
             </label>
             <div className="relative">
@@ -285,13 +285,13 @@ export function AuthCard({
                 onChange={(e) => setLoginEmail(e.target.value)}
                 placeholder="e.g. name@university.edu"
                 required
-                className="w-full pl-9 pr-3 py-2.5 text-xs bg-[#FAF8F3] border border-[#E7E1D4] rounded-xl text-[#14213D] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#14213D] transition-colors"
+                className="w-full pl-9 pr-3 py-2.5 text-xs bg-[#F9FAFB] border border-[#E5E7EB] rounded-xl text-[#1E3A8A] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1E3A8A] transition-colors"
               />
             </div>
           </div>
 
           <div className="space-y-1.5">
-            <label htmlFor="loginPassword" className="block text-xs font-semibold text-[#14213D]">
+            <label htmlFor="loginPassword" className="block text-xs font-semibold text-[#1E3A8A]">
               Password
             </label>
             <div className="relative">
@@ -304,13 +304,13 @@ export function AuthCard({
                 onChange={(e) => setLoginPassword(e.target.value)}
                 placeholder="••••••••"
                 required
-                className="w-full pl-9 pr-10 py-2.5 text-xs bg-[#FAF8F3] border border-[#E7E1D4] rounded-xl text-[#14213D] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#14213D] transition-colors"
+                className="w-full pl-9 pr-10 py-2.5 text-xs bg-[#F9FAFB] border border-[#E5E7EB] rounded-xl text-[#1E3A8A] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1E3A8A] transition-colors"
               />
               <button
                 type="button"
                 onClick={() => setShowLoginPassword(!showLoginPassword)}
                 aria-label={showLoginPassword ? "Hide password" : "Show password"}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-muted hover:text-[#14213D] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#14213D] rounded-sm p-1 cursor-pointer"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-muted hover:text-[#1E3A8A] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E3A8A] rounded-sm p-1 cursor-pointer"
               >
                 {showLoginPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
@@ -320,7 +320,7 @@ export function AuthCard({
           <button
             type="submit"
             disabled={processing}
-            className="w-full py-3 px-4 mt-2 bg-[#7A1E3A] hover:bg-[#62182E] active:bg-[#4E1325] text-white text-xs font-semibold rounded-xl shadow-xs transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+            className="w-full py-3 px-4 mt-2 bg-[#1E3A8A] hover:bg-[#1E40AF] active:bg-[#1E40AF] text-white text-xs font-semibold rounded-xl shadow-xs transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
           >
             {processing ? (
               <>
@@ -340,20 +340,20 @@ export function AuthCard({
         <form onSubmit={handleRegistration} className="space-y-4">
           {/* Role Toggle */}
           <div className="space-y-1.5">
-            <span className="block text-xs font-semibold text-[#14213D]">
+            <span className="block text-xs font-semibold text-[#1E3A8A]">
               Select Your Role
             </span>
-            <div className="grid grid-cols-2 p-1 bg-[#FAF8F3] rounded-xl border border-[#E7E1D4]">
+            <div className="grid grid-cols-2 p-1 bg-[#F9FAFB] rounded-xl border border-[#E5E7EB]">
               <button
                 type="button"
                 onClick={() => {
                   setRegistrationRole("student");
                   resetFormFeedback();
                 }}
-                className={`py-2 text-xs rounded-lg transition-all cursor-pointer flex items-center justify-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#14213D] ${
+                className={`py-2 text-xs rounded-lg transition-all cursor-pointer flex items-center justify-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E3A8A] ${
                   registrationRole === "student"
-                    ? "bg-white text-[#14213D] font-bold shadow-xs border border-[#E7E1D4]"
-                    : "text-ink-muted hover:text-[#14213D] font-medium"
+                    ? "bg-white text-[#1E3A8A] font-bold shadow-xs border border-[#E5E7EB]"
+                    : "text-ink-muted hover:text-[#1E3A8A] font-medium"
                 }`}
               >
                 <GraduationCap className="w-4 h-4" />
@@ -366,10 +366,10 @@ export function AuthCard({
                   setRegistrationRole("advisor");
                   resetFormFeedback();
                 }}
-                className={`py-2 text-xs rounded-lg transition-all cursor-pointer flex items-center justify-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#14213D] ${
+                className={`py-2 text-xs rounded-lg transition-all cursor-pointer flex items-center justify-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E3A8A] ${
                   registrationRole === "advisor"
-                    ? "bg-white text-[#14213D] font-bold shadow-xs border border-[#E7E1D4]"
-                    : "text-ink-muted hover:text-[#14213D] font-medium"
+                    ? "bg-white text-[#1E3A8A] font-bold shadow-xs border border-[#E5E7EB]"
+                    : "text-ink-muted hover:text-[#1E3A8A] font-medium"
                 }`}
               >
                 <Users className="w-4 h-4" />
@@ -382,7 +382,7 @@ export function AuthCard({
           {registrationRole === "student" ? (
             <>
               <div className="space-y-1.5">
-                <label htmlFor="studentFullName" className="block text-xs font-semibold text-[#14213D]">
+                <label htmlFor="studentFullName" className="block text-xs font-semibold text-[#1E3A8A]">
                   Full Name
                 </label>
                 <div className="relative">
@@ -394,13 +394,13 @@ export function AuthCard({
                     onChange={(e) => setStudentFullName(e.target.value)}
                     placeholder="e.g. Alex Tan"
                     required
-                    className="w-full pl-9 pr-3 py-2.5 text-xs bg-[#FAF8F3] border border-[#E7E1D4] rounded-xl text-[#14213D] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#14213D] transition-colors"
+                    className="w-full pl-9 pr-3 py-2.5 text-xs bg-[#F9FAFB] border border-[#E5E7EB] rounded-xl text-[#1E3A8A] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1E3A8A] transition-colors"
                   />
                 </div>
               </div>
 
               <div className="space-y-1.5">
-                <label htmlFor="studentEmail" className="block text-xs font-semibold text-[#14213D]">
+                <label htmlFor="studentEmail" className="block text-xs font-semibold text-[#1E3A8A]">
                   Institutional Email Address
                 </label>
                 <div className="relative">
@@ -412,13 +412,13 @@ export function AuthCard({
                     onChange={(e) => setStudentEmail(e.target.value)}
                     placeholder="e.g. alex@university.edu.my"
                     required
-                    className="w-full pl-9 pr-3 py-2.5 text-xs bg-[#FAF8F3] border border-[#E7E1D4] rounded-xl text-[#14213D] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#14213D] transition-colors"
+                    className="w-full pl-9 pr-3 py-2.5 text-xs bg-[#F9FAFB] border border-[#E5E7EB] rounded-xl text-[#1E3A8A] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1E3A8A] transition-colors"
                   />
                 </div>
               </div>
 
               <div className="space-y-1.5">
-                <label htmlFor="studentPassword" className="block text-xs font-semibold text-[#14213D]">
+                <label htmlFor="studentPassword" className="block text-xs font-semibold text-[#1E3A8A]">
                   Password (min. 6 characters)
                 </label>
                 <div className="relative">
@@ -431,13 +431,13 @@ export function AuthCard({
                     onChange={(e) => setStudentPassword(e.target.value)}
                     placeholder="••••••••"
                     required
-                    className="w-full pl-9 pr-10 py-2.5 text-xs bg-[#FAF8F3] border border-[#E7E1D4] rounded-xl text-[#14213D] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#14213D] transition-colors"
+                    className="w-full pl-9 pr-10 py-2.5 text-xs bg-[#F9FAFB] border border-[#E5E7EB] rounded-xl text-[#1E3A8A] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1E3A8A] transition-colors"
                   />
                   <button
                     type="button"
                     onClick={() => setShowStudentPassword(!showStudentPassword)}
                     aria-label={showStudentPassword ? "Hide password" : "Show password"}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-muted hover:text-[#14213D] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#14213D] rounded-sm p-1 cursor-pointer"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-muted hover:text-[#1E3A8A] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E3A8A] rounded-sm p-1 cursor-pointer"
                   >
                     {showStudentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -447,7 +447,7 @@ export function AuthCard({
           ) : (
             <>
               <div className="space-y-1.5">
-                <label htmlFor="advisorFullName" className="block text-xs font-semibold text-[#14213D]">
+                <label htmlFor="advisorFullName" className="block text-xs font-semibold text-[#1E3A8A]">
                   Full Name &amp; Title
                 </label>
                 <div className="relative">
@@ -459,13 +459,13 @@ export function AuthCard({
                     onChange={(e) => setAdvisorFullName(e.target.value)}
                     placeholder="e.g. Dr. Jane Doe"
                     required
-                    className="w-full pl-9 pr-3 py-2.5 text-xs bg-[#FAF8F3] border border-[#E7E1D4] rounded-xl text-[#14213D] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#14213D] transition-colors"
+                    className="w-full pl-9 pr-3 py-2.5 text-xs bg-[#F9FAFB] border border-[#E5E7EB] rounded-xl text-[#1E3A8A] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1E3A8A] transition-colors"
                   />
                 </div>
               </div>
 
               <div className="space-y-1.5">
-                <label htmlFor="advisorEmail" className="block text-xs font-semibold text-[#14213D]">
+                <label htmlFor="advisorEmail" className="block text-xs font-semibold text-[#1E3A8A]">
                   Institutional Email Address
                 </label>
                 <div className="relative">
@@ -477,13 +477,13 @@ export function AuthCard({
                     onChange={(e) => setAdvisorEmail(e.target.value)}
                     placeholder="e.g. advisor@university.edu"
                     required
-                    className="w-full pl-9 pr-3 py-2.5 text-xs bg-[#FAF8F3] border border-[#E7E1D4] rounded-xl text-[#14213D] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#14213D] transition-colors"
+                    className="w-full pl-9 pr-3 py-2.5 text-xs bg-[#F9FAFB] border border-[#E5E7EB] rounded-xl text-[#1E3A8A] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1E3A8A] transition-colors"
                   />
                 </div>
               </div>
 
               <div className="space-y-1.5">
-                <label htmlFor="advisorPassword" className="block text-xs font-semibold text-[#14213D]">
+                <label htmlFor="advisorPassword" className="block text-xs font-semibold text-[#1E3A8A]">
                   Password (min. 6 characters)
                 </label>
                 <div className="relative">
@@ -496,13 +496,13 @@ export function AuthCard({
                     onChange={(e) => setAdvisorPassword(e.target.value)}
                     placeholder="••••••••"
                     required
-                    className="w-full pl-9 pr-10 py-2.5 text-xs bg-[#FAF8F3] border border-[#E7E1D4] rounded-xl text-[#14213D] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#14213D] transition-colors"
+                    className="w-full pl-9 pr-10 py-2.5 text-xs bg-[#F9FAFB] border border-[#E5E7EB] rounded-xl text-[#1E3A8A] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1E3A8A] transition-colors"
                   />
                   <button
                     type="button"
                     onClick={() => setShowAdvisorPassword(!showAdvisorPassword)}
                     aria-label={showAdvisorPassword ? "Hide password" : "Show password"}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-muted hover:text-[#14213D] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#14213D] rounded-sm p-1 cursor-pointer"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-muted hover:text-[#1E3A8A] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E3A8A] rounded-sm p-1 cursor-pointer"
                   >
                     {showAdvisorPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -514,7 +514,7 @@ export function AuthCard({
           <button
             type="submit"
             disabled={processing}
-            className="w-full py-3 px-4 mt-2 bg-[#7A1E3A] hover:bg-[#62182E] active:bg-[#4E1325] text-white text-xs font-semibold rounded-xl shadow-xs transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+            className="w-full py-3 px-4 mt-2 bg-[#1E3A8A] hover:bg-[#1E40AF] active:bg-[#1E40AF] text-white text-xs font-semibold rounded-xl shadow-xs transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
           >
             {processing ? (
               <>
@@ -535,14 +535,14 @@ export function AuthCard({
 
       {/* Switch Mode Prompt */}
       {!isContesting && (
-        <div className="mt-6 pt-5 border-t border-[#E7E1D4] text-center">
+        <div className="mt-6 pt-5 border-t border-[#E5E7EB] text-center">
           <button
             type="button"
             onClick={() => {
               setAuthMode(authMode === "login" ? "register" : "login");
               resetFormFeedback();
             }}
-            className="text-xs text-ink hover:text-[#7A1E3A] font-medium transition-colors cursor-pointer"
+            className="text-xs text-ink hover:text-[#1E3A8A] font-medium transition-colors cursor-pointer"
           >
             {authMode === "login"
               ? "Don't have an account yet? Create one"

@@ -24,14 +24,14 @@ export function HowItWorksSection() {
   ];
 
   return (
-    <section className="py-16 sm:py-24 border-t border-[#E7E1D4] bg-[#FAF8F3]">
+    <section className="py-16 sm:py-24 border-t border-[#E5E7EB] bg-[#F9FAFB]">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Section Heading */}
         <div className="max-w-2xl mx-auto text-center mb-12 sm:mb-16">
-          <span className="text-xs font-bold uppercase tracking-wider text-[#7A1E3A]">
+          <span className="text-xs font-bold uppercase tracking-wider text-[#1E3A8A]">
             Streamlined Advising Workflow
           </span>
-          <h2 className="font-serif text-2xl sm:text-3xl lg:text-4xl font-bold text-[#14213D] mt-2">
+          <h2 className="font-serif text-2xl sm:text-3xl lg:text-4xl font-bold text-[#1E3A8A] mt-2">
             How it works in three steps
           </h2>
           <p className="text-sm sm:text-base text-ink mt-3 leading-relaxed">
@@ -46,18 +46,18 @@ export function HowItWorksSection() {
             return (
               <div
                 key={item.step}
-                className="bg-white rounded-2xl border border-[#E7E1D4] p-6 sm:p-8 flex flex-col justify-between shadow-xs relative group hover:border-[#14213D]/40 transition-colors"
+                className="bg-white rounded-2xl border border-[#E5E7EB] p-6 sm:p-8 flex flex-col justify-between shadow-xs relative group hover:border-[#1E3A8A]/40 transition-colors"
               >
                 <div>
                   <div className="flex items-center justify-between mb-6">
-                    <span className="font-serif text-xl font-bold text-[#C9A227] tracking-tight">
+                    <span className="font-serif text-xl font-bold text-[#3B82F6] tracking-tight">
                       Step {item.step}
                     </span>
-                    <div className="w-12 h-12 rounded-xl bg-[#FAF8F3] border border-[#E7E1D4] flex items-center justify-center text-[#14213D] group-hover:bg-[#14213D] group-hover:text-white transition-colors">
+                    <div className="w-12 h-12 rounded-xl bg-[#F9FAFB] border border-[#E5E7EB] flex items-center justify-center text-[#1E3A8A] group-hover:bg-[#1E3A8A] group-hover:text-white transition-colors">
                       <Icon className="w-6 h-6" />
                     </div>
                   </div>
-                  <h3 className="font-serif text-lg font-bold text-[#14213D] mb-3 leading-snug">
+                  <h3 className="font-serif text-lg font-bold text-[#1E3A8A] mb-3 leading-snug">
                     {item.title}
                   </h3>
                   <p className="text-sm text-ink leading-relaxed">
@@ -65,9 +65,9 @@ export function HowItWorksSection() {
                   </p>
                 </div>
 
-                <div className="pt-6 mt-6 border-t border-[#E7E1D4]/60 flex items-center text-xs font-semibold text-[#14213D] gap-1.5">
+                <div className="pt-6 mt-6 border-t border-[#E5E7EB]/60 flex items-center text-xs font-semibold text-[#1E3A8A] gap-1.5">
                   <span>{idx === 0 ? "Curriculum Setup" : idx === 1 ? "Slip Verification" : "Automated Audit"}</span>
-                  <ArrowRight className="w-3.5 h-3.5 text-[#7A1E3A]" />
+                  <ArrowRight className="w-3.5 h-3.5 text-[#1E3A8A]" />
                 </div>
               </div>
             );

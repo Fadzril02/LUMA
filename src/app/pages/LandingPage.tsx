@@ -9,7 +9,6 @@ import { LandingHeader } from "./landing/LandingHeader";
 import { LandingHero } from "./landing/LandingHero";
 import { HowItWorksSection } from "./landing/HowItWorksSection";
 import { FeaturesSection } from "./landing/FeaturesSection";
-import { FoundingAdvisorCallout } from "./landing/FoundingAdvisorCallout";
 import { AuthCard } from "./landing/AuthCard";
 import { LandingFooter } from "./landing/LandingFooter";
 
@@ -286,7 +285,7 @@ export function LandingPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#FAF8F3] text-ink font-sans flex flex-col justify-between antialiased selection:bg-[#14213D] selection:text-white">
+    <div className="min-h-screen bg-[#F9FAFB] text-ink font-sans flex flex-col justify-between antialiased selection:bg-[#1E3A8A] selection:text-white">
       {/* 1. Header */}
       <LandingHeader
         onLoginClick={() => scrollToAuth("login")}
@@ -360,11 +359,6 @@ export function LandingPage() {
 
         {/* 4. For Advisors / For Students Features Section */}
         <FeaturesSection />
-
-        {/* 5. Founding Advisor Callout */}
-        <FoundingAdvisorCallout
-          onJoinAsAdvisor={() => scrollToAuth("register", "advisor")}
-        />
       </main>
 
       {/* 7. Footer */}

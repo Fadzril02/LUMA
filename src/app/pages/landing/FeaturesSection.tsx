@@ -41,14 +41,14 @@ export function FeaturesSection() {
   ];
 
   return (
-    <section className="py-16 sm:py-24 border-t border-[#E7E1D4] bg-white">
+    <section className="py-16 sm:py-24 border-t border-[#E5E7EB] bg-white">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Section Heading */}
         <div className="max-w-2xl mx-auto text-center mb-12 sm:mb-16">
-          <span className="text-xs font-bold uppercase tracking-wider text-[#7A1E3A]">
+          <span className="text-xs font-bold uppercase tracking-wider text-[#1E3A8A]">
             Built For Higher Education
           </span>
-          <h2 className="font-serif text-2xl sm:text-3xl lg:text-4xl font-bold text-[#14213D] mt-2">
+          <h2 className="font-serif text-2xl sm:text-3xl lg:text-4xl font-bold text-[#1E3A8A] mt-2">
             Engineered for advisors. Clear for students.
           </h2>
           <p className="text-sm sm:text-base text-ink mt-3 leading-relaxed">
@@ -59,14 +59,14 @@ export function FeaturesSection() {
         {/* 2-Column Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12">
           {/* For Advisors Column */}
-          <div className="rounded-2xl border border-[#E7E1D4] bg-[#FAF8F3] p-6 sm:p-8 flex flex-col justify-between shadow-xs">
+          <div className="rounded-2xl border border-[#E5E7EB] bg-[#F9FAFB] p-6 sm:p-8 flex flex-col justify-between shadow-xs">
             <div>
-              <div className="flex items-center gap-3 mb-6 pb-4 border-b border-[#E7E1D4]">
-                <div className="w-10 h-10 rounded-xl bg-[#14213D] flex items-center justify-center text-white shadow-xs">
-                  <Users className="w-5 h-5 text-[#C9A227]" />
+              <div className="flex items-center gap-3 mb-6 pb-4 border-b border-[#E5E7EB]">
+                <div className="w-10 h-10 rounded-xl bg-[#1E3A8A] flex items-center justify-center text-white shadow-xs">
+                  <Users className="w-5 h-5 text-[#3B82F6]" />
                 </div>
                 <div>
-                  <h3 className="font-serif text-xl font-bold text-[#14213D]">
+                  <h3 className="font-serif text-xl font-bold text-[#1E3A8A]">
                     For Academic Advisors
                   </h3>
                   <p className="text-xs text-ink font-medium">
@@ -80,7 +80,7 @@ export function FeaturesSection() {
                   <li key={i} className="flex items-start gap-3">
                     <CheckCircle2 className="w-5 h-5 text-[#059669] shrink-0 mt-0.5" />
                     <div>
-                      <h4 className="text-sm font-semibold text-[#14213D]">
+                      <h4 className="text-sm font-semibold text-[#1E3A8A]">
                         {feat.title}
                       </h4>
                       <p className="text-xs text-ink mt-0.5 leading-relaxed">
@@ -92,20 +92,20 @@ export function FeaturesSection() {
               </ul>
             </div>
 
-            <div className="mt-8 pt-4 border-t border-[#E7E1D4] text-xs font-medium text-ink">
+            <div className="mt-8 pt-4 border-t border-[#E5E7EB] text-xs font-medium text-ink">
               Includes faculty cohort invite codes and single-advisor advisee rosters.
             </div>
           </div>
 
           {/* For Students Column */}
-          <div className="rounded-2xl border border-[#E7E1D4] bg-[#FAF8F3] p-6 sm:p-8 flex flex-col justify-between shadow-xs">
+          <div className="rounded-2xl border border-[#E5E7EB] bg-[#F9FAFB] p-6 sm:p-8 flex flex-col justify-between shadow-xs">
             <div>
-              <div className="flex items-center gap-3 mb-6 pb-4 border-b border-[#E7E1D4]">
-                <div className="w-10 h-10 rounded-xl bg-[#7A1E3A] flex items-center justify-center text-white shadow-xs">
+              <div className="flex items-center gap-3 mb-6 pb-4 border-b border-[#E5E7EB]">
+                <div className="w-10 h-10 rounded-xl bg-[#1E3A8A] flex items-center justify-center text-white shadow-xs">
                   <GraduationCap className="w-5 h-5 text-white" />
                 </div>
                 <div>
-                  <h3 className="font-serif text-xl font-bold text-[#14213D]">
+                  <h3 className="font-serif text-xl font-bold text-[#1E3A8A]">
                     For University Students
                   </h3>
                   <p className="text-xs text-ink font-medium">
@@ -119,7 +119,7 @@ export function FeaturesSection() {
                   <li key={i} className="flex items-start gap-3">
                     <CheckCircle2 className="w-5 h-5 text-[#059669] shrink-0 mt-0.5" />
                     <div>
-                      <h4 className="text-sm font-semibold text-[#14213D]">
+                      <h4 className="text-sm font-semibold text-[#1E3A8A]">
                         {feat.title}
                       </h4>
                       <p className="text-xs text-ink mt-0.5 leading-relaxed">
@@ -131,7 +131,7 @@ export function FeaturesSection() {
               </ul>
             </div>
 
-            <div className="mt-8 pt-4 border-t border-[#E7E1D4] text-xs font-medium text-ink">
+            <div className="mt-8 pt-4 border-t border-[#E5E7EB] text-xs font-medium text-ink">
               Accessible anytime via institutional email credentials.
             </div>
           </div>
