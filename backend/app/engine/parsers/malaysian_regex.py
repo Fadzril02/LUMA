@@ -7,10 +7,10 @@ from typing import List, Dict, Any, Tuple, Optional
 
 try:
     from app.schemas.audit import ParsedLineItem
-    from app.engine.grading import GradingScale
+    from app.engine.grading import GradingScale, normalize_semester
 except ImportError:
     from backend.app.schemas.audit import ParsedLineItem
-    from backend.app.engine.grading import GradingScale
+    from backend.app.engine.grading import GradingScale, normalize_semester
 
 
 # Course Regex Pattern (single-line: allows 2 to 6 letters, optional spaces/hyphens, 3 to 5 digits, optional trailing letter)
@@ -118,19 +118,23 @@ class MalaysianTranscriptParser:
             metadata["student_name"] = clean_name.strip()
 
         # 4. Extract Global/Header Semesters
-        current_semester = "Semester 1"
+        current_semester = "SEM 1 2024/2025"
         for i, line in enumerate(cleaned_lines):
             sem_m = SEMESTER_SPLIT_SEM.search(line)
             if sem_m and i + 1 < len(cleaned_lines):
                 ses_m = SEMESTER_SPLIT_SES.search(cleaned_lines[i + 1])
                 if ses_m:
-                    current_semester = f"Sem {sem_m.group(1).strip()} {ses_m.group(1).replace(' ', '')}"
-                    metadata["semesters_found"].append(current_semester)
+                    norm = normalize_semester(f"Sem {sem_m.group(1).strip()} {ses_m.group(1).replace(' ', '')}")
+                    current_semester = norm
+                    if norm not in metadata["semesters_found"]:
+                        metadata["semesters_found"].append(norm)
             elif sem_m and not (i + 1 < len(cleaned_lines) and SEMESTER_SPLIT_SES.search(cleaned_lines[i + 1])):
                 inline_m = SEMESTER_PATTERN.search(line)
                 if inline_m:
-                    current_semester = f"Sem {inline_m.group(1).strip()} {inline_m.group(2).replace(' ', '')}"
-                    metadata["semesters_found"].append(current_semester)
+                    norm = normalize_semester(inline_m.group(0))
+                    current_semester = norm
+                    if norm not in metadata["semesters_found"]:
+                        metadata["semesters_found"].append(norm)
 
         # 5. Course Extraction Loop (Single-Line + Tabular Multi-Line Block Parsing)
         i = 0
@@ -143,11 +147,10 @@ class MalaysianTranscriptParser:
             # Check for inline semester header updates
             sem_inline = SEMESTER_PATTERN.search(line_str)
             if sem_inline:
-                s_num = sem_inline.group(1).strip()
-                s_ses = sem_inline.group(2).replace(" ", "")
-                current_semester = f"Sem {s_num} {s_ses}"
-                if current_semester not in metadata["semesters_found"]:
-                    metadata["semesters_found"].append(current_semester)
+                norm = normalize_semester(sem_inline.group(0))
+                current_semester = norm
+                if norm not in metadata["semesters_found"]:
+                    metadata["semesters_found"].append(norm)
                 i += 1
                 continue
 

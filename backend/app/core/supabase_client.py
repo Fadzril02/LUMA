@@ -7,9 +7,11 @@ from supabase import create_client, Client
 try:
     from app.core.config import settings
     from app.schemas.audit import CourseAuditResult, AuditSummary
+    from app.engine.grading import normalize_semester
 except ImportError:
     from backend.app.core.config import settings
     from backend.app.schemas.audit import CourseAuditResult, AuditSummary
+    from backend.app.engine.grading import normalize_semester
 
 
 def get_supabase_client() -> Optional[Client]:
@@ -321,41 +323,35 @@ class SupabaseService:
         self._ensure_ready()
 
         try:
-            # 1. TRUE UPSERT: No delete commands. Use upsert on (tenant_id, matric_no, course_code).
-            #
-            #    BEFORE (bug): DELETE semester rows, then INSERT — wiped history if any
-            #                  conflict happened mid-batch.
-            #
-            #    AFTER (fix): UPSERT on (tenant_id, matric_no, course_code) — idempotently
-            #                 updates existing rows and inserts new ones. ALL other semesters
-            #                 for this student/tenant are untouched.
-            #
-            #    MULTI-TENANT: dynamic tenant_id routed from request context.
-            #                  The unique constraint in Postgres must be:
-            #                  UNIQUE (tenant_id, matric_no, course_code)
-            #
+            # 1. Dedupe the batch on (course_code, semester), keeping the new/latest record
+            deduped_map: Dict[tuple, Any] = {}
+            for r in records:
+                c_code = r.course_code.replace(" ", "").upper()
+                c_sem = normalize_semester(r.semester)
+                deduped_map[(c_code, c_sem)] = (r, c_code, c_sem)
+
             records_to_upsert = [
                 {
                     "tenant_id": tenant_id,
                     "matric_no": target_matric,
-                    "course_code": r.course_code,
+                    "course_code": c_code,
                     "course_name": r.course_name,
                     "credits": r.credits,
                     "grade": r.grade,
                     "grade_point": r.grade_point,
-                    "semester": r.semester,
+                    "semester": c_sem,
                     "status": r.status,
-                    "prerequisite_met": r.prerequisite_met,
-                    "missing_prerequisites": r.missing_prerequisites,
-                    "is_ai_parsed": r.is_ai_parsed,
-                    "raw_extracted_text": r.raw_extracted_text
+                    "prerequisite_met": getattr(r, "prerequisite_met", True),
+                    "missing_prerequisites": getattr(r, "missing_prerequisites", []),
+                    "is_ai_parsed": getattr(r, "is_ai_parsed", False),
+                    "raw_extracted_text": getattr(r, "raw_extracted_text", "")
                 }
-                for r in records
+                for r, c_code, c_sem in deduped_map.values()
             ]
             if records_to_upsert:
                 self.client.table("academic_records").upsert(
                     records_to_upsert,
-                    on_conflict="tenant_id,matric_no,course_code"
+                    on_conflict="tenant_id,matric_no,course_code,semester"
                 ).execute()
 
             # 3. Update student CGPA & Credits

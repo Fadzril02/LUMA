@@ -11,7 +11,9 @@ try:
     )
     from app.engine.grading import (
         GradingScale,
-        compute_cgpa as grading_compute_cgpa
+        compute_cgpa as grading_compute_cgpa,
+        compute_completed_credits,
+        select_attempts_by_repeat_policy
     )
 except ImportError:
     from backend.app.schemas.audit import (
@@ -21,7 +23,9 @@ except ImportError:
     )
     from backend.app.engine.grading import (
         GradingScale,
-        compute_cgpa as grading_compute_cgpa
+        compute_cgpa as grading_compute_cgpa,
+        compute_completed_credits,
+        select_attempts_by_repeat_policy
     )
 
 
@@ -100,37 +104,33 @@ class PrerequisiteGraphResolver:
         total_required_credits: int = 0,
         min_cgpa_threshold: float = 2.00,
         block_exempted_credits: int = 0,
-        repeat_policy: str = "latest"
-    ) -> tuple[List[CourseAuditResult], AuditSummary]:
+        repeat_policy: str = "latest",
+        return_all_attempts: bool = False
+    ) -> Any:
         """
         Runs pure Python graph traversal & set validation on parsed courses against course catalog.
         Categorizes each course into Traffic Light Matrix (GREEN, YELLOW, RED) and computes 5-domain radar scores.
 
         scale: Required tenant GradingScale instance.
-        block_exempted_credits: Pre-approved credits for Diploma/Transfer students that are
-        added to total_credits_earned AFTER the record loop. They do NOT affect CGPA math
-        (no grade points, not included in gpa_credits denominator).
+        repeat_policy: 'latest' vs 'best' for selecting active attempt per course.
         """
         if scale is None:
             raise ValueError("scale (GradingScale) is a required parameter for audit_student_records.")
 
-        # Map of passed/exempted courses: code -> ParsedLineItem
+        # Map of passed/exempted courses: use attempt chosen by repeat_policy
         passed_courses: Dict[str, ParsedLineItem] = {}
-        for rec in records:
+        chosen_input_records = select_attempts_by_repeat_policy(records, scale, repeat_policy)
+        for rec in chosen_input_records:
             clean_code = rec.course_code.replace(" ", "").upper()
             if rec.status in ["Passed", "Exempted"]:
                 passed_courses[clean_code] = rec
 
-        audited_results: List[CourseAuditResult] = []
-        total_credits_earned = 0
-        
-        failed_count = 0
-        in_progress_count = 0
-        unmet_prereqs_count = 0
-        ai_used = any(r.is_ai_parsed for r in records)
+        earned_credits_for_gates = compute_completed_credits(
+            chosen_input_records, scale, block_exempted_credits=block_exempted_credits
+        )
 
-        # Domain accumulator for Radar Chart: domain -> list of grade points
-        domain_grades: Dict[str, List[float]] = {d: [] for d in DEFAULT_DOMAINS}
+        audited_results: List[CourseAuditResult] = []
+        ai_used = any(r.is_ai_parsed for r in records)
 
         for rec in records:
             code = rec.course_code.replace(" ", "").upper()
@@ -194,7 +194,7 @@ class PrerequisiteGraphResolver:
                     missing.extend(or_reasons)
 
             # 3. Minimum credit hours threshold gate
-            if min_credits_required > 0 and total_credits_earned < min_credits_required:
+            if min_credits_required > 0 and earned_credits_for_gates < min_credits_required:
                 missing.append(f"Requires {min_credits_required} Credits Earned")
 
             prerequisite_met = len(missing) == 0
@@ -202,22 +202,12 @@ class PrerequisiteGraphResolver:
             # Traffic Light Matrix Assignment
             if rec.status == "Failed":
                 traffic_light = "RED"
-                failed_count += 1
             elif not prerequisite_met:
                 traffic_light = "RED"
-                unmet_prereqs_count += 1
             elif rec.status == "In-Progress":
                 traffic_light = "YELLOW"
-                in_progress_count += 1
             else:
                 traffic_light = "GREEN"
-
-            # Check scale rules for completion & CGPA
-            if rec.status in ["Passed", "Exempted"]:
-                total_credits_earned += rec.credits
-
-            if scale.counts_in_cgpa(rec.grade, rec.course_code) and rec.status in ["Passed", "Failed"]:
-                domain_grades[domain].append(rec.grade_point)
 
             audited_results.append(CourseAuditResult(
                 course_code=rec.course_code,
@@ -236,13 +226,31 @@ class PrerequisiteGraphResolver:
                 raw_extracted_text=rec.raw_extracted_text
             ))
 
-        # Calculate Final CGPA via grading engine supporting repeat_policy ('latest' vs 'best')
-        cgpa = grading_compute_cgpa(records, scale, repeat_policy=repeat_policy)
+        # Filter display records: per course, show attempt chosen by repeat_policy
+        display_results = select_attempts_by_repeat_policy(audited_results, scale, repeat_policy)
 
-        # Apply block exempted credits AFTER CGPA calculation.
-        # Formula: Final Total Credits = (Passed/Exempted credits from records) + block_exempted_credits
-        if block_exempted_credits > 0:
-            total_credits_earned += block_exempted_credits
+        # Domain accumulator for Radar Chart: computed strictly from chosen display attempts
+        domain_grades: Dict[str, List[float]] = {d: [] for d in DEFAULT_DOMAINS}
+        failed_count = 0
+        in_progress_count = 0
+        unmet_prereqs_count = 0
+        passed_count = 0
+
+        for r in display_results:
+            if scale.counts_in_cgpa(r.grade, r.course_code) and r.status in ["Passed", "Failed"]:
+                domain_grades[r.domain].append(r.grade_point)
+            if r.status == "Failed":
+                failed_count += 1
+            elif not r.prerequisite_met:
+                unmet_prereqs_count += 1
+            elif r.status == "In-Progress":
+                in_progress_count += 1
+            elif r.status in ["Passed", "Exempted"]:
+                passed_count += 1
+
+        # Calculate Final CGPA & Completed Credits via grading engine
+        cgpa = grading_compute_cgpa(records, scale, repeat_policy=repeat_policy)
+        total_credits_earned = compute_completed_credits(records, scale, block_exempted_credits=block_exempted_credits)
 
         # Calculate 5-Domain Radar Stats (0.0 - 4.0)
         radar_stats: Dict[str, float] = {}
@@ -266,7 +274,7 @@ class PrerequisiteGraphResolver:
             total_credits_earned=total_credits_earned,
             cgpa=cgpa,
             overall_traffic_light=overall_traffic_light,
-            passed_courses_count=len(passed_courses),
+            passed_courses_count=passed_count,
             failed_courses_count=failed_count,
             in_progress_courses_count=in_progress_count,
             unmet_prerequisites_count=unmet_prereqs_count,
@@ -275,4 +283,6 @@ class PrerequisiteGraphResolver:
             radar_stats=radar_stats
         )
 
-        return audited_results, summary
+        if return_all_attempts:
+            return display_results, summary, audited_results
+        return display_results, summary

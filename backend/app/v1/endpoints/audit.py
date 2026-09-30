@@ -27,7 +27,7 @@ try:
     )
     from app.engine.extractor import PDFExtractor
     from app.engine.parsers.malaysian_regex import MalaysianTranscriptParser
-    from app.engine.grading import load_scale, GradingScale
+    from app.engine.grading import load_scale, GradingScale, normalize_semester
     from app.engine.graph_resolver import PrerequisiteGraphResolver
     from app.engine.llm_fallback import MicroLLMFallback
     from app.core.supabase_client import SupabaseService
@@ -52,7 +52,7 @@ except ImportError:
     )
     from backend.app.engine.extractor import PDFExtractor
     from backend.app.engine.parsers.malaysian_regex import MalaysianTranscriptParser
-    from backend.app.engine.grading import load_scale, GradingScale
+    from backend.app.engine.grading import load_scale, GradingScale, normalize_semester
     from backend.app.engine.graph_resolver import PrerequisiteGraphResolver
     from backend.app.engine.llm_fallback import MicroLLMFallback
     from backend.app.core.supabase_client import SupabaseService
@@ -66,7 +66,6 @@ def fetch_and_merge_historical_records(matric_no: str, new_records: List[ParsedL
     if not supabase_svc.client or not matric_no:
         return new_records
     try:
-        new_semesters = {r.semester for r in new_records if r.semester}
         # MULTI-TENANT: scope fetch to (tenant_id, matric_no) so we never
         # cross tenant boundaries when pulling the cumulative history.
         res = (
@@ -78,25 +77,38 @@ def fetch_and_merge_historical_records(matric_no: str, new_records: List[ParsedL
             .execute()
         )
         existing = res.data or []
-        
-        merged = []
-        for r in existing:
-            if r.get("semester") not in new_semesters:
-                merged.append(ParsedLineItem(
-                    course_code=r.get("course_code"),
-                    course_name=r.get("course_name") or r.get("course_code"),
-                    credits=r.get("credits") or 3,
-                    grade=r.get("grade"),
-                    grade_point=float(r.get("grade_point") or 0.0),
-                    semester=r.get("semester"),
-                    status=r.get("status"),
-                    is_ai_parsed=r.get("is_ai_parsed", False),
-                    raw_extracted_text=r.get("raw_extracted_text", "")
-                ))
-        return merged + new_records
     except Exception as e:
         print(f"[Merge Historical] Error fetching historical records: {e}")
-        return new_records
+        existing = []
+
+    # Map of incoming records: (clean_course_code, normalized_semester)
+    new_keys = set()
+    for nr in new_records:
+        c_code = nr.course_code.replace(" ", "").upper()
+        c_sem = normalize_semester(nr.semester) if nr.semester else ""
+        if c_code and c_sem:
+            new_keys.add((c_code, c_sem))
+
+    merged = []
+    for r in existing:
+        ex_code = (r.get("course_code") or "").replace(" ", "").upper()
+        raw_sem = r.get("semester")
+        ex_sem = normalize_semester(raw_sem) if raw_sem else ""
+        # Keep existing row unless an incoming new record matches on (course_code, normalised semester)
+        if (ex_code, ex_sem) not in new_keys:
+            merged.append(ParsedLineItem(
+                course_code=r.get("course_code"),
+                course_name=r.get("course_name") or r.get("course_code"),
+                credits=r.get("credits") or 3,
+                grade=r.get("grade"),
+                grade_point=float(r.get("grade_point") or 0.0),
+                semester=ex_sem or raw_sem,
+                status=r.get("status"),
+                warning=r.get("warning"),
+                is_ai_parsed=r.get("is_ai_parsed", False),
+                raw_extracted_text=r.get("raw_extracted_text", "")
+            ))
+    return merged + new_records
 
 
 def _extract_advisor_id(jwt_payload: dict) -> str:
@@ -292,12 +304,18 @@ async def extract_transcript_from_storage(
             detail="Transcript PDF is empty or contains non-extractable scanned raster images."
         )
 
-    # 2b. Load tenant grading scale
+    # 2b. Load tenant grading scale & parse
     tenant_id = _extract_tenant_id(jwt_payload)
-    scale = load_scale(tenant_id, client=supabase_svc.client)
+    try:
+        scale = load_scale(tenant_id, client=supabase_svc.client)
 
-    # 3. Regex Parsing
-    metadata, parsed_courses, unparsed_lines = MalaysianTranscriptParser.parse_transcript_lines(raw_lines, scale=scale)
+        # 3. Regex Parsing
+        metadata, parsed_courses, unparsed_lines = MalaysianTranscriptParser.parse_transcript_lines(raw_lines, scale=scale)
+    except ValueError as ve:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(ve)
+        )
 
     # 4. Micro-LLM Fallback for ambiguous lines
     if unparsed_lines:
@@ -382,8 +400,12 @@ async def finalize_approval(
             detail="No course records provided for approval."
         )
 
-    # 1. Transform Staged Courses into ParsedLineItem objects using Tenant Grading Scale
-    scale = load_scale(tenant_id, client=supabase_svc.client)
+    matric_number = (request.matric_number or "").strip()
+    if not matric_number:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Student matric_number is required and cannot be empty."
+        )
 
     repeat_policy = "latest"
     if supabase_svc.client:
@@ -394,82 +416,87 @@ async def finalize_approval(
         except Exception:
             pass
 
-    parsed_items: List[ParsedLineItem] = []
-    current_semester = f"Sem {request.semester} {request.academic_session}"
+    # 1. Transform Staged Courses into ParsedLineItem objects using Tenant Grading Scale
+    try:
+        scale = load_scale(tenant_id, client=supabase_svc.client)
 
-    for c in request.courses:
-        code = c.course_code.replace(" ", "").upper()
-        grade = c.grade.strip().upper()
-        credits_val = c.credits or c.credit_hour or 3
-        gp = scale.grade_points(grade, code)
-        is_p = scale.is_pass(grade, code)
-        in_cgpa = scale.counts_in_cgpa(grade, code)
-        as_comp = scale.counts_as_completed(grade, code)
+        raw_current_sem = f"Sem {request.semester} {request.academic_session}".strip()
+        current_semester = normalize_semester(raw_current_sem)
 
-        # Status determination via grading scale rules
-        if is_p and not in_cgpa and as_comp:
-            item_status = "Exempted"
-        elif is_p:
-            item_status = "Passed"
-        elif grade in {"TD", "TS"}:
-            item_status = "In-Progress"
-        else:
-            item_status = "Failed"
+        parsed_items: List[ParsedLineItem] = []
+        for c in request.courses:
+            code = c.course_code.replace(" ", "").upper()
+            grade = c.grade.strip().upper()
+            credits_val = c.credits or c.credit_hour or 3
+            gp = scale.grade_points(grade, code)
+            is_p = scale.is_pass(grade, code)
+            in_cgpa = scale.counts_in_cgpa(grade, code)
+            as_comp = scale.counts_as_completed(grade, code)
 
-        parsed_items.append(ParsedLineItem(
-            course_code=code,
-            course_name=c.course_name or code,
-            credits=credits_val,
-            grade=grade,
-            grade_point=gp,
-            semester=c.session_semester or current_semester,
-            status=item_status,
-            warning=getattr(c, "warning", None),
-            is_ai_parsed=False,
-            raw_extracted_text=f"[ADVISOR APPROVED] {code} {grade} ({credits_val} cr)"
-        ))
+            # Status determination via grading scale rules
+            if is_p and not in_cgpa and as_comp:
+                item_status = "Exempted"
+            elif is_p:
+                item_status = "Passed"
+            elif grade in {"TD", "TS"}:
+                item_status = "In-Progress"
+            else:
+                item_status = "Failed"
 
-    matric_number = (request.matric_number or "").strip()
-    if not matric_number:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Student matric_number is required and cannot be empty."
+            # Use c.session_semester if specified, else current_semester; normalize it
+            raw_item_sem = c.session_semester.strip() if c.session_semester and c.session_semester.strip() else current_semester
+            norm_item_sem = normalize_semester(raw_item_sem)
+
+            parsed_items.append(ParsedLineItem(
+                course_code=code,
+                course_name=c.course_name or code,
+                credits=credits_val,
+                grade=grade,
+                grade_point=gp,
+                semester=norm_item_sem,
+                status=item_status,
+                warning=getattr(c, "warning", None),
+                is_ai_parsed=False,
+                raw_extracted_text=f"[ADVISOR APPROVED] {code} {grade} ({credits_val} cr)"
+            ))
+
+        # 2. Fetch Course Catalog & Prerequisite Graph for University
+        catalog = supabase_svc.get_university_course_catalog(request.university_id)
+
+        # 3. Fetch student's degree_template via cohort_id & extract total_credits_required
+        total_required_credits = supabase_svc.get_student_required_credits(
+            matric_no=matric_number,
+            cohort_id=getattr(request, "cohort_id", None),
+            program_code=request.program_code,
+            curriculum_year=request.curriculum_year
         )
 
-    # 2. Fetch Course Catalog & Prerequisite Graph for University
-    catalog = supabase_svc.get_university_course_catalog(request.university_id)
+        # 3a. Fetch block_exempted_credits and graduation_credit_requirement from students table.
+        block_exempted_credits, student_grad_req = supabase_svc.get_student_block_exempted_credits(
+            matric_no=matric_number
+        )
+        if student_grad_req is not None:
+            total_required_credits = student_grad_req
 
-    # 3. Fetch student's degree_template via cohort_id & extract total_credits_required
-    total_required_credits = supabase_svc.get_student_required_credits(
-        matric_no=matric_number,
-        cohort_id=getattr(request, "cohort_id", None),
-        program_code=request.program_code,
-        curriculum_year=request.curriculum_year
-    )
+        # 3b. SECURE MULTI-TENANCY (Prevent IDOR):
+        # Historical records scoped to verified tenant_id derived server-side
+        parsed_items = fetch_and_merge_historical_records(matric_number, parsed_items, tenant_id=tenant_id)
 
-    # 3a. Fetch block_exempted_credits and graduation_credit_requirement from students table.
-    #     Diploma/Transfer students enter with pre-approved credits that must be added to
-    #     their earned total. graduation_credit_requirement, if set, overrides the template
-    #     default so the progress bar reflects the student's actual adjusted target.
-    block_exempted_credits, student_grad_req = supabase_svc.get_student_block_exempted_credits(
-        matric_no=matric_number
-    )
-    if student_grad_req is not None:
-        total_required_credits = student_grad_req
-
-    # 3b. SECURE MULTI-TENANCY (Prevent IDOR):
-    # Historical records scoped to verified tenant_id derived server-side
-    parsed_items = fetch_and_merge_historical_records(matric_number, parsed_items, tenant_id=tenant_id)
-
-    # 4. Run Pure Python Graph Prerequisite Audit (with min_grade & credit gates)
-    audited_records, summary = PrerequisiteGraphResolver.audit_student_records(
-        records=parsed_items,
-        course_catalog=catalog,
-        total_required_credits=total_required_credits,
-        block_exempted_credits=block_exempted_credits,
-        scale=scale,
-        repeat_policy=repeat_policy
-    )
+        # 4. Run Pure Python Graph Prerequisite Audit (with min_grade & credit gates)
+        display_results, summary, all_audited_records = PrerequisiteGraphResolver.audit_student_records(
+            records=parsed_items,
+            course_catalog=catalog,
+            total_required_credits=total_required_credits,
+            block_exempted_credits=block_exempted_credits,
+            scale=scale,
+            repeat_policy=repeat_policy,
+            return_all_attempts=True
+        )
+    except ValueError as ve:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(ve)
+        )
 
     # 4. Upsert Student Record & Persist Audits to Supabase
     student = supabase_svc.get_or_create_student(
@@ -481,14 +508,20 @@ async def finalize_approval(
         program_code=request.program_code
     )
 
-    audit_id = supabase_svc.persist_audit_results(
-        matric_no=matric_number,
-        advisor_id=advisor_id,
-        records=audited_records,
-        summary=summary,
-        storage_pdf_path=f"document:{request.document_id}",
-        tenant_id=tenant_id
-    )
+    try:
+        audit_id = supabase_svc.persist_audit_results(
+            matric_no=matric_number,
+            advisor_id=advisor_id,
+            records=all_audited_records,
+            summary=summary,
+            storage_pdf_path=f"document:{request.document_id}",
+            tenant_id=tenant_id
+        )
+    except ValueError as ve:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(ve)
+        )
 
     # 5. Update uploaded_documents status to 'Approved'
     try:
@@ -544,9 +577,9 @@ async def finalize_approval(
         matric_number=request.matric_number,
         student_name=request.student_name or f"Student ({request.matric_number})",
         summary=summary,
-        records_saved_count=len(audited_records),
+        records_saved_count=len(all_audited_records),
         processing_status="Approved",
-        records=audited_records,
+        records=display_results,
         storage_purged=purge_successful
     )
 
@@ -597,8 +630,6 @@ async def process_storage_transcript(
         )
 
     # 2b. Load tenant grading scale & repeat policy
-    scale = load_scale(tenant_id, client=supabase_svc.client)
-
     repeat_policy = "latest"
     if supabase_svc.client:
         try:
@@ -608,55 +639,64 @@ async def process_storage_transcript(
         except Exception:
             pass
 
-    # 3. Regex Parsing (Zero AI Cost)
-    metadata, parsed_courses, unparsed_lines = MalaysianTranscriptParser.parse_transcript_lines(raw_lines, scale=scale)
+    try:
+        scale = load_scale(tenant_id, client=supabase_svc.client)
 
-    matric_no = request.matric_number or metadata.get("matric_number")
-    if not matric_no or matric_no == "UNKNOWN_MATRIC":
+        # 3. Regex Parsing (Zero AI Cost)
+        metadata, parsed_courses, unparsed_lines = MalaysianTranscriptParser.parse_transcript_lines(raw_lines, scale=scale)
+
+        matric_no = request.matric_number or metadata.get("matric_number")
+        if not matric_no or matric_no == "UNKNOWN_MATRIC":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Student matric_number could not be determined from transcript and was not provided in request."
+            )
+        matric_no = matric_no.strip()
+        student_name = metadata.get("student_name") or f"Student ({matric_no})"
+
+        # 4. Micro-LLM Fallback (Strictly for ambiguous/transfer lines)
+        if unparsed_lines:
+            ai_parsed = llm_fallback.parse_ambiguous_lines(unparsed_lines)
+            if ai_parsed:
+                parsed_courses.extend(ai_parsed)
+
+        # 5. Fetch Course Catalog & Prerequisite Graph for University
+        catalog = supabase_svc.get_university_course_catalog(request.university_id)
+
+        # 6. Fetch student's degree_template via cohort_id & extract total_credits_required
+        total_required_credits = supabase_svc.get_student_required_credits(
+            matric_no=matric_no,
+            cohort_id=getattr(request, "cohort_id", None),
+            program_code=request.program_code,
+            curriculum_year=request.curriculum_year
+        )
+
+        # 6a. Fetch block_exempted_credits for Diploma/Transfer students
+        block_exempted_credits, student_grad_req = supabase_svc.get_student_block_exempted_credits(
+            matric_no=matric_no
+        )
+        if student_grad_req is not None:
+            total_required_credits = student_grad_req
+
+        # 6b. SECURE MULTI-TENANCY (Prevent IDOR):
+        # Historical records scoped to verified tenant_id derived server-side
+        parsed_courses = fetch_and_merge_historical_records(matric_no, parsed_courses, tenant_id=tenant_id)
+
+        # 7. Run Pure Python Graph Prerequisite Audit
+        display_results, summary, all_audited_records = PrerequisiteGraphResolver.audit_student_records(
+            records=parsed_courses,
+            course_catalog=catalog,
+            total_required_credits=total_required_credits,
+            block_exempted_credits=block_exempted_credits,
+            scale=scale,
+            repeat_policy=repeat_policy,
+            return_all_attempts=True
+        )
+    except ValueError as ve:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Student matric_number could not be determined from transcript and was not provided in request."
+            detail=str(ve)
         )
-    matric_no = matric_no.strip()
-    student_name = metadata.get("student_name") or f"Student ({matric_no})"
-
-    # 4. Micro-LLM Fallback (Strictly for ambiguous/transfer lines)
-    if unparsed_lines:
-        ai_parsed = llm_fallback.parse_ambiguous_lines(unparsed_lines)
-        if ai_parsed:
-            parsed_courses.extend(ai_parsed)
-
-    # 5. Fetch Course Catalog & Prerequisite Graph for University
-    catalog = supabase_svc.get_university_course_catalog(request.university_id)
-
-    # 6. Fetch student's degree_template via cohort_id & extract total_credits_required
-    total_required_credits = supabase_svc.get_student_required_credits(
-        matric_no=matric_no,
-        cohort_id=getattr(request, "cohort_id", None),
-        program_code=request.program_code,
-        curriculum_year=request.curriculum_year
-    )
-
-    # 6a. Fetch block_exempted_credits for Diploma/Transfer students
-    block_exempted_credits, student_grad_req = supabase_svc.get_student_block_exempted_credits(
-        matric_no=matric_no
-    )
-    if student_grad_req is not None:
-        total_required_credits = student_grad_req
-
-    # 6b. SECURE MULTI-TENANCY (Prevent IDOR):
-    # Historical records scoped to verified tenant_id derived server-side
-    parsed_courses = fetch_and_merge_historical_records(matric_no, parsed_courses, tenant_id=tenant_id)
-
-    # 7. Run Pure Python Graph Prerequisite Audit
-    audited_records, summary = PrerequisiteGraphResolver.audit_student_records(
-        records=parsed_courses,
-        course_catalog=catalog,
-        total_required_credits=total_required_credits,
-        block_exempted_credits=block_exempted_credits,
-        scale=scale,
-        repeat_policy=repeat_policy
-    )
 
     # 7. Upsert Student Record & Persist Audits to Supabase
     student = supabase_svc.get_or_create_student(
@@ -668,14 +708,20 @@ async def process_storage_transcript(
         program_code=request.program_code
     )
 
-    audit_id = supabase_svc.persist_audit_results(
-        matric_no=matric_no,
-        advisor_id=advisor_id,
-        records=audited_records,
-        summary=summary,
-        storage_pdf_path=request.storage_path,
-        tenant_id=tenant_id
-    )
+    try:
+        audit_id = supabase_svc.persist_audit_results(
+            matric_no=matric_no,
+            advisor_id=advisor_id,
+            records=all_audited_records,
+            summary=summary,
+            storage_pdf_path=request.storage_path,
+            tenant_id=tenant_id
+        )
+    except ValueError as ve:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(ve)
+        )
 
     return DegreeAuditResponse(
         audit_id=audit_id,
@@ -685,7 +731,7 @@ async def process_storage_transcript(
         university_id=request.university_id,
         advisor_id=request.advisor_id,
         summary=summary,
-        records=audited_records,
+        records=display_results,
         unparsed_lines=unparsed_lines
     )
 

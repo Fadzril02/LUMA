@@ -290,3 +290,132 @@ def compute_completed_credits(
 
     course_credits = sum(completed_courses.values())
     return course_credits + max(0, block_exempted_credits)
+
+
+# ---------------------------------------------------------------------------
+# Semester Normalisation & Attempt Selection
+# ---------------------------------------------------------------------------
+def normalize_semester(label: Union[str, Any]) -> str:
+    """
+    Normalizes varied semester and session string representations into the canonical format:
+    'SEM <number> <YYYY>/<YYYY>' (e.g. 'SEM 1 2024/2025').
+
+    Examples:
+        'SEM 1 2024/25' -> 'SEM 1 2024/2025'
+        'Sem 1 2024/2025' -> 'SEM 1 2024/2025'
+        'Semester 1 2024/2025' -> 'SEM 1 2024/2025'
+        '2024/2025-1' -> 'SEM 1 2024/2025'
+        'SEMESTER 1 SESSION 2023/2024' -> 'SEM 1 2023/2024'
+
+    Raises ValueError with the raw label if label cannot be normalized (fail loud).
+    """
+    if not label or not isinstance(label, str) or not label.strip():
+        raise ValueError(f"Cannot normalise empty or missing semester label: '{label}'")
+
+    raw = label.strip()
+
+    # 1. Academic Year pattern: YYYY/YYYY or YYYY/YY or YYYY-YYYY or YYYY-YY
+    year_match = re.search(r'(\d{4})\s*[\/\-]\s*(\d{2,4})', raw)
+    y1: Optional[int] = None
+    y2: Optional[int] = None
+
+    if year_match:
+        y1 = int(year_match.group(1))
+        y2_str = year_match.group(2)
+        if len(y2_str) == 2:
+            y2 = (y1 // 100) * 100 + int(y2_str)
+        else:
+            y2 = int(y2_str)
+    else:
+        # Single 4-digit year fallback (e.g., 'FALL TERM 2024')
+        single_year_match = re.search(r'\b(20\d{2}|19\d{2})\b', raw)
+        if single_year_match:
+            y1 = int(single_year_match.group(1))
+            y2 = y1 + 1
+
+    # 2. Semester / Term number
+    sem_num: Optional[int] = None
+
+    # Check for keyword-prefixed semester number (e.g. 'SEM 1', 'Semester 2', 'Term 1')
+    kw_sem = re.search(r'(?:SEM(?:ESTER)?|TERM|TRIMESTER|QUARTER)\s*[:.]?\s*([1-4])\b', raw, re.IGNORECASE)
+    if kw_sem:
+        sem_num = int(kw_sem.group(1))
+    else:
+        # Check for trailing separator followed by semester digit (e.g. '2024/2025-1', '2024/2025/2')
+        dash_sem = re.search(r'[\/\-]\s*([1-4])\b', raw)
+        if dash_sem:
+            sem_num = int(dash_sem.group(1))
+        else:
+            # Check for international term names
+            lower_raw = raw.lower()
+            if "fall" in lower_raw or "autumn" in lower_raw:
+                sem_num = 1
+            elif "spring" in lower_raw:
+                sem_num = 2
+            elif "summer" in lower_raw or "special" in lower_raw or "short" in lower_raw:
+                sem_num = 3
+            else:
+                # Check for any isolated digit 1-4
+                digit_m = re.search(r'\b([1-4])\b', raw)
+                if digit_m:
+                    sem_num = int(digit_m.group(1))
+
+    if y1 is None or y2 is None or sem_num is None:
+        raise ValueError(f"Cannot normalise semester label: '{label}'")
+
+    return f"SEM {sem_num} {y1}/{y2}"
+
+
+def select_attempts_by_repeat_policy(
+    records: List[Any],
+    scale: GradingScale,
+    repeat_policy: str = "latest"
+) -> List[Any]:
+    """
+    Filters a list of course records (ParsedLineItem or CourseAuditResult or dicts),
+    returning only the attempt chosen by repeat_policy ('latest' vs 'best') per unique course.
+    Preserves input order of the selected attempts.
+    """
+    if not records:
+        return []
+
+    attempts_by_course: Dict[str, List[tuple]] = {}
+    for idx, rec in enumerate(records):
+        code = getattr(rec, "course_code", None) if not isinstance(rec, dict) else rec.get("course_code")
+        grade = getattr(rec, "grade", None) if not isinstance(rec, dict) else rec.get("grade")
+        sem = getattr(rec, "semester", None) if not isinstance(rec, dict) else rec.get("semester")
+
+        clean_code = str(code or "").replace(" ", "").upper()
+        if not clean_code or not grade:
+            continue
+
+        defn = scale.get_definition(grade, clean_code)
+        sort_key = _parse_semester_sort_key(str(sem or ""), idx)
+
+        if clean_code not in attempts_by_course:
+            attempts_by_course[clean_code] = []
+        attempts_by_course[clean_code].append((sort_key, rec, defn, idx))
+
+    chosen_list: List[tuple] = []
+    for clean_code, attempts in attempts_by_course.items():
+        if len(attempts) == 1:
+            chosen_list.append((attempts[0][3], attempts[0][1]))
+        else:
+            if repeat_policy == "best":
+                # Maximize points; if points equal, prefer lower rank; then latest semester
+                best_attempt = max(
+                    attempts,
+                    key=lambda a: (
+                        a[2].points if a[2].points is not None else 0.0,
+                        -(a[2].rank if a[2].rank is not None else 999),
+                        a[0]
+                    )
+                )
+                chosen_list.append((best_attempt[3], best_attempt[1]))
+            else:  # 'latest'
+                latest_attempt = max(attempts, key=lambda a: a[0])
+                chosen_list.append((latest_attempt[3], latest_attempt[1]))
+
+    # Sort back by original index order
+    chosen_list.sort(key=lambda x: x[0])
+    return [x[1] for x in chosen_list]
