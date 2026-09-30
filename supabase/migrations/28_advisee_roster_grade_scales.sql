@@ -11,6 +11,10 @@
 
 BEGIN;
 
+-- students had no created_at, but the dashboard's "recent enrollments / Joined" uses it.
+ALTER TABLE students ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now();
+
+
 -- -----------------------------------------------------------------------------
 -- 1. REWRITE VIEW: advisee_roster_summary
 -- -----------------------------------------------------------------------------
@@ -163,7 +167,8 @@ LEFT JOIN cohorts c ON s.cohort_id = c.id
 LEFT JOIN latest_audits la ON s.matric_no = la.matric_no
 LEFT JOIN records_agg r ON s.matric_no = r.matric_no AND s.tenant_id = r.tenant_id;
 
-GRANT SELECT ON advisee_roster_summary TO authenticated, anon, service_role;
+REVOKE ALL ON advisee_roster_summary FROM anon;
+GRANT SELECT ON advisee_roster_summary TO authenticated, service_role;
 
 COMMIT;
 
