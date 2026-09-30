@@ -28,6 +28,8 @@ export function CorrectionsQueue({ queue, roster, onApproved, onRefresh }: Corre
   const [manualName, setManualName] = useState("");
   const [manualGrade, setManualGrade] = useState("A");
   const [manualCredits, setManualCredits] = useState(3);
+  const [selectedSemester, setSelectedSemester] = useState<string>("");
+  const [selectedSession, setSelectedSession] = useState<string>("");
 
   useEffect(() => { setLiveQueue(queue); }, [queue]);
 
@@ -54,6 +56,9 @@ export function CorrectionsQueue({ queue, roster, onApproved, onRefresh }: Corre
     setManualName("");
     setManualGrade("A");
     setManualCredits(3);
+    const ext = doc.extracted_data || {};
+    setSelectedSemester(ext.semester ? String(ext.semester) : "");
+    setSelectedSession(ext.academic_session || "");
   };
 
   const handleAddManualCourse = () => {
@@ -138,6 +143,11 @@ export function CorrectionsQueue({ queue, roster, onApproved, onRefresh }: Corre
       return;
     }
 
+    if (!selectedSemester || !selectedSession.trim()) {
+      alert("Please select Semester (1-4) and enter Academic Session (e.g. 2024/2025) before approving.");
+      return;
+    }
+
     // Capture doc reference before async gap to prevent stale-closure crash
     // if user closes the modal while the API call is in-flight.
     const docId = activeAuditDoc.id;
@@ -157,15 +167,17 @@ export function CorrectionsQueue({ queue, roster, onApproved, onRefresh }: Corre
         matric_number: docMatricNo,
         tenant_id: tenantId,
         student_name: matchingStudent ? matchingStudent.name : (studentData.student_name || docMatricNo),
-        academic_session: studentData.academic_session || "2024/2025",
-        semester: studentData.semester || 1,
+        academic_session: selectedSession.trim(),
+        semester: Number(selectedSemester),
+        pngk: studentData.pngk ?? studentData.cgpa,
         courses: stagedCourses.filter(Boolean).map(c => ({
           course_code: String(c.course_code || "").replace(/\s+/g, "").toUpperCase() || "UNKNOWN",
           course_name: String(c.course_name || c.course_code || "Unknown Course"),
           grade: String(c.grade || "N/A").trim().toUpperCase(),
           credit_hour: Number(c.credit_hour ?? c.credits ?? 3) || 3,
           credits: Number(c.credits ?? c.credit_hour ?? 3) || 3,
-          status: c.status || "Pass"
+          status: c.status || "Pass",
+          warning: c.warning
         }))
       });
 
@@ -274,6 +286,58 @@ export function CorrectionsQueue({ queue, roster, onApproved, onRefresh }: Corre
 
               <div className="w-1/2 p-6 overflow-y-auto bg-white flex flex-col justify-between">
                 <div>
+                  {/* GPA / CGPA Mismatch Warning at the top */}
+                  {activeAuditDoc?.extracted_data?.gpa_warning && (
+                    <div className="mb-4 p-3.5 bg-amber-50 border border-amber-300 rounded-lg flex items-start gap-2.5 text-amber-900 text-xs shadow-sm">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-bold block">Transcript Verification Warning</span>
+                        <span>{activeAuditDoc.extracted_data.gpa_warning}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Required Semester & Academic Session per Document */}
+                  <div className="mb-5 p-3.5 bg-slate-50 border border-slate-200 rounded-lg space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold uppercase tracking-wider text-gray-700 flex items-center gap-1.5">
+                        <Calendar className="w-3.5 h-3.5 text-indigo-600" />
+                        Semester & Academic Session *
+                      </span>
+                      {(!selectedSemester || !selectedSession.trim()) && (
+                        <span className="text-[11px] font-semibold text-rose-600 bg-rose-50 px-2 py-0.5 rounded border border-rose-200">
+                          Required for approval
+                        </span>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[11px] font-medium text-gray-600 block mb-1">Semester (1–4) *</label>
+                        <select
+                          value={selectedSemester}
+                          onChange={(e) => setSelectedSemester(e.target.value)}
+                          className="w-full text-xs font-semibold px-2.5 py-1.5 border border-gray-300 rounded bg-white focus:outline-indigo-500"
+                        >
+                          <option value="">-- Select Semester --</option>
+                          <option value="1">Semester 1</option>
+                          <option value="2">Semester 2</option>
+                          <option value="3">Semester 3</option>
+                          <option value="4">Semester 4</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-medium text-gray-600 block mb-1">Session (YYYY/YYYY) *</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. 2024/2025"
+                          value={selectedSession}
+                          onChange={(e) => setSelectedSession(e.target.value)}
+                          className="w-full text-xs font-mono px-2.5 py-1.5 border border-gray-300 rounded bg-white focus:outline-indigo-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="flex items-center justify-between mb-4">
                     <div>
                       <h4 className="text-xs font-bold text-gray-500 uppercase">Student Submitted Data</h4>
@@ -384,7 +448,15 @@ export function CorrectionsQueue({ queue, roster, onApproved, onRefresh }: Corre
                         <tbody className="divide-y text-xs">
                           {stagedCourses.filter(Boolean).map((course: any, idx: number) => (
                             <tr key={idx} className="hover:bg-slate-50/50">
-                              <td className="px-4 py-2.5 font-mono font-bold text-gray-900">{course.course_code || "—"}</td>
+                              <td className="px-4 py-2.5 font-mono font-bold text-gray-900">
+                                <div>{course.course_code || "—"}</div>
+                                {course.warning && (
+                                  <div className="mt-1 flex items-start gap-1 text-[10px] font-sans font-normal text-amber-800 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 max-w-[200px] leading-tight">
+                                    <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0 mt-0.5" />
+                                    <span>{course.warning}</span>
+                                  </div>
+                                )}
+                              </td>
                               <td className="px-4 py-2.5 text-gray-600 truncate max-w-[140px]">{course.course_name || course.course_code || "—"}</td>
                               <td className="px-4 py-2.5 font-bold text-[#990033]">{course.grade || "N/A"}</td>
                               <td className="px-4 py-2.5 font-mono">{course.credit_hour ?? course.credits ?? "—"}</td>
@@ -416,7 +488,7 @@ export function CorrectionsQueue({ queue, roster, onApproved, onRefresh }: Corre
                   </Button>
                   <Button
                     onClick={handleApprove}
-                    disabled={isSaving || stagedCourses.length === 0}
+                    disabled={isSaving || stagedCourses.length === 0 || !selectedSemester || !selectedSession.trim()}
                     className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white shadow-md disabled:opacity-50"
                   >
                     <CheckCircle2 className="w-4 h-4 mr-2" /> {isSaving ? "Saving..." : `Approve & Commit (${stagedCourses.length})`}

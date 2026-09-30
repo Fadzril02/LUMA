@@ -258,6 +258,8 @@ def test_finalize_approval_forged_tenant_idor_ignored():
         "matric_number": "TEST-SE24-IDOR",
         "student_name": "Test IDOR Student",
         "advisor_id": "STAFF-001",
+        "academic_session": "2024/2025",
+        "semester": 1,
         "courses": [{"course_code": "SECJ1013", "grade": "A", "credit_hour": 3}]
     }
 
@@ -338,6 +340,8 @@ def test_finalize_approval_resolves_seeded_utm_uuid():
         "document_id": "99999999-9999-9999-9999-999999999999",
         "matric_number": "A24CS0001",
         "advisor_id": "STAFF-001",
+        "academic_session": "2024/2025",
+        "semester": 1,
         "courses": [{"course_code": "SECJ1013", "grade": "A", "credit_hour": 3}]
     }
 
@@ -388,6 +392,8 @@ def test_finalize_approval_resolves_custom_university_uuid_from_db():
         "document_id": "99999999-9999-9999-9999-999999999999",
         "matric_number": "A24CS0002",
         "advisor_id": "STAFF-001",
+        "academic_session": "2024/2025",
+        "semester": 1,
         "courses": [{"course_code": "SECJ1013", "grade": "A", "credit_hour": 3}]
     }
 

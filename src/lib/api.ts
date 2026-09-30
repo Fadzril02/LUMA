@@ -94,6 +94,7 @@ export interface FinalizeApprovalPayload {
   program_code?: string;
   academic_session?: string;
   semester?: string | number;
+  pngk?: number;
   courses: Array<{
     course_code: string;
     course_name?: string;
@@ -101,6 +102,7 @@ export interface FinalizeApprovalPayload {
     credit_hour?: number;
     credits?: number;
     status?: string;
+    warning?: string;
     session_semester?: string;
   }>;
 }

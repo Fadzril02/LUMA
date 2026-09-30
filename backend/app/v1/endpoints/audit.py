@@ -337,16 +337,16 @@ async def extract_transcript_from_storage(
         for c in parsed_courses
     ]
 
-    session_name = "2024/2025"
-    sem_num = 1
-    if metadata.get("semesters_found"):
-        first_sem = metadata["semesters_found"][0]
-        # parse e.g. "Sem 1 2024/2025"
-        parts = first_sem.split()
-        if len(parts) >= 2 and parts[1].isdigit():
-            sem_num = int(parts[1])
-        if len(parts) >= 3:
-            session_name = parts[2]
+    session_name = metadata.get("academic_session")
+    sem_num = metadata.get("semester")
+    if not session_name or not sem_num:
+        if metadata.get("semesters_found"):
+            first_sem = metadata["semesters_found"][0]
+            parts = first_sem.split()
+            if len(parts) >= 2 and parts[1].isdigit():
+                sem_num = int(parts[1])
+            if len(parts) >= 3:
+                session_name = parts[2]
 
     extracted_data = {
         "academic_session": session_name,
@@ -354,7 +354,15 @@ async def extract_transcript_from_storage(
         "courses": courses_payload,
         "matric_number": metadata.get("matric_number"),
         "student_name": metadata.get("student_name"),
-        "fraud_flag": is_fraudulent
+        "fraud_flag": is_fraudulent,
+        "png": metadata.get("png"),
+        "pngk": metadata.get("pngk"),
+        "gpa": metadata.get("png"),
+        "cgpa": metadata.get("pngk"),
+        "kk_all_sem": metadata.get("kk_all_sem"),
+        "kd_all_sem": metadata.get("kd_all_sem"),
+        "gpa_warning": metadata.get("gpa_warning"),
+        "warnings": metadata.get("warnings", [])
     }
 
     # 6. Update uploaded_documents if matching file_path exists
@@ -415,6 +423,13 @@ async def finalize_approval(
                 repeat_policy = t_res.data[0]["repeat_policy"]
         except Exception:
             pass
+
+    # Validate explicit semester and academic session (Requirement: missing semester/session -> 422, no fallback)
+    if request.semester is None or str(request.semester).strip() == "" or not request.academic_session or str(request.academic_session).strip() == "":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Missing required semester or academic_session. Both must be explicitly specified."
+        )
 
     # 1. Transform Staged Courses into ParsedLineItem objects using Tenant Grading Scale
     try:
@@ -492,6 +507,21 @@ async def finalize_approval(
             repeat_policy=repeat_policy,
             return_all_attempts=True
         )
+        # Check cumulative CGPA against printed PNGK if provided (Never auto-correct)
+        cgpa_warning: Optional[str] = None
+        target_pngk = getattr(request, "pngk", None)
+        if target_pngk is not None:
+            try:
+                target_float = float(target_pngk)
+                if abs(summary.cgpa - target_float) > 0.01:
+                    cgpa_warning = f"CGPA mismatch with transcript (computed {summary.cgpa:.2f} vs printed {target_float:.2f})"
+            except (ValueError, TypeError):
+                pass
+
+        if cgpa_warning:
+            summary.cgpa_warning = cgpa_warning
+            if cgpa_warning not in summary.warnings:
+                summary.warnings.append(cgpa_warning)
     except ValueError as ve:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -580,7 +610,9 @@ async def finalize_approval(
         records_saved_count=len(all_audited_records),
         processing_status="Approved",
         records=display_results,
-        storage_purged=purge_successful
+        storage_purged=purge_successful,
+        warning=cgpa_warning,
+        warnings=[cgpa_warning] if cgpa_warning else []
     )
 
 

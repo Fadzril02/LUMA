@@ -53,7 +53,7 @@ class ParsedLineItem(BaseModel):
     credits: int
     grade: str
     grade_point: float
-    semester: str
+    semester: Optional[str] = None
     status: str  # 'Passed', 'Failed', 'Exempted', 'In-Progress'
     warning: Optional[str] = None
     is_ai_parsed: bool = False
@@ -66,7 +66,7 @@ class CourseAuditResult(BaseModel):
     credits: int
     grade: str
     grade_point: float
-    semester: str
+    semester: Optional[str] = None
     status: str
     warning: Optional[str] = None
     domain: str = "Core Development"  # Logic & Math, Core Development, Systems & Architecture, Soft Skills, Project Management
@@ -88,6 +88,8 @@ class AuditSummary(BaseModel):
     unmet_prerequisites_count: int = 0
     academic_standing: str = "Good Standing"
     ai_fallback_used: bool = False
+    cgpa_warning: Optional[str] = None
+    warnings: List[str] = Field(default_factory=list)
     radar_stats: Dict[str, float] = Field(
         default_factory=lambda: {
             "Logic & Math": 0.0,
@@ -132,8 +134,9 @@ class FinalizeApprovalRequest(BaseModel):
     curriculum_year: Optional[str] = None
     program_code: Optional[str] = None
     cohort_id: Optional[str] = Field(None, description="UUID of student's cohort")
-    academic_session: Optional[str] = "2024/2025"
-    semester: Optional[Any] = 1
+    academic_session: Optional[str] = Field(None, description="Academic session e.g. 2024/2025")
+    semester: Optional[Any] = Field(None, description="Semester number 1-4")
+    pngk: Optional[float] = Field(None, description="Cumulative GPA printed on transcript for verification")
     courses: List[ExtractedCourseItem] = []
     storage_path: Optional[str] = Field(None, description="Optional storage path of the transcript file to purge")
     file_path: Optional[str] = Field(None, description="Optional file path of the transcript file to purge")
@@ -152,8 +155,9 @@ class AuditApprovalRequest(BaseModel):
     curriculum_year: Optional[str] = None
     program_code: Optional[str] = None
     cohort_id: Optional[str] = Field(None, description="UUID of student's cohort")
-    academic_session: Optional[str] = "2024/2025"
-    semester: Optional[Any] = 1
+    academic_session: Optional[str] = Field(None, description="Academic session e.g. 2024/2025")
+    semester: Optional[Any] = Field(None, description="Semester number 1-4")
+    pngk: Optional[float] = Field(None, description="Cumulative GPA printed on transcript for verification")
     courses: List[ExtractedCourseItem] = []
     storage_path: Optional[str] = Field(None, description="Optional storage path of the transcript file to purge")
     file_path: Optional[str] = Field(None, description="Optional file path of the transcript file to purge")
@@ -170,6 +174,8 @@ class FinalizeApprovalResponse(BaseModel):
     processing_status: str = "Approved"
     records: List[CourseAuditResult]
     storage_purged: bool = False
+    warning: Optional[str] = None
+    warnings: List[str] = Field(default_factory=list)
 
 
 class PurgeDocumentRequest(BaseModel):
