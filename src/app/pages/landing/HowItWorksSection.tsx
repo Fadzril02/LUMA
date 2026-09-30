@@ -34,7 +34,7 @@ export function HowItWorksSection() {
           <h2 className="font-serif text-2xl sm:text-3xl lg:text-4xl font-bold text-[#14213D] mt-2">
             How it works in three steps
           </h2>
-          <p className="text-sm sm:text-base text-[#334155] mt-3 leading-relaxed">
+          <p className="text-sm sm:text-base text-ink mt-3 leading-relaxed">
             Eliminate manual transcript tallying and fragmented spreadsheets with automated, curriculum-grounded degree verification.
           </p>
         </div>
@@ -60,7 +60,7 @@ export function HowItWorksSection() {
                   <h3 className="font-serif text-lg font-bold text-[#14213D] mb-3 leading-snug">
                     {item.title}
                   </h3>
-                  <p className="text-sm text-[#334155] leading-relaxed">
+                  <p className="text-sm text-ink leading-relaxed">
                     {item.description}
                   </p>
                 </div>

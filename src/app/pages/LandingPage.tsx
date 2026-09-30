@@ -286,7 +286,7 @@ export function LandingPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#FAF8F3] text-[#334155] font-sans flex flex-col justify-between antialiased selection:bg-[#14213D] selection:text-white">
+    <div className="min-h-screen bg-[#FAF8F3] text-ink font-sans flex flex-col justify-between antialiased selection:bg-[#14213D] selection:text-white">
       {/* 1. Header */}
       <LandingHeader
         onLoginClick={() => scrollToAuth("login")}

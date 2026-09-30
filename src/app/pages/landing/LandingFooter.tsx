@@ -18,13 +18,13 @@ export function LandingFooter() {
                 SynGrad<span className="text-[#7A1E3A]">™</span>
               </span>
             </div>
-            <p className="text-xs text-[#334155] max-w-md leading-relaxed">
+            <p className="text-xs text-ink max-w-md leading-relaxed">
               Academic advising intelligence infrastructure. Deterministic curriculum validation, transcript degree audits, and cohort intervention.
             </p>
           </div>
 
           {/* Contact Details */}
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 text-xs text-[#334155]">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 text-xs text-ink">
             <a
               href="mailto:novusmandiri@gmail.com"
               className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-white border border-[#E7E1D4] text-[#14213D] hover:text-[#7A1E3A] hover:border-[#7A1E3A]/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#14213D]"
@@ -39,10 +39,10 @@ export function LandingFooter() {
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-xs text-[#475569] leading-relaxed">
           <div className="space-y-1">
             <p>© {currentYear} SynGrad™. All rights reserved.</p>
-            <p className="text-[#64748B]">SynGrad™ is a trademark of its owner.</p>
+            <p className="text-ink-muted">SynGrad™ is a trademark of its owner.</p>
           </div>
 
-          <div className="flex items-center gap-2 text-[#334155] bg-white px-3 py-1.5 rounded-md border border-[#E7E1D4]">
+          <div className="flex items-center gap-2 text-ink bg-white px-3 py-1.5 rounded-md border border-[#E7E1D4]">
             <ShieldCheck className="w-4 h-4 text-[#059669] shrink-0" />
             <span>Your academic data is handled under Malaysia's PDPA.</span>
           </div>

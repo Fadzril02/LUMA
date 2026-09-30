@@ -24,7 +24,7 @@ export function LandingHeader({ onLoginClick, onGetStartedClick }: LandingHeader
             <span className="font-serif text-2xl font-bold tracking-tight text-[#14213D] leading-none">
               SynGrad<span className="text-[#7A1E3A]">™</span>
             </span>
-            <span className="text-xs text-[#334155] font-medium tracking-wide">
+            <span className="text-xs text-ink font-medium tracking-wide">
               Smart Academic Advising
             </span>
           </div>

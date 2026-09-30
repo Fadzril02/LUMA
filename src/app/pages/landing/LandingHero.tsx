@@ -10,7 +10,7 @@ export function LandingHero({ onSelectAdvisor, onSelectStudent }: LandingHeroPro
   return (
     <div className="space-y-6 sm:space-y-8">
       {/* Institutional Assurance Badge */}
-      <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white border border-[#E7E1D4] shadow-xs text-xs font-medium text-[#334155]">
+      <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white border border-[#E7E1D4] shadow-xs text-xs font-medium text-ink">
         <ShieldCheck className="w-4 h-4 text-[#7A1E3A] shrink-0" />
         <span>Institutional Degree Audit &amp; Advising System</span>
       </div>
@@ -21,7 +21,7 @@ export function LandingHero({ onSelectAdvisor, onSelectStudent }: LandingHeroPro
       </h1>
 
       {/* Descriptive Subline */}
-      <p className="text-base sm:text-lg text-[#334155] leading-relaxed max-w-2xl font-normal">
+      <p className="text-base sm:text-lg text-ink leading-relaxed max-w-2xl font-normal">
         Automatic degree audits, prerequisite verification, and credit tracking generated straight from uploaded academic transcripts — built for faculty advisors and university students.
       </p>
 
@@ -47,7 +47,7 @@ export function LandingHero({ onSelectAdvisor, onSelectStudent }: LandingHeroPro
       </div>
 
       {/* Honest Value Highlights */}
-      <div className="pt-4 border-t border-[#E7E1D4]/80 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-[#334155]">
+      <div className="pt-4 border-t border-[#E7E1D4]/80 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-ink">
         <div className="flex items-center gap-2">
           <CheckCircle2 className="w-4 h-4 text-[#059669] shrink-0" />
           <span>Deterministic curriculum validation</span>

@@ -27,7 +27,7 @@ export default {
             warm: "#F3EFE6",
             border: "#E7E1D4",
           },
-          slate: {
+          ink: {
             DEFAULT: "#334155",
             muted: "#64748B",
             dark: "#1E293B",

@@ -51,7 +51,7 @@ export function FeaturesSection() {
           <h2 className="font-serif text-2xl sm:text-3xl lg:text-4xl font-bold text-[#14213D] mt-2">
             Engineered for advisors. Clear for students.
           </h2>
-          <p className="text-sm sm:text-base text-[#334155] mt-3 leading-relaxed">
+          <p className="text-sm sm:text-base text-ink mt-3 leading-relaxed">
             Every capability in SynGrad is tailored strictly to verified university academic workflows.
           </p>
         </div>
@@ -69,7 +69,7 @@ export function FeaturesSection() {
                   <h3 className="font-serif text-xl font-bold text-[#14213D]">
                     For Academic Advisors
                   </h3>
-                  <p className="text-xs text-[#334155] font-medium">
+                  <p className="text-xs text-ink font-medium">
                     Faculty intervention, cohort oversight, and curriculum management
                   </p>
                 </div>
@@ -83,7 +83,7 @@ export function FeaturesSection() {
                       <h4 className="text-sm font-semibold text-[#14213D]">
                         {feat.title}
                       </h4>
-                      <p className="text-xs text-[#334155] mt-0.5 leading-relaxed">
+                      <p className="text-xs text-ink mt-0.5 leading-relaxed">
                         {feat.detail}
                       </p>
                     </div>
@@ -92,7 +92,7 @@ export function FeaturesSection() {
               </ul>
             </div>
 
-            <div className="mt-8 pt-4 border-t border-[#E7E1D4] text-xs font-medium text-[#334155]">
+            <div className="mt-8 pt-4 border-t border-[#E7E1D4] text-xs font-medium text-ink">
               Includes faculty cohort invite codes and single-advisor advisee rosters.
             </div>
           </div>
@@ -108,7 +108,7 @@ export function FeaturesSection() {
                   <h3 className="font-serif text-xl font-bold text-[#14213D]">
                     For University Students
                   </h3>
-                  <p className="text-xs text-[#334155] font-medium">
+                  <p className="text-xs text-ink font-medium">
                     Clear degree progress, prerequisite safety, and academic planning
                   </p>
                 </div>
@@ -122,7 +122,7 @@ export function FeaturesSection() {
                       <h4 className="text-sm font-semibold text-[#14213D]">
                         {feat.title}
                       </h4>
-                      <p className="text-xs text-[#334155] mt-0.5 leading-relaxed">
+                      <p className="text-xs text-ink mt-0.5 leading-relaxed">
                         {feat.detail}
                       </p>
                     </div>
@@ -131,7 +131,7 @@ export function FeaturesSection() {
               </ul>
             </div>
 
-            <div className="mt-8 pt-4 border-t border-[#E7E1D4] text-xs font-medium text-[#334155]">
+            <div className="mt-8 pt-4 border-t border-[#E7E1D4] text-xs font-medium text-ink">
               Accessible anytime via institutional email credentials.
             </div>
           </div>

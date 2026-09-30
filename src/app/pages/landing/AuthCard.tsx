@@ -116,7 +116,7 @@ export function AuthCard({
             className={`py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#14213D] ${
               authMode === "login"
                 ? "bg-white text-[#14213D] shadow-xs font-bold"
-                : "text-[#64748B] hover:text-[#14213D]"
+                : "text-ink-muted hover:text-[#14213D]"
             }`}
           >
             Log in
@@ -130,7 +130,7 @@ export function AuthCard({
             className={`py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#14213D] ${
               authMode === "register"
                 ? "bg-white text-[#14213D] shadow-xs font-bold"
-                : "text-[#64748B] hover:text-[#14213D]"
+                : "text-ink-muted hover:text-[#14213D]"
             }`}
           >
             Create account
@@ -147,7 +147,7 @@ export function AuthCard({
             ? "Welcome back"
             : "Create your account"}
         </h2>
-        <p className="text-xs text-[#334155] mt-1.5 leading-relaxed font-normal">
+        <p className="text-xs text-ink mt-1.5 leading-relaxed font-normal">
           {isContesting
             ? "Verify ownership of your student record with your institutional email."
             : authMode === "login"
@@ -165,7 +165,7 @@ export function AuthCard({
           </div>
           {isDuplicate && setIsContesting && (
             <div className="pt-2 border-t border-[#FECACA] flex items-center justify-between text-xs">
-              <span className="text-[#334155]">Is this your matric number?</span>
+              <span className="text-ink">Is this your matric number?</span>
               <button
                 type="button"
                 onClick={() => {
@@ -224,7 +224,7 @@ export function AuthCard({
                 Institutional Email Address
               </label>
               <div className="relative">
-                <Mail className="w-4 h-4 text-[#64748B] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <Mail className="w-4 h-4 text-ink-muted absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   id="contestEmail"
                   type="email"
@@ -262,7 +262,7 @@ export function AuthCard({
                   setIsContesting(false);
                   resetFormFeedback();
                 }}
-                className="text-xs text-[#64748B] hover:text-[#14213D] transition-colors cursor-pointer"
+                className="text-xs text-ink-muted hover:text-[#14213D] transition-colors cursor-pointer"
               >
                 Cancel and return
               </button>
@@ -277,7 +277,7 @@ export function AuthCard({
               Institutional Email
             </label>
             <div className="relative">
-              <Mail className="w-4 h-4 text-[#64748B] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <Mail className="w-4 h-4 text-ink-muted absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 id="loginEmail"
                 type="email"
@@ -295,7 +295,7 @@ export function AuthCard({
               Password
             </label>
             <div className="relative">
-              <Lock className="w-4 h-4 text-[#64748B] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <Lock className="w-4 h-4 text-ink-muted absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 id="loginPassword"
                 type={showLoginPassword ? "text" : "password"}
@@ -310,7 +310,7 @@ export function AuthCard({
                 type="button"
                 onClick={() => setShowLoginPassword(!showLoginPassword)}
                 aria-label={showLoginPassword ? "Hide password" : "Show password"}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-[#64748B] hover:text-[#14213D] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#14213D] rounded-sm p-1 cursor-pointer"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-muted hover:text-[#14213D] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#14213D] rounded-sm p-1 cursor-pointer"
               >
                 {showLoginPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
@@ -353,7 +353,7 @@ export function AuthCard({
                 className={`py-2 text-xs rounded-lg transition-all cursor-pointer flex items-center justify-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#14213D] ${
                   registrationRole === "student"
                     ? "bg-white text-[#14213D] font-bold shadow-xs border border-[#E7E1D4]"
-                    : "text-[#64748B] hover:text-[#14213D] font-medium"
+                    : "text-ink-muted hover:text-[#14213D] font-medium"
                 }`}
               >
                 <GraduationCap className="w-4 h-4" />
@@ -369,7 +369,7 @@ export function AuthCard({
                 className={`py-2 text-xs rounded-lg transition-all cursor-pointer flex items-center justify-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#14213D] ${
                   registrationRole === "advisor"
                     ? "bg-white text-[#14213D] font-bold shadow-xs border border-[#E7E1D4]"
-                    : "text-[#64748B] hover:text-[#14213D] font-medium"
+                    : "text-ink-muted hover:text-[#14213D] font-medium"
                 }`}
               >
                 <Users className="w-4 h-4" />
@@ -386,7 +386,7 @@ export function AuthCard({
                   Full Name
                 </label>
                 <div className="relative">
-                  <User className="w-4 h-4 text-[#64748B] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <User className="w-4 h-4 text-ink-muted absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
                     id="studentFullName"
                     type="text"
@@ -404,7 +404,7 @@ export function AuthCard({
                   Institutional Email Address
                 </label>
                 <div className="relative">
-                  <Mail className="w-4 h-4 text-[#64748B] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <Mail className="w-4 h-4 text-ink-muted absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
                     id="studentEmail"
                     type="email"
@@ -422,7 +422,7 @@ export function AuthCard({
                   Password (min. 6 characters)
                 </label>
                 <div className="relative">
-                  <Lock className="w-4 h-4 text-[#64748B] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <Lock className="w-4 h-4 text-ink-muted absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
                     id="studentPassword"
                     type={showStudentPassword ? "text" : "password"}
@@ -437,7 +437,7 @@ export function AuthCard({
                     type="button"
                     onClick={() => setShowStudentPassword(!showStudentPassword)}
                     aria-label={showStudentPassword ? "Hide password" : "Show password"}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#64748B] hover:text-[#14213D] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#14213D] rounded-sm p-1 cursor-pointer"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-muted hover:text-[#14213D] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#14213D] rounded-sm p-1 cursor-pointer"
                   >
                     {showStudentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -451,7 +451,7 @@ export function AuthCard({
                   Full Name &amp; Title
                 </label>
                 <div className="relative">
-                  <User className="w-4 h-4 text-[#64748B] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <User className="w-4 h-4 text-ink-muted absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
                     id="advisorFullName"
                     type="text"
@@ -469,7 +469,7 @@ export function AuthCard({
                   Institutional Email Address
                 </label>
                 <div className="relative">
-                  <Mail className="w-4 h-4 text-[#64748B] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <Mail className="w-4 h-4 text-ink-muted absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
                     id="advisorEmail"
                     type="email"
@@ -487,7 +487,7 @@ export function AuthCard({
                   Password (min. 6 characters)
                 </label>
                 <div className="relative">
-                  <Lock className="w-4 h-4 text-[#64748B] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <Lock className="w-4 h-4 text-ink-muted absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
                     id="advisorPassword"
                     type={showAdvisorPassword ? "text" : "password"}
@@ -502,7 +502,7 @@ export function AuthCard({
                     type="button"
                     onClick={() => setShowAdvisorPassword(!showAdvisorPassword)}
                     aria-label={showAdvisorPassword ? "Hide password" : "Show password"}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#64748B] hover:text-[#14213D] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#14213D] rounded-sm p-1 cursor-pointer"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-muted hover:text-[#14213D] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#14213D] rounded-sm p-1 cursor-pointer"
                   >
                     {showAdvisorPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -542,7 +542,7 @@ export function AuthCard({
               setAuthMode(authMode === "login" ? "register" : "login");
               resetFormFeedback();
             }}
-            className="text-xs text-[#334155] hover:text-[#7A1E3A] font-medium transition-colors cursor-pointer"
+            className="text-xs text-ink hover:text-[#7A1E3A] font-medium transition-colors cursor-pointer"
           >
             {authMode === "login"
               ? "Don't have an account yet? Create one"
