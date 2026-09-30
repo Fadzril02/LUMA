@@ -40,6 +40,11 @@ export function CompleteRegistration() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
 
+  // Warm up backend
+  useEffect(() => {
+    api.getHealth().catch(() => {});
+  }, []);
+
   // Auto-fill full name from Supabase user_metadata if available
   useEffect(() => {
     const metaName = user?.user_metadata?.full_name;

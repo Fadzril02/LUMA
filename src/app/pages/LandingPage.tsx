@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate, Link, Navigate } from "react-router";
 import { LoadingScreen } from "../../components/shared/LoadingScreen";
 import { Button, Input, Label } from "../components/ui";
@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { supabase } from "../../lib/supabase";
+import { api } from "../../lib/api";
 import { toast } from "sonner";
 
 export function LandingPage() {
@@ -63,6 +64,11 @@ export function LandingPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
+
+  // Warm up backend
+  useEffect(() => {
+    api.getHealth().catch(() => {});
+  }, []);
 
   // Early returns strictly below all hook calls
   if (user && role === 'advisor') return <Navigate replace to="/advisor" />;

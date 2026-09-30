@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { toast } from 'sonner';
 import { supabase } from './supabase';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
@@ -11,8 +12,17 @@ export const apiClient = axios.create({
 
 // Surface a clear message when the backend is cold-starting or unreachable
 apiClient.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const timer = (response?.config as any)?._slowServerTimer;
+    if (timer) clearTimeout(timer);
+    toast.dismiss('server-waking');
+    return response;
+  },
   (error) => {
+    const timer = (error?.config as any)?._slowServerTimer;
+    if (timer) clearTimeout(timer);
+    toast.dismiss('server-waking');
+
     if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
       error.message =
         'The server took too long to respond. It may be starting up — please wait 30 seconds and try again.';
@@ -28,6 +38,13 @@ apiClient.interceptors.response.use(
 // FIX #4: Use refreshSession() when the cached token is expired or near expiry
 // to prevent the "upload fails until relogin" symptom caused by stale access tokens.
 apiClient.interceptors.request.use(async (config) => {
+  const timer = setTimeout(() => {
+    toast("Server is starting, please wait… this can take up to a minute.", {
+      id: "server-waking",
+    });
+  }, 5000);
+  (config as any)._slowServerTimer = timer;
+
   let { data: { session } } = await supabase.auth.getSession();
 
   if (session) {
@@ -50,6 +67,9 @@ apiClient.interceptors.request.use(async (config) => {
   }
   return config;
 }, (error) => {
+  const timer = (error?.config as any)?._slowServerTimer;
+  if (timer) clearTimeout(timer);
+  toast.dismiss('server-waking');
   return Promise.reject(error);
 });
 
