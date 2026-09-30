@@ -14,7 +14,8 @@ BEGIN;
 -- -----------------------------------------------------------------------------
 -- 1. REWRITE VIEW: advisee_roster_summary
 -- -----------------------------------------------------------------------------
-CREATE OR REPLACE VIEW advisee_roster_summary AS
+CREATE OR REPLACE VIEW advisee_roster_summary
+WITH (security_invoker = true) AS
 WITH latest_audits AS (
     SELECT DISTINCT ON (matric_no)
         id AS latest_audit_id,
@@ -173,3 +174,84 @@ COMMIT;
 -- -- Re-run migration 13_advisee_roster_summary.sql definition to restore
 -- -- the previous version of the view.
 -- COMMIT;
+
+-- =============================================================================
+-- TEST QUERY & VERIFICATION SNIPPET: Advisee Roster RLS Isolation
+-- =============================================================================
+-- Because the view is created WITH (security_invoker = true), queries on the view
+-- execute under the caller's identity (auth.uid()). The underlying tables' RLS
+-- policies are strictly enforced:
+--   - students: advisor_staff_id IN (SELECT my_staff_ids()) OR user_id = auth.uid()
+--   - academic_records: (tenant_id, matric_no) IN (SELECT tenant_id, matric_no FROM my_advisee_matric_nos())
+--   - degree_audits: advisor_staff_id IN (SELECT my_staff_ids()) OR matric_no IN (SELECT matric_no FROM my_matric_nos())
+--   - grade_scales: tenant_id = my_tenant_id()
+--
+-- 1. Standalone Verification Query (run as an authenticated advisor):
+-- -----------------------------------------------------------------------------
+-- SELECT
+--     matric_no,
+--     student_name,
+--     advisor_staff_id,
+--     tenant_id,
+--     current_cgpa,
+--     total_earned_credits
+-- FROM advisee_roster_summary;
+--
+-- Expected outcome:
+--   Every returned row satisfies: advisor_staff_id IN (SELECT my_staff_ids()).
+--   Students assigned to other advisors or belonging to other tenants are omitted.
+--
+-- 2. Automated DO Block Test (validates isolation under simulated advisor session):
+-- -----------------------------------------------------------------------------
+/*
+DO $$
+DECLARE
+    v_test_advisor RECORD;
+    v_total_view_rows INT;
+    v_leaked_rows INT;
+    v_direct_advisee_count INT;
+BEGIN
+    -- Pick an active advisor to test
+    SELECT user_id, staff_id, tenant_id INTO v_test_advisor
+    FROM advisors
+    WHERE user_id IS NOT NULL AND staff_id IS NOT NULL
+    LIMIT 1;
+
+    IF NOT FOUND THEN
+        RAISE NOTICE 'No advisor found to test RLS on advisee_roster_summary.';
+        RETURN;
+    END IF;
+
+    -- Impersonate the advisor as an authenticated user
+    PERFORM set_config('role', 'authenticated', true);
+    PERFORM set_config('request.jwt.claims', json_build_object(
+        'sub', v_test_advisor.user_id,
+        'role', 'authenticated'
+    )::text, true);
+
+    -- Count total advisees visible in the security_invoker view
+    SELECT COUNT(*) INTO v_total_view_rows FROM advisee_roster_summary;
+
+    -- Count advisees from underlying students table matching my_staff_ids()
+    SELECT COUNT(*) INTO v_direct_advisee_count
+    FROM students
+    WHERE advisor_staff_id IN (SELECT my_staff_ids());
+
+    -- Count any leaked rows (where advisor_staff_id does not belong to this advisor)
+    SELECT COUNT(*) INTO v_leaked_rows
+    FROM advisee_roster_summary
+    WHERE advisor_staff_id NOT IN (SELECT my_staff_ids());
+
+    IF v_leaked_rows > 0 THEN
+        RAISE EXCEPTION 'RLS LEAK DETECTED: advisee_roster_summary returned % rows belonging to other advisors!', v_leaked_rows;
+    END IF;
+
+    IF v_total_view_rows != v_direct_advisee_count THEN
+        RAISE EXCEPTION 'RLS MISMATCH: view returned % rows but direct students query returned %', v_total_view_rows, v_direct_advisee_count;
+    END IF;
+
+    RAISE NOTICE 'SUCCESS: advisee_roster_summary WITH (security_invoker = true) correctly isolates % advisees for staff_id % (0 leaked rows).',
+        v_total_view_rows, v_test_advisor.staff_id;
+END $$;
+*/
+
