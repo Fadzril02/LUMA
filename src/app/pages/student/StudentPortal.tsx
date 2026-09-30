@@ -33,6 +33,7 @@ export function StudentPortal() {
   const [courseHistory, setCourseHistory] = useState<any[]>([]);
   const [creditProgress, setCreditProgress] = useState<any[]>([]);
   const [stats, setStats] = useState({ cgpa: "0.00", earned: 0, required: 120 });
+  const [hasUnseenNotes, setHasUnseenNotes] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
 
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -213,6 +214,22 @@ export function StudentPortal() {
             total: Math.round(dynamicRequiredCredits * 0.65),
           },
         ]);
+
+        // ── Check for unseen shared advising notes ─────────────────────────
+        try {
+          const { data: unseenLogs } = await db
+            .from("advising_logs")
+            .select("id")
+            .is("student_seen_at", null)
+            .limit(1);
+          if (unseenLogs && unseenLogs.length > 0) {
+            setHasUnseenNotes(true);
+          } else {
+            setHasUnseenNotes(false);
+          }
+        } catch (notesErr) {
+          console.warn("[StudentPortal] Check unseen notes warning:", notesErr);
+        }
       } catch (err) {
         console.error("[StudentPortal] Dashboard load error:", err);
       } finally {
@@ -222,6 +239,27 @@ export function StudentPortal() {
 
     fetchDashboardData();
   }, [profile]);
+
+  // On opening the Advising Notes tab, set student_seen_at = now() for unseen logs
+  useEffect(() => {
+    if (activeTab === "advising") {
+      const markSeen = async () => {
+        try {
+          const nowIso = new Date().toISOString();
+          const { error } = await db
+            .from("advising_logs")
+            .update({ student_seen_at: nowIso })
+            .is("student_seen_at", null);
+          if (!error) {
+            setHasUnseenNotes(false);
+          }
+        } catch (err) {
+          console.warn("[StudentPortal] Failed to mark advising notes as seen:", err);
+        }
+      };
+      markSeen();
+    }
+  }, [activeTab]);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (isProcessing) return;
@@ -390,17 +428,30 @@ export function StudentPortal() {
     }
   };
 
-  const NavItem = ({ id, icon: Icon, label }: { id: string; icon: any; label: string }) => (
+  const NavItem = ({ 
+    id, 
+    icon: Icon, 
+    label, 
+    badge 
+  }: { 
+    id: string; 
+    icon: any; 
+    label: string; 
+    badge?: React.ReactNode 
+  }) => (
     <button 
       onClick={() => { setActiveTab(id); setIsMobileMenuOpen(false); }} 
-      className={`w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-lg transition-all tracking-tight cursor-pointer ${
+      className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg transition-all tracking-tight cursor-pointer ${
         activeTab === id 
           ? "bg-blue-50 text-blue-900 font-semibold border border-blue-100 shadow-sm" 
           : "text-gray-600 hover:bg-gray-50 hover:text-gray-900 border border-transparent font-medium"
       }`}
     >
-      <Icon className={`w-4 h-4 shrink-0 ${activeTab === id ? "text-blue-900" : "text-gray-500"}`} />
-      <span className="text-xs">{label}</span>
+      <div className="flex items-center space-x-3">
+        <Icon className={`w-4 h-4 shrink-0 ${activeTab === id ? "text-blue-900" : "text-gray-500"}`} />
+        <span className="text-xs">{label}</span>
+      </div>
+      {badge}
     </button>
   );
 
@@ -444,7 +495,16 @@ export function StudentPortal() {
           <NavItem id="history" icon={FileText} label="Academic Timeline" />
           <NavItem id="audit" icon={CheckCircle} label="Degree Audit" />
           <NavItem id="whatif" icon={Target} label="Grade Predictor" />
-          <NavItem id="advising" icon={MessageSquare} label="Advising Notes" />
+          <NavItem 
+            id="advising" 
+            icon={MessageSquare} 
+            label="Advising Notes" 
+            badge={hasUnseenNotes ? (
+              <span className="px-1.5 py-0.5 text-[10px] font-bold bg-amber-500 text-white rounded-full leading-none shadow-2xs">
+                New
+              </span>
+            ) : null}
+          />
         </nav>
 
         {/* Student Profile Card & Sign Out */}

@@ -192,5 +192,11 @@ export const api = {
     const res = await apiClient.post('/api/v1/register/advisor', payload);
     return res.data;
   },
+
+  // Notify Student of Advising Note
+  notifyAdvisingLog: async (logId: string): Promise<{ sent: boolean; reason?: string; notified_at?: string }> => {
+    const res = await apiClient.post(`/api/v1/advising-logs/${logId}/notify`);
+    return res.data;
+  },
 };
 

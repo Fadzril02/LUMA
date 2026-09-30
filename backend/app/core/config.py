@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     SUPABASE_SERVICE_ROLE_KEY: str = ""
     SUPABASE_JWT_SECRET: str = ""
 
+    # Resend Notification Settings
+    RESEND_API_KEY: Optional[str] = None
+    RESEND_FROM: Optional[str] = None
+
     # Micro-LLM Fallback (Groq / OpenRouter / OpenAI SDK compatible)
     GROQ_API_KEY: Optional[str] = ""
     LLM_API_KEY: str = ""

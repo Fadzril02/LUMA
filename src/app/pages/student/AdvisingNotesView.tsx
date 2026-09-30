@@ -11,6 +11,8 @@ interface AdvisingLog {
   notes: string;
   action_item?: string | null;
   follow_up_date?: string | null;
+  notified_at?: string | null;
+  student_seen_at?: string | null;
   created_at: string;
 }
 

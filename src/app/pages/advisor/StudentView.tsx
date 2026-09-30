@@ -10,10 +10,12 @@ import {
   Info,
   CheckCircle2,
   AlertTriangle,
-  BookOpen
+  BookOpen,
+  Mail
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, Badge, Button, Input } from "../../components/ui";
 import { db } from "../../../lib/supabase";
+import { api } from "../../../lib/api";
 import { useAuth } from "../../../context/AuthContext";
 import { CourseLedger, CourseLedgerRecord, LedgerColumn } from "../../../components/shared/CourseLedger";
 
@@ -29,6 +31,8 @@ export function StudentView({ student, onBack }: StudentViewProps) {
   const [actionItem, setActionItem] = useState("");
   const [followUpDate, setFollowUpDate] = useState("");
   const [visibility, setVisibility] = useState<"shared" | "private">("shared");
+  const [notifyStudent, setNotifyStudent] = useState(true);
+  const [notificationStatus, setNotificationStatus] = useState<string | null>(null);
   const [inlineError, setInlineError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [pastLogs, setPastLogs] = useState<any[]>([]);
@@ -136,6 +140,7 @@ export function StudentView({ student, onBack }: StudentViewProps) {
     if (!notes.trim()) return;
     setIsSaving(true);
     setInlineError(null);
+    setNotificationStatus(null);
     const advisorStaffId = (profile as any)?.staff_id;
     
     try {
@@ -158,10 +163,30 @@ export function StudentView({ student, onBack }: StudentViewProps) {
       }
       
       if (data && data.length > 0) {
-        setPastLogs([data[0], ...pastLogs]);
+        const savedLog = data[0];
+        setPastLogs([savedLog, ...pastLogs]);
         setNotes("");
         setActionItem("");
         setFollowUpDate("");
+
+        // If shared and notifyStudent is checked, trigger email notification
+        if (visibility === "shared" && notifyStudent) {
+          try {
+            const notifRes = await api.notifyAdvisingLog(savedLog.id);
+            if (notifRes.sent) {
+              setNotificationStatus("Student notified");
+            } else if (notifRes.reason) {
+              setNotificationStatus(`Notification skipped: ${notifRes.reason}`);
+            } else {
+              setNotificationStatus("Notification skipped");
+            }
+          } catch (notifErr: any) {
+            console.error("Failed to notify student:", notifErr);
+            const detailMsg = notifErr.response?.data?.detail || notifErr.message || "Failed to send email notification";
+            setNotificationStatus(`Notification failed: ${detailMsg}`);
+          }
+        }
+
         setVisibility("shared");
       }
     } catch (err: any) {
@@ -494,6 +519,32 @@ export function StudentView({ student, onBack }: StudentViewProps) {
                   </div>
                 </div>
 
+                {visibility === "shared" && (
+                  <div className="flex items-center gap-2 pt-0.5">
+                    <input
+                      type="checkbox"
+                      id="notifyStudent"
+                      checked={notifyStudent}
+                      onChange={(e) => setNotifyStudent(e.target.checked)}
+                      className="w-4 h-4 text-blue-900 rounded border-gray-300 focus:ring-blue-900 cursor-pointer"
+                    />
+                    <label htmlFor="notifyStudent" className="text-xs font-medium text-gray-700 cursor-pointer select-none">
+                      Notify student by email
+                    </label>
+                  </div>
+                )}
+
+                {notificationStatus && (
+                  <div className={`p-2.5 text-xs rounded-lg flex items-center gap-2 ${
+                    notificationStatus === "Student notified"
+                      ? "text-emerald-800 bg-emerald-50 border border-emerald-200"
+                      : "text-amber-800 bg-amber-50 border border-amber-200"
+                  }`}>
+                    <Info className="w-4 h-4 shrink-0" />
+                    <span>{notificationStatus}</span>
+                  </div>
+                )}
+
                 {inlineError && (
                   <div className="p-2.5 text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg flex items-center gap-2">
                     <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />
@@ -514,38 +565,60 @@ export function StudentView({ student, onBack }: StudentViewProps) {
                 <div className="pt-4 border-t border-gray-100 space-y-3 mt-4">
                   <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Past Sessions</h4>
                   <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
-                    {pastLogs.map((log) => (
-                      <div key={log.id} className="bg-gray-50 p-3 rounded-lg border border-gray-100 text-sm">
-                        <div className="flex items-center justify-between gap-2 text-xs text-gray-500 mb-1.5 font-medium">
-                          <div className="flex items-center gap-1.5">
-                            <Calendar className="w-3.5 h-3.5 text-gray-400" />
-                            <span>{new Date(log.session_date).toLocaleDateString()}</span>
+                    {pastLogs.map((log) => {
+                      const studentEmail = student?.institutional_email || student?.email || "";
+                      const formattedDate = new Date(log.session_date).toLocaleDateString();
+                      const mailSubject = encodeURIComponent(`Advising note – ${formattedDate}`);
+                      const mailBody = encodeURIComponent(
+                        log.action_item ? `${log.notes}\n\nNext step: ${log.action_item}` : log.notes
+                      );
+                      const mailtoUrl = `mailto:${studentEmail}?subject=${mailSubject}&body=${mailBody}`;
+
+                      return (
+                        <div key={log.id} className="bg-gray-50 p-3 rounded-lg border border-gray-100 text-sm">
+                          <div className="flex items-center justify-between gap-2 text-xs text-gray-500 mb-1.5 font-medium">
+                            <div className="flex items-center gap-1.5">
+                              <Calendar className="w-3.5 h-3.5 text-gray-400" />
+                              <span>{formattedDate}</span>
+                            </div>
+                            {log.visibility === "private" ? (
+                              <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-800 border-amber-200 font-bold px-1.5 py-0">
+                                Private
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-[10px] bg-blue-50 text-blue-700 border-blue-200 font-medium px-1.5 py-0">
+                                Shared
+                              </Badge>
+                            )}
                           </div>
-                          {log.visibility === "private" ? (
-                            <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-800 border-amber-200 font-bold px-1.5 py-0">
-                              Private
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline" className="text-[10px] bg-blue-50 text-blue-700 border-blue-200 font-medium px-1.5 py-0">
-                              Shared
-                            </Badge>
+                          <p className="text-gray-800 whitespace-pre-wrap">{log.notes}</p>
+                          {log.action_item && (
+                            <div className="mt-2 text-xs font-medium text-amber-700 bg-amber-50 p-1.5 rounded-md flex items-start gap-1.5 border border-amber-100">
+                              <CheckSquare className="w-3.5 h-3.5 mt-0.5 shrink-0 text-amber-600" />
+                              <span>Action: {log.action_item}</span>
+                            </div>
+                          )}
+                          {log.follow_up_date && (
+                            <div className="mt-1.5 text-[11px] text-gray-500 flex items-center gap-1">
+                              <Calendar className="w-3 h-3 text-gray-400" />
+                              <span>Follow-up: {new Date(log.follow_up_date).toLocaleDateString()}</span>
+                            </div>
+                          )}
+                          {log.visibility !== "private" && (
+                            <div className="mt-2.5 pt-2 border-t border-gray-200/60 flex items-center justify-end">
+                              <a
+                                href={mailtoUrl}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium text-blue-900 bg-white hover:bg-blue-50 border border-gray-200 hover:border-blue-200 rounded-md shadow-2xs transition-colors cursor-pointer"
+                                title="Draft email in default email client"
+                              >
+                                <Mail className="w-3 h-3 text-blue-800" />
+                                <span>Draft email</span>
+                              </a>
+                            </div>
                           )}
                         </div>
-                        <p className="text-gray-800 whitespace-pre-wrap">{log.notes}</p>
-                        {log.action_item && (
-                          <div className="mt-2 text-xs font-medium text-amber-700 bg-amber-50 p-1.5 rounded-md flex items-start gap-1.5 border border-amber-100">
-                            <CheckSquare className="w-3.5 h-3.5 mt-0.5 shrink-0 text-amber-600" />
-                            <span>Action: {log.action_item}</span>
-                          </div>
-                        )}
-                        {log.follow_up_date && (
-                          <div className="mt-1.5 text-[11px] text-gray-500 flex items-center gap-1">
-                            <Calendar className="w-3 h-3 text-gray-400" />
-                            <span>Follow-up: {new Date(log.follow_up_date).toLocaleDateString()}</span>
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
