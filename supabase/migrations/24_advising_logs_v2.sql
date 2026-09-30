@@ -69,6 +69,13 @@ BEGIN
         END IF;
     END IF;
 
+    -- Edits can never move a note to another student/advisor or reset the 24h edit window
+    IF TG_OP = 'UPDATE' THEN
+        NEW.created_at        := OLD.created_at;
+        NEW.student_matric_no := OLD.student_matric_no;
+        NEW.advisor_staff_id  := OLD.advisor_staff_id;
+    END IF;
+
     RETURN NEW;
 END $$;
 
