@@ -11,13 +11,22 @@ import {
   CheckCircle2,
   AlertTriangle,
   BookOpen,
-  Mail
+  Mail,
+  Sliders,
+  Plus,
+  Trash2,
+  History,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, Badge, Button, Input } from "../../components/ui";
 import { db } from "../../../lib/supabase";
 import { api } from "../../../lib/api";
 import { useAuth } from "../../../context/AuthContext";
 import { CourseLedger, CourseLedgerRecord, LedgerColumn } from "../../../components/shared/CourseLedger";
+import {
+  fetchGradeScale,
+  findGradeDefinition,
+  GradeScaleRow,
+} from "../../../lib/gradeScale";
 
 interface StudentViewProps {
   student: any;
@@ -37,6 +46,20 @@ export function StudentView({ student, onBack }: StudentViewProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [pastLogs, setPastLogs] = useState<any[]>([]);
   const [fetchedRecords, setFetchedRecords] = useState<any[]>([]);
+
+  // Grade scale and Credits & Exemptions state
+  const [gradeScale, setGradeScale] = useState<GradeScaleRow[]>([]);
+  const [entrySemester, setEntrySemester] = useState<number>(Number(student?.entry_semester || 1));
+  const [blockExemptedCredits, setBlockExemptedCredits] = useState<number>(Number(student?.block_exempted_credits || 0));
+  const [savedEntrySemester, setSavedEntrySemester] = useState<number>(Number(student?.entry_semester || 1));
+  const [savedBlockCredits, setSavedBlockCredits] = useState<number>(Number(student?.block_exempted_credits || 0));
+  const [templateCourses, setTemplateCourses] = useState<any[]>([]);
+  const [selectedTemplateCourse, setSelectedTemplateCourse] = useState<string>("");
+  const [selectedExemptionGrade, setSelectedExemptionGrade] = useState<"EX" | "CT">("EX");
+  const [exemptionAuditHistory, setExemptionAuditHistory] = useState<any[]>([]);
+  const [isExemptionsSaving, setIsExemptionsSaving] = useState<boolean>(false);
+  const [exemptionsFeedback, setExemptionsFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [showAuditHistory, setShowAuditHistory] = useState<boolean>(false);
 
   // Diagnostic Hook: Robust try/catch blocks with explicit MODAL_CRASH_DUMP logs
   // Placed unconditionally before any early returns to strictly follow the Rules of Hooks
@@ -69,23 +92,95 @@ export function StudentView({ student, onBack }: StudentViewProps) {
           console.error("MODAL_CRASH_DUMP: Exception during advising_logs query:", logsCatchErr);
         }
 
-        // 2. Fetch Academic Records if not provided in student prop
-        if (!student?.rawResults && !student?.records) {
-          try {
-            const { data: recData, error: recError } = await db
-              .from("academic_records")
-              .select("*")
-              .eq("matric_no", student.matric_no)
-              .order("semester", { ascending: true });
+        // 2. Fetch Academic Records
+        try {
+          const { data: recData, error: recError } = await db
+            .from("academic_records")
+            .select("*")
+            .eq("matric_no", student.matric_no)
+            .order("semester", { ascending: true });
 
-            if (recError) {
-              console.error("MODAL_CRASH_DUMP: Error fetching academic_records table:", recError);
-            } else if (recData && isMounted) {
-              setFetchedRecords(recData);
-            }
-          } catch (recCatchErr) {
-            console.error("MODAL_CRASH_DUMP: Exception during academic_records query:", recCatchErr);
+          if (recError) {
+            console.error("MODAL_CRASH_DUMP: Error fetching academic_records table:", recError);
+          } else if (recData && isMounted) {
+            setFetchedRecords(recData);
           }
+        } catch (recCatchErr) {
+          console.error("MODAL_CRASH_DUMP: Exception during academic_records query:", recCatchErr);
+        }
+
+        // 3. Fetch Tenant Grade Scale
+        fetchGradeScale().then((scale) => {
+          if (isMounted && scale.length > 0) setGradeScale(scale);
+        });
+
+        // 4. Fetch Student Progression & Exemption Configuration
+        try {
+          const { data: stuProgData } = await db
+            .from("students")
+            .select("entry_semester, block_exempted_credits, cohort_id")
+            .eq("matric_no", student.matric_no)
+            .maybeSingle();
+
+          if (stuProgData && isMounted) {
+            const es = Number(stuProgData.entry_semester || 1);
+            const bec = Number(stuProgData.block_exempted_credits || 0);
+            setEntrySemester(es);
+            setSavedEntrySemester(es);
+            setBlockExemptedCredits(bec);
+            setSavedBlockCredits(bec);
+
+            // Fetch template courses for the student's cohort
+            const cohortId = stuProgData.cohort_id || student.cohort_id;
+            if (cohortId) {
+              const { data: cohortRow } = await db
+                .from("cohorts")
+                .select("template_id")
+                .eq("id", cohortId)
+                .maybeSingle();
+
+              const tmplId = cohortRow?.template_id;
+              if (tmplId) {
+                const { data: tc } = await db
+                  .from("template_courses")
+                  .select("course_code, course_name, credit_hour")
+                  .eq("template_id", tmplId)
+                  .order("course_code", { ascending: true });
+
+                if (tc && tc.length > 0 && isMounted) {
+                  setTemplateCourses(tc);
+                  setSelectedTemplateCourse(tc[0].course_code);
+                } else {
+                  const { data: dtc } = await db
+                    .from("degree_template_courses")
+                    .select("course_code, course_name, credit_hour")
+                    .eq("template_id", tmplId)
+                    .order("course_code", { ascending: true });
+                  if (dtc && isMounted) {
+                    setTemplateCourses(dtc);
+                    if (dtc.length > 0) setSelectedTemplateCourse(dtc[0].course_code);
+                  }
+                }
+              }
+            }
+          }
+        } catch (progErr) {
+          console.warn("[StudentView] Exception during student progression query:", progErr);
+        }
+
+        // 5. Fetch Exemption Audit History
+        try {
+          const { data: audits } = await db
+            .from("exemption_audit")
+            .select("*")
+            .eq("matric_no", student.matric_no)
+            .order("created_at", { ascending: false });
+
+          if (audits && isMounted) {
+            setExemptionAuditHistory(audits);
+          }
+        } catch (auditErr) {
+          console.warn("[StudentView] Exception during exemption_audit query:", auditErr);
         }
       } catch (fatalError) {
         console.error("MODAL_CRASH_DUMP: Fatal error in modal data fetch:", fatalError);
@@ -98,6 +193,146 @@ export function StudentView({ student, onBack }: StudentViewProps) {
       isMounted = false;
     };
   }, [student?.matric_no]);
+
+  // Handlers for Credits & Exemptions card
+  const handleSaveProgression = async () => {
+    if (entrySemester < 1 || entrySemester > 8) {
+      setExemptionsFeedback({ type: "error", message: "Entry semester must be between 1 and 8." });
+      return;
+    }
+    if (blockExemptedCredits < 0 || blockExemptedCredits > 200) {
+      setExemptionsFeedback({ type: "error", message: "Block exempted credits must be between 0 and 200." });
+      return;
+    }
+
+    setIsExemptionsSaving(true);
+    setExemptionsFeedback(null);
+    try {
+      const res = await api.patchStudentExemptions(student.matric_no, {
+        entry_semester: entrySemester,
+        block_exempted_credits: blockExemptedCredits,
+      });
+
+      setSavedEntrySemester(res.entry_semester);
+      setSavedBlockCredits(res.block_exempted_credits);
+      setExemptionsFeedback({
+        type: "success",
+        message: "Entry semester and block exempted credits updated successfully.",
+      });
+
+      // Refresh audits
+      const { data: audits } = await db
+        .from("exemption_audit")
+        .select("*")
+        .eq("matric_no", student.matric_no)
+        .order("created_at", { ascending: false });
+      if (audits) setExemptionAuditHistory(audits);
+    } catch (err: any) {
+      const msg = err.response?.data?.detail || err.message || "Failed to update progression settings.";
+      setExemptionsFeedback({ type: "error", message: msg });
+    } finally {
+      setIsExemptionsSaving(false);
+    }
+  };
+
+  const handleAddExemptionCourse = async () => {
+    if (!selectedTemplateCourse) return;
+    const cleanCode = selectedTemplateCourse.replace(/\s+/g, "").toUpperCase();
+    const courseObj = templateCourses.find(
+      (c) => c.course_code.replace(/\s+/g, "").toUpperCase() === cleanCode
+    );
+
+    setIsExemptionsSaving(true);
+    setExemptionsFeedback(null);
+    try {
+      await api.patchStudentExemptions(student.matric_no, {
+        course_actions: [
+          {
+            action: "add",
+            course_code: cleanCode,
+            grade: selectedExemptionGrade,
+            credits: Number(courseObj?.credit_hour || 3),
+            course_name: courseObj?.course_name || cleanCode,
+            semester: `Sem ${entrySemester}`,
+          },
+        ],
+      });
+
+      setExemptionsFeedback({
+        type: "success",
+        message: `Course exemption for ${cleanCode} (${selectedExemptionGrade}) recorded.`,
+      });
+
+      // Refetch academic records to refresh course ledger & exemption list
+      const { data: recData } = await db
+        .from("academic_records")
+        .select("*")
+        .eq("matric_no", student.matric_no)
+        .order("semester", { ascending: true });
+      if (recData) setFetchedRecords(recData);
+
+      // Refetch audits
+      const { data: audits } = await db
+        .from("exemption_audit")
+        .select("*")
+        .eq("matric_no", student.matric_no)
+        .order("created_at", { ascending: false });
+      if (audits) setExemptionAuditHistory(audits);
+    } catch (err: any) {
+      const msg = err.response?.data?.detail || err.message || "Failed to add course exemption.";
+      setExemptionsFeedback({ type: "error", message: msg });
+    } finally {
+      setIsExemptionsSaving(false);
+    }
+  };
+
+  const handleRemoveExemptionCourse = async (courseCode: string, grade: string) => {
+    const cleanCode = courseCode.replace(/\s+/g, "").toUpperCase();
+    if (!window.confirm(`Are you sure you want to remove exemption for ${cleanCode}?`)) {
+      return;
+    }
+
+    setIsExemptionsSaving(true);
+    setExemptionsFeedback(null);
+    try {
+      await api.patchStudentExemptions(student.matric_no, {
+        course_actions: [
+          {
+            action: "remove",
+            course_code: cleanCode,
+            grade: grade || "EX",
+          },
+        ],
+      });
+
+      setExemptionsFeedback({
+        type: "success",
+        message: `Exemption for ${cleanCode} removed.`,
+      });
+
+      // Refetch academic records
+      const { data: recData } = await db
+        .from("academic_records")
+        .select("*")
+        .eq("matric_no", student.matric_no)
+        .order("semester", { ascending: true });
+      if (recData) setFetchedRecords(recData);
+
+      // Refetch audits
+      const { data: audits } = await db
+        .from("exemption_audit")
+        .select("*")
+        .eq("matric_no", student.matric_no)
+        .order("created_at", { ascending: false });
+      if (audits) setExemptionAuditHistory(audits);
+    } catch (err: any) {
+      const msg = err.response?.data?.detail || err.message || "Failed to remove course exemption.";
+      setExemptionsFeedback({ type: "error", message: msg });
+    } finally {
+      setIsExemptionsSaving(false);
+    }
+  };
+
 
   // Guard against null/undefined student prop rendering blankly (safely called AFTER all hooks)
   if (!student) {
@@ -113,7 +348,7 @@ export function StudentView({ student, onBack }: StudentViewProps) {
   }
 
   // Extract real metrics safely passed downwards or fetched from academic_records
-  const recordsSource = student?.rawResults || student?.records || (fetchedRecords.length > 0 ? fetchedRecords : []);
+  const recordsSource = (fetchedRecords.length > 0 ? fetchedRecords : (student?.rawResults || student?.records || []));
   const courseResults: CourseLedgerRecord[] = (Array.isArray(recordsSource) ? recordsSource : []).filter(Boolean).map((r: any) => ({
     code: r.course_code || r.code || "",
     name: r.course_name || r.name || "Unknown Module",
@@ -240,11 +475,12 @@ export function StudentView({ student, onBack }: StudentViewProps) {
       headerClassName: "text-center whitespace-nowrap",
       cellClassName: "text-center font-mono text-gray-600 whitespace-nowrap",
       render: (c) => {
-        const gradeStr = String(c.grade || "");
-        const isNeutral = ["HL", "PC", "EX", "P", "LUS"].includes(gradeStr.toUpperCase());
-        if (isNeutral) return <span className="text-blue-600 font-semibold">—</span>;
-        const gp = Number(c.grade_point);
-        const hasGp = c.grade_point !== undefined && c.grade_point !== null && !isNaN(gp);
+        const gradeStr = String(c.grade || "").trim().toUpperCase();
+        const defn = findGradeDefinition(gradeStr, gradeScale);
+        if (defn && !defn.counts_in_cgpa && defn.is_pass) return <span className="text-blue-600 font-semibold">—</span>;
+        if (!defn && gradeStr) return <span className="text-amber-600 font-semibold text-xs">Unknown</span>;
+        const gp = defn?.points !== null && defn?.points !== undefined ? Number(defn.points) : Number(c.grade_point);
+        const hasGp = !isNaN(gp);
         return (
           <span className={`font-bold ${(hasGp ? gp : 0) < 2.0 ? "text-rose-600" : "text-gray-800"}`}>
             {hasGp ? gp.toFixed(2) : "—"}
@@ -297,25 +533,34 @@ export function StudentView({ student, onBack }: StudentViewProps) {
       headerClassName: "text-right whitespace-nowrap",
       cellClassName: "text-right whitespace-nowrap",
       render: (c) => {
-        const gradeStr = String(c.grade || "").toUpperCase();
+        const gradeStr = String(c.grade || "").trim().toUpperCase();
         const statusStr = String(c.status || "");
-        const isHL = gradeStr === "HL";
-        const isPC = ["PC", "EX", "P", "LUS"].includes(gradeStr);
-        const isExempted = statusStr === "Exempted" || isPC;
-        const isPassed = ["Passed", "Pass", "Pass/Approved", "Approved"].includes(statusStr) || isHL;
-        const isFailed = !isHL && !isExempted && (["Failed", "Fail"].includes(statusStr) || gradeStr === "E" || gradeStr === "TL");
+        const defn = findGradeDefinition(gradeStr, gradeScale);
 
-        if (isHL) {
+        if (!defn && gradeStr) {
           return (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-              PASSED (HL)
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-300">
+              <AlertTriangle size={10} /> Unknown grade {gradeStr}
             </span>
           );
         }
+
+        const isExempted = statusStr === "Exempted" || (defn ? (defn.is_pass && !defn.counts_in_cgpa && (gradeStr === "EX" || gradeStr === "CT")) : false);
+        const isNeutral = defn ? (defn.is_pass && !defn.counts_in_cgpa) : false;
+        const isPassed = defn ? defn.is_pass : ["Passed", "Pass", "Pass/Approved", "Approved"].includes(statusStr);
+        const isFailed = defn ? !defn.is_pass : ["Failed", "Fail"].includes(statusStr);
+
         if (isExempted) {
           return (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
               EXEMPT ({gradeStr || "N/A"})
+            </span>
+          );
+        }
+        if (isNeutral) {
+          return (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+              PASSED ({gradeStr})
             </span>
           );
         }
@@ -401,6 +646,259 @@ export function StudentView({ student, onBack }: StudentViewProps) {
           </CardContent>
         </Card>
       </div>
+
+      {/* 🎓 CREDITS & EXEMPTIONS CARD */}
+      <Card className="bg-white border border-gray-200 shadow-sm">
+        <CardHeader className="pb-3 border-b border-gray-100">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <div className="p-2 rounded-lg bg-[#990033]/10 text-[#990033]">
+                <Sliders size={18} />
+              </div>
+              <div>
+                <CardTitle className="text-base font-bold text-gray-900">Credits & Exemptions</CardTitle>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Manage direct entry semesters, block transfer credits, and individual course exemptions.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowAuditHistory(!showAuditHistory)}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-600 hover:text-[#990033] bg-gray-50 hover:bg-gray-100 px-3 py-1.5 rounded-md border border-gray-200 transition-colors"
+            >
+              <History size={13} />
+              {showAuditHistory ? "Hide Change History" : "View Change History"}
+              <span className="ml-1 px-1.5 py-0.2 bg-gray-200 text-gray-700 rounded-full text-[10px]">
+                {exemptionAuditHistory.length}
+              </span>
+            </button>
+          </div>
+          <div className="mt-3 p-3 bg-blue-50/70 border border-blue-200 rounded-lg text-xs text-blue-900 flex items-start gap-2">
+            <Info size={16} className="text-blue-700 flex-shrink-0 mt-0.5" />
+            <span>For diploma/credit-transfer students. Exempted courses count toward graduation but not CGPA.</span>
+          </div>
+          {exemptionsFeedback && (
+            <div
+              className={`mt-2 p-3 rounded-lg text-xs font-medium border flex items-center justify-between ${
+                exemptionsFeedback.type === "success"
+                  ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                  : "bg-rose-50 text-rose-800 border-rose-200"
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                {exemptionsFeedback.type === "success" ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
+                <span>{exemptionsFeedback.message}</span>
+              </div>
+              <button
+                onClick={() => setExemptionsFeedback(null)}
+                className="text-xs opacity-60 hover:opacity-100"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+        </CardHeader>
+        <CardContent className="p-6 space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Left: Progression & Block Credit Inputs */}
+            <div className="p-4 rounded-lg bg-gray-50 border border-gray-200 space-y-4">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-gray-700">Progression & Block Credits</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">
+                    Entry Semester (1–8)
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={8}
+                    value={entrySemester}
+                    onChange={(e) => setEntrySemester(Math.max(1, Math.min(8, parseInt(e.target.value) || 1)))}
+                    className="w-full text-sm font-mono px-3 py-2 bg-white border border-gray-300 rounded-md focus:ring-2 focus:ring-[#990033] focus:border-transparent outline-none"
+                  />
+                  <p className="text-[11px] text-gray-500 mt-1">Starting academic semester of student</p>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">
+                    Block Exempted Credits (0–200)
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={200}
+                    value={blockExemptedCredits}
+                    onChange={(e) => setBlockExemptedCredits(Math.max(0, Math.min(200, parseInt(e.target.value) || 0)))}
+                    className="w-full text-sm font-mono px-3 py-2 bg-white border border-gray-300 rounded-md focus:ring-2 focus:ring-[#990033] focus:border-transparent outline-none"
+                  />
+                  <p className="text-[11px] text-gray-500 mt-1">Direct lump-sum credits (e.g. diploma waiver)</p>
+                </div>
+              </div>
+              <div className="flex justify-end pt-1">
+                <Button
+                  size="sm"
+                  onClick={handleSaveProgression}
+                  disabled={isExemptionsSaving || (entrySemester === savedEntrySemester && blockExemptedCredits === savedBlockCredits)}
+                  className="gap-1.5"
+                >
+                  <Save size={13} />
+                  {isExemptionsSaving ? "Saving..." : "Save Progression"}
+                </Button>
+              </div>
+            </div>
+
+            {/* Right: Add Course Exemption Form */}
+            <div className="p-4 rounded-lg bg-gray-50 border border-gray-200 space-y-4">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-gray-700">Add Course Exemption</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">
+                    Template Course
+                  </label>
+                  <select
+                    value={selectedTemplateCourse}
+                    onChange={(e) => setSelectedTemplateCourse(e.target.value)}
+                    className="w-full text-xs px-2.5 py-2 bg-white border border-gray-300 rounded-md focus:ring-2 focus:ring-[#990033] focus:border-transparent outline-none truncate"
+                  >
+                    {templateCourses.length === 0 ? (
+                      <option value="">No template courses available</option>
+                    ) : (
+                      templateCourses.map((tc) => (
+                        <option key={tc.course_code} value={tc.course_code}>
+                          {tc.course_code} — {tc.course_name} ({tc.credit_hour} cr)
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">
+                    Exemption Type
+                  </label>
+                  <select
+                    value={selectedExemptionGrade}
+                    onChange={(e) => setSelectedExemptionGrade(e.target.value as "EX" | "CT")}
+                    className="w-full text-xs font-semibold px-2.5 py-2 bg-white border border-gray-300 rounded-md focus:ring-2 focus:ring-[#990033] focus:border-transparent outline-none"
+                  >
+                    <option value="EX">EX (Exemption)</option>
+                    <option value="CT">CT (Credit Transfer)</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex justify-end pt-1">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleAddExemptionCourse}
+                  disabled={isExemptionsSaving || !selectedTemplateCourse}
+                  className="gap-1.5"
+                >
+                  <Plus size={13} />
+                  Add Course Exemption
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          {/* List of current course exemptions */}
+          <div className="border border-gray-200 rounded-lg overflow-hidden">
+            <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider text-gray-700">
+                Active Course Exemptions ({courseResults.filter((c) => {
+                  const g = String(c.grade || "").trim().toUpperCase();
+                  return g === "EX" || g === "CT" || c.status === "Exempted";
+                }).length})
+              </span>
+              <span className="text-xs text-gray-500">
+                Applied toward graduation requirements
+              </span>
+            </div>
+            {courseResults.filter((c) => {
+              const g = String(c.grade || "").trim().toUpperCase();
+              return g === "EX" || g === "CT" || c.status === "Exempted";
+            }).length === 0 ? (
+              <div className="p-4 text-center text-xs text-gray-500">
+                No individual course exemptions recorded for this student.
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-100 max-h-56 overflow-y-auto">
+                {courseResults
+                  .filter((c) => {
+                    const g = String(c.grade || "").trim().toUpperCase();
+                    return g === "EX" || g === "CT" || c.status === "Exempted";
+                  })
+                  .map((c, idx) => (
+                    <div key={`${c.code}-${idx}`} className="px-4 py-2.5 flex items-center justify-between hover:bg-gray-50 text-xs">
+                      <div className="flex items-center gap-3">
+                        <span className="font-mono font-bold text-gray-900">{c.code}</span>
+                        <span className="text-gray-700 font-medium">{c.name}</span>
+                        <span className="text-gray-400 font-mono">({c.credits} Cr)</span>
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                          {c.grade || "EX"}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => handleRemoveExemptionCourse(c.code, c.grade)}
+                        disabled={isExemptionsSaving}
+                        className="inline-flex items-center gap-1 text-xs text-rose-600 hover:text-rose-800 hover:bg-rose-50 px-2 py-1 rounded transition-colors"
+                        title="Remove Exemption"
+                      >
+                        <Trash2 size={13} />
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
+
+          {/* Change History Audit Drawer / Collapsible */}
+          {showAuditHistory && (
+            <div className="border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
+              <div className="px-4 py-3 bg-gray-100 border-b border-gray-200 flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-gray-700 flex items-center gap-1.5">
+                  <History size={13} className="text-gray-500" />
+                  Exemption Change History (exemption_audit)
+                </span>
+                <span className="text-xs text-gray-500">
+                  {exemptionAuditHistory.length} recorded events
+                </span>
+              </div>
+              {exemptionAuditHistory.length === 0 ? (
+                <div className="p-4 text-center text-xs text-gray-500">
+                  No exemption audit history recorded yet.
+                </div>
+              ) : (
+                <div className="divide-y divide-gray-200 max-h-60 overflow-y-auto">
+                  {exemptionAuditHistory.map((audit) => (
+                    <div key={audit.id} className="p-3 text-xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 hover:bg-white transition-colors">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-gray-900">{audit.field}</span>
+                          <span className="text-[11px] text-gray-400 font-mono">
+                            {new Date(audit.created_at).toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 font-mono text-[11px]">
+                          <span className="text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">
+                            {audit.old_value !== null && audit.old_value !== undefined ? String(audit.old_value) : "—"}
+                          </span>
+                          <span className="text-gray-400">→</span>
+                          <span className="text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                            {audit.new_value !== null && audit.new_value !== undefined ? String(audit.new_value) : "—"}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-[11px] text-gray-500 font-mono">
+                        By: <span className="font-bold text-gray-700">{audit.changed_by_staff_id || "Staff"}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* 🛠️ CORE COMPONENT DEEP GRID SYSTEM */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

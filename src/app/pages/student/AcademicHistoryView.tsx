@@ -1,8 +1,20 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { BookOpen, ChevronDown, ChevronUp, AlertTriangle } from "lucide-react";
+import { fetchGradeScale, findGradeDefinition, GradeScaleRow } from "../../../lib/gradeScale";
 
 export function AcademicHistoryView({ courseHistory = [] }: { courseHistory?: any[] }) {
   const [expandedSems, setExpandedSems] = useState<string[]>([]);
+  const [gradeScale, setGradeScale] = useState<GradeScaleRow[]>([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    fetchGradeScale().then((scale) => {
+      if (isMounted && scale.length > 0) setGradeScale(scale);
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Real DB academic history — no fake fallback data
   const dataToRender = courseHistory || [];
@@ -78,12 +90,22 @@ export function AcademicHistoryView({ courseHistory = [] }: { courseHistory?: an
                           <td className="px-6 py-3.5 text-center font-bold text-gray-900 font-mono">{course.grade}</td>
                           <td className="px-6 py-3.5 text-right">
                             {(() => {
-                              const gradeStr = String(course.grade || "").toUpperCase();
-                              const isNeutralPassing = ["HL", "PC", "EX", "P", "LUS"].includes(gradeStr);
-                              const displayStatus = isNeutralPassing ? "Exempted" : course.status;
-                              const isFailed = displayStatus === "Failed" || gradeStr === "E" || gradeStr === "TL";
-                              
-                              if (isFailed) {
+                              const gradeStr = String(course.grade || "").trim().toUpperCase();
+                              const defn = findGradeDefinition(gradeStr, gradeScale);
+
+                              // Unknown grade: Show "Unknown grade X" in UI; never default to 0 or pass
+                              if (!defn && gradeStr) {
+                                return (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-300">
+                                    <AlertTriangle size={11} /> Unknown grade {gradeStr}
+                                  </span>
+                                );
+                              }
+
+                              const isPassing = defn ? defn.is_pass : course.status === "Passed";
+                              const isNeutral = defn ? (defn.is_pass && !defn.counts_in_cgpa) : false;
+
+                              if (!isPassing) {
                                 return (
                                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
                                     <AlertTriangle size={11}/> FAILED
@@ -91,7 +113,7 @@ export function AcademicHistoryView({ courseHistory = [] }: { courseHistory?: an
                                 );
                               }
                               
-                              if (isNeutralPassing) {
+                              if (isNeutral) {
                                 return (
                                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                                     ✓ PASSED ({gradeStr})

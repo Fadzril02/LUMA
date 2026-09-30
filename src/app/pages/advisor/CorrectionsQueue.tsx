@@ -4,6 +4,12 @@ import { Card, CardContent, Button, Badge } from "../../components/ui";
 import { db } from "../../../lib/supabase";
 import { api } from "../../../lib/api";
 import { useAuth } from "../../../context/AuthContext";
+import {
+  fetchGradeScale,
+  gradesForDropdown,
+  isPass,
+  GradeScaleRow,
+} from "../../../lib/gradeScale";
 
 interface CorrectionsQueueProps {
   queue: any[];
@@ -20,6 +26,7 @@ export function CorrectionsQueue({ queue, roster, onApproved, onRefresh }: Corre
   const [activeAuditDoc, setActiveAuditDoc] = useState<any>(null);
   const [pdfUrl, setPdfUrl] = useState<string>("");
   const [isSaving, setIsSaving] = useState(false);
+  const [gradeScale, setGradeScale] = useState<GradeScaleRow[]>([]);
 
   // Staged courses with manual fallback support
   const [stagedCourses, setStagedCourses] = useState<any[]>([]);
@@ -32,6 +39,23 @@ export function CorrectionsQueue({ queue, roster, onApproved, onRefresh }: Corre
   const [selectedSession, setSelectedSession] = useState<string>("");
 
   useEffect(() => { setLiveQueue(queue); }, [queue]);
+
+  useEffect(() => {
+    let isMounted = true;
+    fetchGradeScale().then((scale) => {
+      if (isMounted && scale.length > 0) {
+        setGradeScale(scale);
+        const firstGrade = scale.find((s) => s.counts_in_cgpa && s.points !== null) || scale[0];
+        if (firstGrade) {
+          setManualGrade(firstGrade.grade);
+        }
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
 
   const pendingCount = liveQueue.filter((item) => item.processing_status === "Pending_Advisor_Approval").length;
   const approvedCount = liveQueue.filter((item) => item.processing_status === "Approved").length;
@@ -73,7 +97,7 @@ export function CorrectionsQueue({ queue, roster, onApproved, onRefresh }: Corre
       grade: manualGrade.trim().toUpperCase(),
       credit_hour: Number(manualCredits) || 3,
       credits: Number(manualCredits) || 3,
-      status: ["TD", "TS", "E"].includes(manualGrade.trim().toUpperCase()) ? "Failed" : "Passed"
+      status: isPass(manualGrade, gradeScale) ? "Passed" : "Failed"
     };
     setStagedCourses(prev => [...prev, newCourse]);
     setManualCode("");
@@ -389,9 +413,15 @@ export function CorrectionsQueue({ queue, roster, onApproved, onRefresh }: Corre
                             onChange={(e) => setManualGrade(e.target.value)}
                             className="w-full text-xs font-bold px-2.5 py-1.5 border border-gray-300 rounded bg-white focus:outline-indigo-500"
                           >
-                            {["A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D+", "D", "E", "TD", "TS", "HL"].map((g) => (
-                              <option key={g} value={g}>{g}</option>
-                            ))}
+                            {gradeScale.length > 0 ? (
+                              gradesForDropdown(gradeScale).map((g) => (
+                                <option key={g.grade} value={g.grade}>
+                                  {g.grade}{g.achievement_label ? ` (${g.achievement_label})` : ""}
+                                </option>
+                              ))
+                            ) : (
+                              <option value={manualGrade}>{manualGrade}</option>
+                            )}
                           </select>
                         </div>
                         <div>

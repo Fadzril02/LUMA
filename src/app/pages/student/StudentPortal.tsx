@@ -173,32 +173,14 @@ export function StudentPortal() {
 
         setCourseHistory(historyMapped);
 
-        let totalPoints = 0;
-        let gradedCredits = 0;
-        let totalEarnedCredits = 0;
+        // Use backend-computed values from students.cgpa and degree_audits/records where available
+        const liveEarned = studentEarnedCredits > 0
+          ? studentEarnedCredits
+          : historyMapped
+              .filter((item) => ["Passed", "Pass", "Pass/Approved", "Approved", "Exempted"].includes(item.status))
+              .reduce((sum, item) => sum + item.credits, 0);
 
-        historyMapped.forEach((item) => {
-          const passed =
-            item.status === "Passed" ||
-            item.status === "Pass" ||
-            item.status === "Pass/Approved" ||
-            item.status === "Approved";
-
-          if (passed) {
-            totalEarnedCredits += item.credits;
-            // Exempt courses (HL grade) do not contribute to GPA
-            if (item.grade !== "HL" && item.grade !== "N/A" && item.pointValue > 0) {
-              totalPoints += item.pointValue * item.credits;
-              gradedCredits += item.credits;
-            }
-          }
-        });
-
-        const calculatedCgpa =
-          gradedCredits > 0 ? (totalPoints / gradedCredits).toFixed(2) : "0.00";
-
-        const liveEarned = studentEarnedCredits > 0 ? studentEarnedCredits : totalEarnedCredits;
-        const liveCgpa = Number(studentCgpa) > 0 ? studentCgpa : calculatedCgpa;
+        const liveCgpa = studentCgpa && Number(studentCgpa) > 0 ? studentCgpa : "0.00";
 
         setStats({ cgpa: liveCgpa, earned: liveEarned, required: dynamicRequiredCredits });
 

@@ -200,5 +200,33 @@ export const api = {
     const res = await apiClient.post(`/api/v1/advising-logs/${logId}/notify`);
     return res.data;
   },
+
+  // Update Student Exemptions, Entry Semester, and EX/CT Course Records
+  patchStudentExemptions: async (
+    matricNo: string,
+    payload: {
+      entry_semester?: number;
+      block_exempted_credits?: number;
+      course_actions?: Array<{
+        action: 'add' | 'remove';
+        course_code: string;
+        grade?: string;
+        credits?: number;
+        course_name?: string;
+        semester?: string;
+      }>;
+    }
+  ): Promise<{
+    success: boolean;
+    matric_no: string;
+    entry_semester: number;
+    block_exempted_credits: number;
+    audits_written: number;
+    detail: string;
+  }> => {
+    const res = await apiClient.patch(`/api/v1/students/${encodeURIComponent(matricNo)}/exemptions`, payload);
+    return res.data;
+  },
 };
+
 

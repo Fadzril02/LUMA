@@ -30,11 +30,28 @@ export function AdvisorPortal() {
       // Only show the full-page spinner on first load; background refreshes must not unmount children (e.g. open upload modal)
       if (!isSilent) setIsLoading(true);
 
-      // 1. Fetch assigned students strictly filtered by advisor_staff_id
-      const { data: studentsData } = await db
-        .from("students")
-        .select("*")
-        .eq("advisor_staff_id", advisorStaffId);
+      // 1. Fetch assigned students: prefer backend-computed advisee_roster_summary view, fallback to students table
+      let studentsData: any[] | null = null;
+      try {
+        const { data: summaryRows, error: summaryErr } = await db
+          .from("advisee_roster_summary")
+          .select("*")
+          .eq("advisor_staff_id", advisorStaffId);
+
+        if (!summaryErr && summaryRows && summaryRows.length > 0) {
+          studentsData = summaryRows;
+        }
+      } catch (e) {
+        console.warn("[AdvisorPortal] advisee_roster_summary notice:", e);
+      }
+
+      if (!studentsData) {
+        const { data: fallbackRows } = await db
+          .from("students")
+          .select("*")
+          .eq("advisor_staff_id", advisorStaffId);
+        studentsData = fallbackRows;
+      }
 
       const adviseeMatricNos = (studentsData || []).map((s: any) => s.matric_no).filter(Boolean);
 
@@ -62,28 +79,18 @@ export function AdvisorPortal() {
             (r: any) => r.matric_no === student.matric_no
           );
 
-          let totalPts = 0;
-          let gradedCreds = 0;
-          let earnedCreds = 0;
+          // Use backend-computed values from students.cgpa and total_earned_credits
+          const rawCgpa = student.current_cgpa ?? student.cgpa;
+          const cgpa = rawCgpa !== null && rawCgpa !== undefined ? Number(rawCgpa) : 0;
+          const rawCredits = student.total_earned_credits ?? student.credits;
+          const earnedCreds = rawCredits !== null && rawCredits !== undefined ? Number(rawCredits) : 0;
 
-          studentRecords.forEach((r: any) => {
-            const credits = Number(r.credits) || 3;
-            if (r.status === "Pass" || r.status === "Passed") {
-              earnedCreds += credits;
-              if (r.grade !== "HL" && r.grade !== "N/A" && r.grade_point !== null && r.grade_point !== undefined) {
-                totalPts += Number(r.grade_point) * credits;
-                gradedCreds += credits;
-              }
-            }
-          });
-
-          const cgpa = gradedCreds > 0 ? totalPts / gradedCreds : Number(student.cgpa || 0);
-          const isAtRisk = cgpa < 2.5 && studentRecords.length > 0;
-          const status = isAtRisk ? "At-Risk" : (student.academic_status || "Good Standing");
+          const isAtRisk = (cgpa < 2.5 && cgpa > 0) || student.academic_status === "At-Risk" || student.academic_status === "Probation";
+          const status = student.academic_status || (isAtRisk ? "At-Risk" : "Good Standing");
 
           return {
             id: student.matric_no,
-            name: student.name || "Student",
+            name: student.student_name || student.name || "Student",
             matric_no: student.matric_no,
             program: student.program || "Unassigned",
             cgpa: cgpa,

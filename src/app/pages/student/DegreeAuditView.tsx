@@ -3,6 +3,7 @@ import { CheckCircle2, ShieldAlert, Award, BookOpen, CheckCircle, Hash, Calendar
 import { db } from "../../../lib/supabase";
 import { useAuth } from "../../../context/AuthContext";
 import { CourseLedger, CourseLedgerRecord, LedgerColumn } from "../../../components/shared/CourseLedger";
+import { fetchGradeScale, findGradeDefinition, GradeScaleRow } from "../../../lib/gradeScale";
 
 export interface DegreeAuditViewProps {
   cgpa?: number | string;
@@ -25,9 +26,21 @@ export function DegreeAuditView({
   const [fetchedCgpa, setFetchedCgpa] = useState<number | null>(null);
   const [fetchedCredits, setFetchedCredits] = useState<number | null>(null);
   const [courseList, setCourseList] = useState<any[]>(propCourses || []);
+  const [gradeScale, setGradeScale] = useState<GradeScaleRow[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(
     !propCourses || propCgpa === undefined || propEarnedCredits === undefined
   );
+
+  useEffect(() => {
+    let isMounted = true;
+    fetchGradeScale().then((scale) => {
+      if (isMounted && scale.length > 0) setGradeScale(scale);
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
 
   const activeMatric = propMatric || profile?.matric_no || "";
 
@@ -140,22 +153,30 @@ export function DegreeAuditView({
   }, [propCourses, propCgpa, propEarnedCredits, activeMatric, user?.id]);
 
   // Filter approved and non-passing courses
-  const approvedCourses = currentCourses.filter(
-    (c) =>
+  const approvedCourses = currentCourses.filter((c) => {
+    const defn = findGradeDefinition(c.grade, gradeScale);
+    if (defn) {
+      return defn.is_pass;
+    }
+    return (
       c.status === "Passed" ||
       c.status === "Pass" ||
       c.status === "Pass/Approved" ||
       c.status === "Approved" ||
       c.status === "Exempted"
-  );
+    );
+  });
 
-  const failedCourses = currentCourses.filter(
-    (c) =>
+  const failedCourses = currentCourses.filter((c) => {
+    const defn = findGradeDefinition(c.grade, gradeScale);
+    if (defn) {
+      return !defn.is_pass;
+    }
+    return (
       c.status === "Failed" ||
-      c.status === "Fail" ||
-      c.grade === "E" ||
-      c.grade === "F"
-  );
+      c.status === "Fail"
+    );
+  });
 
   // Dynamic module distribution derived from live approved course codes
   const coreCredits = approvedCourses
@@ -237,13 +258,22 @@ export function DegreeAuditView({
       headerClassName: "text-right whitespace-nowrap",
       cellClassName: "text-right whitespace-nowrap",
       render: (c) => {
-        const gradeStr = String(c.grade || "").toUpperCase();
-        const isNeutralPassing = ["HL", "PC", "EX", "P", "LUS"].includes(gradeStr);
-        // Force status to Exempted if it's a neutral passing grade, overriding backend
-        const displayStatus = isNeutralPassing ? "Exempted" : c.status;
-        const isFailed = displayStatus === "Failed" || gradeStr === "E" || gradeStr === "TL";
+        const gradeStr = String(c.grade || "").trim().toUpperCase();
+        const defn = findGradeDefinition(gradeStr, gradeScale);
 
-        if (isFailed) {
+        // Unknown grade: show "Unknown grade X" in UI; never default to 0 or pass
+        if (!defn && gradeStr) {
+          return (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-300">
+              <ShieldAlert size={11} /> Unknown grade {gradeStr}
+            </span>
+          );
+        }
+
+        const isPassing = defn ? defn.is_pass : (c.status === "Passed" || c.status === "Pass" || c.status === "Approved" || c.status === "Exempted");
+        const isNeutralPassing = defn ? (defn.is_pass && !defn.counts_in_cgpa) : false;
+
+        if (!isPassing) {
           return (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
               <ShieldAlert size={11} /> FAILED
@@ -257,7 +287,7 @@ export function DegreeAuditView({
             </span>
           );
         }
-        if (displayStatus === "Exempted") {
+        if (c.status === "Exempted") {
           return (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
               ✓ EXEMPT

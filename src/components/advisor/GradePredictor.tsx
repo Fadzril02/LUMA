@@ -1,8 +1,14 @@
 import React, { useState, useEffect } from "react";
-import { Target, Plus, Trash2, Calculator, Sparkles, TrendingUp, TrendingDown, BookOpen } from "lucide-react";
+import { Target, Plus, Trash2, Calculator, Sparkles, TrendingUp, TrendingDown, BookOpen, AlertTriangle } from "lucide-react";
 import { Button, Input } from "../../app/components/ui";
 import { db } from "../../lib/supabase";
 import { useAuth } from "../../context/AuthContext";
+import {
+  fetchGradeScale,
+  findGradeDefinition,
+  gradesForDropdown,
+  GradeScaleRow,
+} from "../../lib/gradeScale";
 
 export interface GradePredictorProps {
   currentCgpa?: number | string;
@@ -40,34 +46,31 @@ export function GradePredictor({
   const [fetchedCgpa, setFetchedCgpa] = useState<number | null>(null);
   const [fetchedCredits, setFetchedCredits] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [gradeScale, setGradeScale] = useState<GradeScaleRow[]>([]);
 
   const [hypotheticalClasses, setHypotheticalClasses] = useState<HypotheticalCourse[]>([
     { name: "Target Elective Module 1", credits: 3, expectedGrade: "A" },
   ]);
 
-  // Standard UTM / Malaysian University Grade-to-Point Scale
-  const gradePoints: Record<string, number> = {
-    "A+": 4.0,
-    A: 4.0,
-    "A-": 3.67,
-    "B+": 3.33,
-    B: 3.0,
-    "B-": 2.67,
-    "C+": 2.33,
-    C: 2.0,
-    "C-": 1.67,
-    "D+": 1.33,
-    D: 1.0,
-    E: 0.0,
-    F: 0.0,
-    HL: 0.0,
-    PC: 0.0,
-    EX: 0.0,
-    TD: 0.0,
-    TS: 0.0,
-  };
+  // Load tenant grading scale on mount
+  useEffect(() => {
+    let isMounted = true;
+    fetchGradeScale().then((scale) => {
+      if (isMounted && scale.length > 0) {
+        setGradeScale(scale);
+        const defaultGraded = scale.find((s) => s.counts_in_cgpa && s.points !== null);
+        if (defaultGraded) {
+          setHypotheticalClasses((prev) =>
+            prev.map((c) => (c.expectedGrade === "A" ? { ...c, expectedGrade: defaultGraded.grade } : c))
+          );
+        }
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
-  const neutralGrades = ["HL", "PC", "EX", "TD", "TS"];
 
   const activeMatric =
     propMatric ||
@@ -181,25 +184,33 @@ export function GradePredictor({
   let newQualityPoints = liveCgpa * liveCredits;
   let newTotalCredits = liveCredits;
   let addedSemesterCredits = 0;
+  let hasUnknownGrade = false;
 
   hypotheticalClasses.forEach((cls) => {
-    const points = gradePoints[cls.expectedGrade] ?? 0;
     const creds = Number(cls.credits) || 0;
-    
-    // Neutral grades (HL, EX, PC) and withdrawn (TD, TS) do not affect GPA denominator
-    if (!neutralGrades.includes(cls.expectedGrade)) {
-      newQualityPoints += points * creds;
+    const defn = findGradeDefinition(cls.expectedGrade, gradeScale);
+
+    if (!defn) {
+      hasUnknownGrade = true;
+      return; // Unknown grade: never default to 0 or pass!
+    }
+
+    if (defn.counts_in_cgpa && defn.points !== null) {
+      newQualityPoints += Number(defn.points) * creds;
       newTotalCredits += creds;
     }
-    
-    // They do count towards total earned credits if passing (HL, PC, EX)
-    if (["HL", "PC", "EX"].includes(cls.expectedGrade) || !neutralGrades.includes(cls.expectedGrade)) {
-        addedSemesterCredits += creds;
+
+    if (defn.counts_as_completed) {
+      addedSemesterCredits += creds;
     }
   });
 
-  const projectedCgpa = newTotalCredits > 0 ? (newQualityPoints / newTotalCredits).toFixed(2) : "0.00";
-  const diffVal = parseFloat(projectedCgpa) - liveCgpa;
+  const projectedCgpa = hasUnknownGrade
+    ? "N/A"
+    : newTotalCredits > 0
+    ? (newQualityPoints / newTotalCredits).toFixed(2)
+    : "0.00";
+  const diffVal = hasUnknownGrade ? 0 : parseFloat(projectedCgpa) - liveCgpa;
   const difference = diffVal.toFixed(2);
   const isPositive = diffVal >= 0;
 
@@ -272,11 +283,28 @@ export function GradePredictor({
                     onChange={(e) => updateCourse(idx, "expectedGrade", e.target.value)}
                     className="w-full border border-gray-200 bg-white rounded-lg px-2 h-9 text-xs font-bold text-gray-900 outline-none focus:ring-2 focus:ring-blue-900 cursor-pointer"
                   >
-                    {Object.keys(gradePoints).map((g) => (
-                      <option key={g} value={g}>
-                        {g} {neutralGrades.includes(g) ? "(Neutral)" : `(${gradePoints[g].toFixed(2)})`}
+                    {gradeScale.length > 0 ? (
+                      gradesForDropdown(gradeScale).map((g) => {
+                        const ptText = g.points !== null ? `${Number(g.points).toFixed(2)} pts` : (g.is_pass ? "Neutral" : "Non-credit");
+                        const markRange = g.min_mark !== null && g.max_mark !== null ? `${g.min_mark}–${g.max_mark}%` : null;
+                        const labelParts = [ptText];
+                        if (markRange) labelParts.push(markRange);
+                        if (g.achievement_label) labelParts.push(g.achievement_label);
+
+                        return (
+                          <option key={g.grade} value={g.grade}>
+                            {g.grade} ({labelParts.join(" | ")})
+                          </option>
+                        );
+                      })
+                    ) : (
+                      <option value={cls.expectedGrade}>{cls.expectedGrade}</option>
+                    )}
+                    {cls.expectedGrade && !findGradeDefinition(cls.expectedGrade, gradeScale) && (
+                      <option value={cls.expectedGrade}>
+                        Unknown grade {cls.expectedGrade}
                       </option>
-                    ))}
+                    )}
                   </select>
                 </div>
                 <div className="col-span-1 flex justify-end">
@@ -327,19 +355,26 @@ export function GradePredictor({
               {projectedCgpa}
             </h1>
 
-            <div
-              className={`mt-4 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold ${
-                isPositive
-                  ? "bg-emerald-500/20 text-emerald-300 border border-emerald-400/30"
-                  : "bg-rose-500/20 text-rose-300 border border-rose-400/30"
-              }`}
-            >
-              {isPositive ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-              <span>
-                {isPositive ? "+" : ""}
-                {difference} from baseline ({liveCgpa.toFixed(2)})
-              </span>
-            </div>
+            {hasUnknownGrade ? (
+              <div className="mt-4 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-400/30">
+                <AlertTriangle size={14} />
+                <span>Unknown grade in target module: cannot forecast CGPA</span>
+              </div>
+            ) : (
+              <div
+                className={`mt-4 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold ${
+                  isPositive
+                    ? "bg-emerald-500/20 text-emerald-300 border border-emerald-400/30"
+                    : "bg-rose-500/20 text-rose-300 border border-rose-400/30"
+                }`}
+              >
+                {isPositive ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+                <span>
+                  {isPositive ? "+" : ""}
+                  {difference} from baseline ({liveCgpa.toFixed(2)})
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Bottom Breakdown Metrics */}
