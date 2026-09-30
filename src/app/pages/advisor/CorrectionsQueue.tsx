@@ -120,27 +120,14 @@ export function CorrectionsQueue({ queue, roster, onApproved, onRefresh }: Corre
     const docId = activeAuditDoc.id;
 
     try {
-      let backendSuccess = false;
-      // 1. Route through dedicated backend API with service-role privileges to bypass RLS blocks
+      // Rejection is done by the backend only (it verifies you are this student's advisor)
       try {
         await api.rejectDocument(docId, "Document rejected by advisor");
-        backendSuccess = true;
       } catch (apiErr: any) {
-        console.warn("[CorrectionsQueue] Backend reject-document API failed, falling back to client-side db update:", apiErr);
-      }
-
-      // 2. Client-side fallback if backend was unavailable
-      if (!backendSuccess) {
-        const { error: dbError } = await db
-          .from("uploaded_documents")
-          .update({ processing_status: "Rejected" })
-          .eq("id", docId);
-
-        if (dbError) {
-          console.error("[CorrectionsQueue] Client-side rejection failed due to RLS/database error:", dbError);
-          alert(`Rejection failed: ${dbError.message || "Permission denied by database security policy."}`);
-          return;
-        }
+        const detail = apiErr?.response?.data?.detail || apiErr?.message || "Please try again.";
+        console.error("[CorrectionsQueue] reject-document failed:", apiErr);
+        alert(`Rejection failed: ${detail}`);
+        return;
       }
 
       // 3. Clear UI state immediately on success

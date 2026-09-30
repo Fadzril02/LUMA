@@ -23,6 +23,7 @@ try:
         ExtractPDFResponse,
         ParsedLineItem,
         RejectDocumentRequest,
+        SubmitVerificationRequest,
         RejectDocumentResponse
     )
     from app.engine.extractor import PDFExtractor
@@ -48,6 +49,7 @@ except ImportError:
         ExtractPDFResponse,
         ParsedLineItem,
         RejectDocumentRequest,
+        SubmitVerificationRequest,
         RejectDocumentResponse
     )
     from backend.app.engine.extractor import PDFExtractor
@@ -60,6 +62,87 @@ except ImportError:
 
 router = APIRouter(prefix="/audit", tags=["Degree Audit"])
 supabase_svc = SupabaseService()
+
+
+def _load_authorized_document(
+    jwt_payload: dict,
+    *,
+    file_path: Optional[str] = None,
+    document_id: Optional[str] = None,
+    allow_student: bool = True,
+    allow_advisor: bool = True,
+    expected_matric: Optional[str] = None,
+):
+    """
+    Load an uploaded_documents row and verify the caller may act on it.
+    Student: owns the matric (students.user_id = JWT sub).
+    Advisor: is the student's assigned advisor in the same tenant.
+    Returns (doc, role). Raises 401/403/404 (fail loud, never guess).
+    """
+    jwt_sub = jwt_payload.get("sub")
+    if not jwt_sub:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token: missing subject (sub)")
+    if not supabase_svc.client:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database client unavailable")
+    if not file_path and not document_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="file_path or document_id is required")
+
+    q = supabase_svc.client.table("uploaded_documents").select(
+        "id, matric_no, file_path, processing_status, extracted_data, fraud_flag"
+    )
+    q = q.eq("id", document_id) if document_id else q.eq("file_path", file_path)
+    res = q.limit(1).execute()
+    if not res.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+    doc = res.data[0]
+
+    if expected_matric and expected_matric.strip().upper() != str(doc.get("matric_no") or "").strip().upper():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="matric_number does not match the document",
+        )
+
+    stu = (
+        supabase_svc.client.table("students")
+        .select("user_id, advisor_staff_id, tenant_id")
+        .eq("matric_no", doc["matric_no"])
+        .limit(1)
+        .execute()
+    )
+    if not stu.data:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized for this document")
+    student = stu.data[0]
+
+    if allow_student and student.get("user_id") == jwt_sub:
+        return doc, "student"
+
+    if allow_advisor:
+        adv = (
+            supabase_svc.client.table("advisors")
+            .select("staff_id, tenant_id")
+            .eq("user_id", jwt_sub)
+            .limit(1)
+            .execute()
+        )
+        if (
+            adv.data
+            and adv.data[0].get("staff_id") == student.get("advisor_staff_id")
+            and adv.data[0].get("tenant_id") == student.get("tenant_id")
+        ):
+            return doc, "advisor"
+
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized for this document")
+
+
+def _mark_document_failed(document_id: str, message: str) -> None:
+    """Record an extraction failure server-side (students can no longer write this)."""
+    try:
+        supabase_svc.client.table("uploaded_documents").update({
+            "processing_status": "Extraction_Failed",
+            "processing_error": (message or "Extraction failed")[:500],
+        }).eq("id", document_id).execute()
+    except Exception as e:
+        print(f"[Extract] Failed to mark document {document_id} as Extraction_Failed: {e}")
 llm_fallback = MicroLLMFallback()
 
 def fetch_and_merge_historical_records(matric_no: str, new_records: List[ParsedLineItem], tenant_id: str) -> List[ParsedLineItem]:
@@ -268,6 +351,21 @@ async def extract_transcript_from_storage(
     5. Falls back to micro-LLM only for ambiguous/unparsed transfer lines.
     6. Updates uploaded_documents with extracted_data & fraud_flag.
     """
+    doc, role = _load_authorized_document(jwt_payload, file_path=request.file_path)
+    try:
+        return await _extract_core(request, jwt_payload, doc, role)
+    except HTTPException as he:
+        _mark_document_failed(doc["id"], str(he.detail))
+        raise
+    except Exception as e:
+        _mark_document_failed(doc["id"], str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Extraction failed unexpectedly. Please retry.",
+        )
+
+
+async def _extract_core(request: ExtractPDFRequest, jwt_payload: dict, doc: dict, role: str) -> ExtractPDFResponse:
     try:
         pdf_bytes = supabase_svc.download_transcript_bytes(request.file_path)
     except Exception as e:
@@ -365,15 +463,23 @@ async def extract_transcript_from_storage(
         "warnings": metadata.get("warnings", [])
     }
 
-    # 6. Update uploaded_documents if matching file_path exists
+    # 6. Persist server-side (the browser never writes extracted grades)
+    extracted_data["original_courses"] = courses_payload
+    update_payload = {
+        "extracted_data": extracted_data,
+        "fraud_flag": is_fraudulent,
+        "processing_error": None,
+    }
+    if role == "student":
+        # Student re-extraction restarts verification; advisor extraction never changes status
+        update_payload["processing_status"] = "Pending_Student_Verification"
     try:
-        if supabase_svc.client:
-            supabase_svc.client.table("uploaded_documents").update({
-                "extracted_data": extracted_data,
-                "fraud_flag": is_fraudulent
-            }).eq("file_path", request.file_path).execute()
+        supabase_svc.client.table("uploaded_documents").update(update_payload).eq("id", doc["id"]).execute()
     except Exception as update_err:
-        print(f"[Supabase Extract Update Warning] {update_err}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to save extracted data: {update_err}",
+        )
 
     return ExtractPDFResponse(success=True, data=extracted_data)
 
@@ -400,6 +506,14 @@ async def finalize_approval(
     # Stop trusting frontend for advisor identity. Extract advisor_id and tenant_id strictly from verified JWT app_metadata or verified sub DB lookup.
     advisor_id = _extract_advisor_id(jwt_payload)
     tenant_id = _extract_tenant_id(jwt_payload)
+
+    # Only the student's own advisor may approve, and the matric must match the document
+    _load_authorized_document(
+        jwt_payload,
+        document_id=request.document_id,
+        allow_student=False,
+        expected_matric=request.matric_number,
+    )
 
     # Validate that courses array is not empty
     if not request.courses:
@@ -830,6 +944,8 @@ async def reject_document(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="document_id is required."
         )
+    # Only the student's own advisor (same tenant) may reject this document
+    _load_authorized_document(jwt_payload, document_id=request.document_id, allow_student=False)
 
     try:
         if supabase_svc.client:
@@ -851,3 +967,75 @@ async def reject_document(
             detail=f"Failed to reject document: {str(e)}"
         )
 
+
+@router.post(
+    "/submit-verification",
+    status_code=status.HTTP_200_OK,
+    summary="Student confirms extracted results; server computes any changes and sends to advisor",
+)
+async def submit_student_verification(
+    request: SubmitVerificationRequest,
+    jwt_payload: dict = Depends(verify_advisor_jwt),
+):
+    """
+    The student may correct course codes/grades the parser misread, but the
+    comparison against the original extraction is done HERE, against the
+    server-stored copy. Client-supplied flags (is_altered, ai_grade, fraud_flag)
+    are ignored, so a student cannot hide changes from the advisor.
+    """
+    doc, _role = _load_authorized_document(jwt_payload, document_id=request.document_id, allow_advisor=False)
+
+    if doc.get("processing_status") != "Pending_Student_Verification":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Document is not awaiting student verification (status: {doc.get('processing_status')})",
+        )
+
+    original = doc.get("extracted_data") or {}
+    orig_courses = original.get("original_courses") or original.get("courses") or []
+    if not orig_courses:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="No extracted data to verify")
+    if len(request.courses) != len(orig_courses):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Course list must match the extracted rows (same count and order)",
+        )
+
+    merged = []
+    for orig, sub in zip(orig_courses, request.courses):
+        o_code = str(orig.get("course_code") or "").replace(" ", "").upper()
+        o_grade = str(orig.get("grade") or "").strip().upper()
+        s_code = str(sub.get("course_code") or o_code).replace(" ", "").upper()
+        s_grade = str(sub.get("grade") or o_grade).strip().upper()
+
+        row = {k: v for k, v in orig.items() if k not in ("is_altered", "ai_grade", "ai_course_code")}
+        altered = False
+        if s_code != o_code:
+            row["ai_course_code"] = orig.get("course_code")
+            row["course_code"] = s_code
+            altered = True
+        if s_grade != o_grade:
+            row["ai_grade"] = orig.get("grade")
+            row["grade"] = s_grade
+            altered = True
+        row["is_altered"] = altered
+        merged.append(row)
+
+    altered_count = sum(1 for r in merged if r["is_altered"])
+    new_data = dict(original)
+    new_data["original_courses"] = orig_courses
+    new_data["courses"] = merged
+    new_data["student_altered_count"] = altered_count
+
+    try:
+        supabase_svc.client.table("uploaded_documents").update({
+            "extracted_data": new_data,
+            "processing_status": "Pending_Advisor_Approval",
+        }).eq("id", doc["id"]).execute()
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to submit verification: {e}",
+        )
+
+    return {"success": True, "document_id": doc["id"], "altered_count": altered_count}

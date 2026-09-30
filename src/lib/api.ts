@@ -156,6 +156,15 @@ export const api = {
     return res.data;
   },
 
+  // Student confirms extracted results; server compares against its stored copy
+  submitVerification: async (documentId: string, courses: any[]) => {
+    const res = await apiClient.post('/api/v1/audit/submit-verification', {
+      document_id: documentId,
+      courses,
+    });
+    return res.data;
+  },
+
   // Finalize approval through Zero-Waste FastAPI engine
   finalizeApproval: async (payload: FinalizeApprovalPayload) => {
     const res = await apiClient.post('/api/v1/audit/finalize-approval', payload);

@@ -193,6 +193,11 @@ class PurgeDocumentResponse(BaseModel):
     processing_status: str
 
 
+class SubmitVerificationRequest(BaseModel):
+    document_id: str = Field(..., description="UUID of the uploaded document being verified by the student")
+    courses: List[Dict[str, Any]] = Field(..., description="Student-reviewed course rows (same order as extracted rows)")
+
+
 class RejectDocumentRequest(BaseModel):
     document_id: str = Field(..., description="UUID of target uploaded document to reject")
     rejection_reason: Optional[str] = Field("Document rejected by advisor", description="Reason for document rejection")

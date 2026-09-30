@@ -334,21 +334,7 @@ export function StudentPortal() {
     } catch (err: any) {
       console.error("Upload error:", err);
 
-      // Compensating Transaction: prevent orphaned records if extraction times out or fails
-      const targetDocId = createdDocId || activeDocumentId;
-      if (targetDocId) {
-        try {
-          await db
-            .from("uploaded_documents")
-            .update({
-              processing_status: 'Extraction_Failed',
-              processing_error: err?.message || 'Extraction timed out or failed'
-            })
-            .eq("id", targetDocId);
-        } catch (compErr) {
-          console.error("[StudentPortal] Compensating update failed:", compErr);
-        }
-      }
+      // Failure status is recorded server-side by /audit/extract (students cannot write it).
 
       let friendlyError = "Failed to process document. Please try again.";
       if (err.message?.includes("timed out") || err.message?.includes("75 seconds")) {
@@ -386,24 +372,14 @@ export function StudentPortal() {
     if (!profile?.matric_no || !activeDocumentId) return;
     setIsSaving(true);
     try {
-      const suspectedFraud = stagedData?.fraud_flag === true;
-
-      const { error: updErr } = await db
-        .from("uploaded_documents")
-        .update({ 
-          processing_status: 'Pending_Advisor_Approval',
-          extracted_data: stagedData,
-          fraud_flag: suspectedFraud
-        })
-        .eq("id", activeDocumentId);
-
-      if (updErr) throw updErr;
+      // Server compares these rows with its stored extraction and flags any changes for the advisor
+      await api.submitVerification(activeDocumentId, stagedData?.courses || []);
 
       setIsVerificationModalOpen(false);
       setIsLockedOut(true);
       toast.success("Slip verified and sent to your Advisor for official approval!");
     } catch (err: any) {
-      toast.error("Failed to submit ticket. Please try again.");
+      toast.error(err?.response?.data?.detail || "Failed to submit ticket. Please try again.");
       console.error("Upload error:", err);
     } finally {
       setIsSaving(false);
