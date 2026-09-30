@@ -171,15 +171,22 @@ def _parse_semester_sort_key(semester: str, idx: int) -> tuple:
     """
     Produces a chronological sort key for a semester string, falling back to index order.
     Example: 'Sem 1 2021/2022' -> (2021, 1, idx)
+             '2021/2022-1'     -> (2021, 1, idx)
     """
     if not semester:
         return (0, 0, idx)
     sem_str = str(semester).strip()
     year_match = re.search(r'(\d{4})', sem_str)
-    sem_match = re.search(r'(?:Sem(?:ester)?|Term)\s*[:.]?\s*(\d+)', sem_str, re.IGNORECASE)
+    sem_match = re.search(r'(?:Sem(?:ester)?)\s*[:.]?\s*([1-4])', sem_str, re.IGNORECASE)
+    sem_num = 0
+    if sem_match:
+        sem_num = int(sem_match.group(1))
+    else:
+        dash_m = re.search(r'[-\/\s]([1-4])$', sem_str)
+        if dash_m:
+            sem_num = int(dash_m.group(1))
 
     year = int(year_match.group(1)) if year_match else 0
-    sem_num = int(sem_match.group(1)) if sem_match else 0
     return (year, sem_num, idx)
 
 
@@ -297,73 +304,50 @@ def compute_completed_credits(
 # ---------------------------------------------------------------------------
 def normalize_semester(label: Union[str, Any]) -> str:
     """
-    Normalizes varied semester and session string representations into the canonical format:
+    Normalizes explicit semester and session string representations into the canonical format:
     'SEM <number> <YYYY>/<YYYY>' (e.g. 'SEM 1 2024/2025').
 
-    Examples:
-        'SEM 1 2024/25' -> 'SEM 1 2024/2025'
-        'Sem 1 2024/2025' -> 'SEM 1 2024/2025'
-        'Semester 1 2024/2025' -> 'SEM 1 2024/2025'
-        '2024/2025-1' -> 'SEM 1 2024/2025'
-        'SEMESTER 1 SESSION 2023/2024' -> 'SEM 1 2023/2024'
+    Accepts ONLY explicit formats:
+      1. '(SEM|SEMESTER) <1-4> <YYYY>/<YY or YYYY>' (any case, optional punctuation)
+      2. '<YYYY>/<YY or YYYY>-<1-4>' or '<YYYY>/<YY or YYYY> <1-4>'
 
-    Raises ValueError with the raw label if label cannot be normalized (fail loud).
+    All guess fallbacks (single-year -> +1, fall/spring/summer mapping, and bare-digit matching)
+    have been removed. Anything else raises ValueError with the raw label (fail loud).
     """
     if not label or not isinstance(label, str) or not label.strip():
         raise ValueError(f"Cannot normalise empty or missing semester label: '{label}'")
 
     raw = label.strip()
 
-    # 1. Academic Year pattern: YYYY/YYYY or YYYY/YY or YYYY-YYYY or YYYY-YY
-    year_match = re.search(r'(\d{4})\s*[\/\-]\s*(\d{2,4})', raw)
-    y1: Optional[int] = None
-    y2: Optional[int] = None
+    # Pattern 1: (SEM|SEMESTER) <1-4> <YYYY>/<YY or YYYY>
+    # e.g.: "SEM 1 2024/2025", "Sem 1 2024/25", "Semester 1 2024/2025", "SEMESTER 1 SESSION 2024/2025", "SEM: 2, 2023/2024"
+    m1 = re.match(
+        r'^(?:SEM(?:ESTER)?)\s*[:.]?\s*([1-4])\s*[:.,]?(?:\s*(?:SESSION|SESI))?\s*(\d{4})\s*[\/\-]\s*(\d{4}|\d{2})$',
+        raw,
+        re.IGNORECASE
+    )
+    if m1:
+        sem_num = int(m1.group(1))
+        y1 = int(m1.group(2))
+        y2_str = m1.group(3)
+        y2 = (y1 // 100) * 100 + int(y2_str) if len(y2_str) == 2 else int(y2_str)
+        return f"SEM {sem_num} {y1}/{y2}"
 
-    if year_match:
-        y1 = int(year_match.group(1))
-        y2_str = year_match.group(2)
-        if len(y2_str) == 2:
-            y2 = (y1 // 100) * 100 + int(y2_str)
-        else:
-            y2 = int(y2_str)
-    else:
-        # Single 4-digit year fallback (e.g., 'FALL TERM 2024')
-        single_year_match = re.search(r'\b(20\d{2}|19\d{2})\b', raw)
-        if single_year_match:
-            y1 = int(single_year_match.group(1))
-            y2 = y1 + 1
+    # Pattern 2: <YYYY>/<YY or YYYY>-<1-4> or <YYYY>/<YY or YYYY> <1-4>
+    # e.g.: "2024/2025-1", "2024/2025 1", "2024/2025/1", "2024/25-2", "2024/2025 Sem 1"
+    m2 = re.match(
+        r'^(\d{4})\s*[\/\-]\s*(\d{4}|\d{2})\s*[-\/\s]\s*(?:SEM(?:ESTER)?\s*[:.]?\s*)?([1-4])$',
+        raw,
+        re.IGNORECASE
+    )
+    if m2:
+        y1 = int(m2.group(1))
+        y2_str = m2.group(2)
+        sem_num = int(m2.group(3))
+        y2 = (y1 // 100) * 100 + int(y2_str) if len(y2_str) == 2 else int(y2_str)
+        return f"SEM {sem_num} {y1}/{y2}"
 
-    # 2. Semester / Term number
-    sem_num: Optional[int] = None
-
-    # Check for keyword-prefixed semester number (e.g. 'SEM 1', 'Semester 2', 'Term 1')
-    kw_sem = re.search(r'(?:SEM(?:ESTER)?|TERM|TRIMESTER|QUARTER)\s*[:.]?\s*([1-4])\b', raw, re.IGNORECASE)
-    if kw_sem:
-        sem_num = int(kw_sem.group(1))
-    else:
-        # Check for trailing separator followed by semester digit (e.g. '2024/2025-1', '2024/2025/2')
-        dash_sem = re.search(r'[\/\-]\s*([1-4])\b', raw)
-        if dash_sem:
-            sem_num = int(dash_sem.group(1))
-        else:
-            # Check for international term names
-            lower_raw = raw.lower()
-            if "fall" in lower_raw or "autumn" in lower_raw:
-                sem_num = 1
-            elif "spring" in lower_raw:
-                sem_num = 2
-            elif "summer" in lower_raw or "special" in lower_raw or "short" in lower_raw:
-                sem_num = 3
-            else:
-                # Check for any isolated digit 1-4
-                digit_m = re.search(r'\b([1-4])\b', raw)
-                if digit_m:
-                    sem_num = int(digit_m.group(1))
-
-    if y1 is None or y2 is None or sem_num is None:
-        raise ValueError(f"Cannot normalise semester label: '{label}'")
-
-    return f"SEM {sem_num} {y1}/{y2}"
+    raise ValueError(f"Cannot normalise semester label: '{label}'")
 
 
 def select_attempts_by_repeat_policy(

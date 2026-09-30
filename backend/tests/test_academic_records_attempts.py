@@ -93,49 +93,60 @@ def mock_load_scale_autouse(utm_test_scale):
 
 
 # =============================================================================
-# 1. Tests: Semester Label Normalization
+# 1. Tests: Semester Label Normalization & Test Table
 # =============================================================================
-def test_semester_label_variants_normalise_to_one():
-    """All Malaysian and common semester variations normalize to 'SEM <num> <YYYY>/<YYYY>'."""
-    expected = "SEM 1 2024/2025"
-    variants = [
-        "SEM 1 2024/25",
-        "Sem 1 2024/2025",
-        "Semester 1 2024/2025",
-        "2024/2025-1",
-        "2024/2025/1",
-        "SEMESTER 1 SESSION 2024/2025",
-        "SEM 1 SESI 2024/2025",
-        "TERM 1 2024/2025",
-        "FALL TERM 2024",
-        "Fall 2024",
-        "SEM 1 2024-2025",
-        "SEM 1 2024-25"
+def test_production_semester_values_normalise_identically():
+    """Current distinct semester values in production: 'Sem 1 2024/2025' and 'Sem 2 2024/2025'."""
+    assert normalize_semester("Sem 1 2024/2025") == "SEM 1 2024/2025"
+    assert normalize_semester("Sem 2 2024/2025") == "SEM 2 2024/2025"
+
+
+def test_test_table_labels_matching_sql_verification_suite():
+    """
+    Runs the exact test table of labels defined in migration 27 through Python normalize_semester.
+    Verifies identical output and rejection behavior to the SQL function.
+    """
+    test_cases = [
+        # (input_label, expected_output, should_succeed)
+        ("Sem 1 2024/2025", "SEM 1 2024/2025", True),
+        ("Sem 2 2024/2025", "SEM 2 2024/2025", True),
+        ("SEM 1 2024/25", "SEM 1 2024/2025", True),
+        ("Semester 1 2024/2025", "SEM 1 2024/2025", True),
+        ("SEMESTER 1 SESSION 2024/2025", "SEM 1 2024/2025", True),
+        ("SEM: 2, 2023/2024", "SEM 2 2023/2024", True),
+        ("2024/2025-1", "SEM 1 2024/2025", True),
+        ("2024/2025 1", "SEM 1 2024/2025", True),
+        ("2024/2025/1", "SEM 1 2024/2025", True),
+        ("2024/25-2", "SEM 2 2024/2025", True),
+        ("2024/2025-3", "SEM 3 2024/2025", True),
+        ("2024/2025-4", "SEM 4 2024/2025", True),
+        # Rejected cases (guess fallbacks removed)
+        ("FALL TERM 2024", None, False),
+        ("Spring 2025", None, False),
+        ("Summer 2024", None, False),
+        ("2024", None, False),
+        ("SEM 1 2024", None, False),
+        ("1", None, False),
+        ("Sem 1", None, False),
+        ("2024/2025", None, False),
+        ("Sem 5 2024/2025", None, False),
+        ("TERM 1 2024/2025", None, False),
+        ("TRIMESTER 2 2024/2025", None, False),
+        ("", None, False),
+        ("   ", None, False),
     ]
-    for v in variants:
-        assert normalize_semester(v) == expected, f"Failed for variant: {v}"
 
-    # Sem 2 and Sem 3
-    assert normalize_semester("Sem 2 2023/2024") == "SEM 2 2023/2024"
-    assert normalize_semester("Semester 3 2023/2024") == "SEM 3 2023/2024"
-    assert normalize_semester("SPRING 2025") == "SEM 2 2025/2026"
-    assert normalize_semester("SUMMER 2024") == "SEM 3 2024/2025"
-
-
-def test_unnormalisable_semester_raises_value_error_with_raw_label():
-    """Fail loud: unrecognised or empty semester labels raise ValueError containing raw string."""
-    invalid_labels = [
-        "INVALID_SEMESTER_LABEL",
-        "UNKNOWN",
-        "NOT A SEMESTER",
-        "2024",
-        "",
-        "   "
-    ]
-    for label in invalid_labels:
-        with pytest.raises(ValueError) as excinfo:
-            normalize_semester(label)
-        assert label in str(excinfo.value) or "empty" in str(excinfo.value).lower()
+    for label, expected, should_succeed in test_cases:
+        if should_succeed:
+            actual = normalize_semester(label)
+            assert actual == expected, f"Failed for '{label}': got '{actual}', expected '{expected}'"
+        else:
+            with pytest.raises(ValueError) as excinfo:
+                normalize_semester(label)
+            # Fail loud: raw label must be in error message
+            assert label in str(excinfo.value) or "empty" in str(excinfo.value).lower(), (
+                f"Raw label '{label}' missing from error message: {excinfo.value}"
+            )
 
 
 # =============================================================================

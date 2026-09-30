@@ -131,10 +131,13 @@ class MalaysianTranscriptParser:
             elif sem_m and not (i + 1 < len(cleaned_lines) and SEMESTER_SPLIT_SES.search(cleaned_lines[i + 1])):
                 inline_m = SEMESTER_PATTERN.search(line)
                 if inline_m:
-                    norm = normalize_semester(inline_m.group(0))
-                    current_semester = norm
-                    if norm not in metadata["semesters_found"]:
-                        metadata["semesters_found"].append(norm)
+                    try:
+                        norm = normalize_semester(inline_m.group(0))
+                        current_semester = norm
+                    except ValueError:
+                        current_semester = inline_m.group(0).strip()
+                    if current_semester not in metadata["semesters_found"]:
+                        metadata["semesters_found"].append(current_semester)
 
         # 5. Course Extraction Loop (Single-Line + Tabular Multi-Line Block Parsing)
         i = 0
@@ -147,10 +150,13 @@ class MalaysianTranscriptParser:
             # Check for inline semester header updates
             sem_inline = SEMESTER_PATTERN.search(line_str)
             if sem_inline:
-                norm = normalize_semester(sem_inline.group(0))
-                current_semester = norm
-                if norm not in metadata["semesters_found"]:
-                    metadata["semesters_found"].append(norm)
+                try:
+                    norm = normalize_semester(sem_inline.group(0))
+                    current_semester = norm
+                except ValueError:
+                    current_semester = sem_inline.group(0).strip()
+                if current_semester not in metadata["semesters_found"]:
+                    metadata["semesters_found"].append(current_semester)
                 i += 1
                 continue
 

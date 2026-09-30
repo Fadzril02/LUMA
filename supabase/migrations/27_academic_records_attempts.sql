@@ -15,7 +15,11 @@ BEGIN;
 -- -----------------------------------------------------------------------------
 -- 1. SQL FUNCTION: normalize_semester(p_label TEXT)
 -- Canonical format: 'SEM <number> <YYYY>/<YYYY>' (e.g. 'SEM 1 2024/2025')
--- Matches backend Python implementation.
+-- Accepts ONLY explicit formats:
+--   1. (SEM|SEMESTER) <1-4> <YYYY>/<YY or YYYY> (case-insensitive, optional punctuation)
+--   2. <YYYY>/<YY or YYYY>-<1-4> or <YYYY>/<YY or YYYY> <1-4>
+-- All guess fallbacks (single-year -> +1, fall/spring/summer mapping, bare digits)
+-- have been removed. Strictly mirrors Python backend implementation.
 -- -----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION normalize_semester(p_label TEXT)
 RETURNS TEXT
@@ -28,60 +32,49 @@ DECLARE
     v_y2 INT;
     v_y2_str TEXT;
     v_sem INT;
-    v_year_matches TEXT[];
-    v_sem_matches TEXT[];
+    v_m TEXT[];
 BEGIN
     IF p_label IS NULL OR trim(p_label) = '' THEN
-        RAISE EXCEPTION 'Cannot normalise empty semester label';
+        RAISE EXCEPTION 'Cannot normalise empty or missing semester label: %', p_label;
     END IF;
 
     v_raw := trim(p_label);
 
-    -- 1. Extract Academic Year YYYY/YYYY or YYYY/YY or YYYY-YYYY or YYYY-YY
-    v_year_matches := regexp_matches(v_raw, '(\d{4})\s*[\/\-]\s*(\d{2,4})');
-    IF v_year_matches IS NOT NULL AND array_length(v_year_matches, 1) >= 2 THEN
-        v_y1 := v_year_matches[1]::INT;
-        v_y2_str := v_year_matches[2];
-        IF length(v_y2_str) = 2 THEN
-            v_y2 := (v_y1 / 100) * 100 + v_y2_str::INT;
-        ELSE
-            v_y2 := v_y2_str::INT;
-        END IF;
+    -- Pattern 1: (SEM|SEMESTER) <1-4> <YYYY>/<YY or YYYY> (case-insensitive, optional punctuation)
+    -- e.g. "SEM 1 2024/2025", "Sem 1 2024/25", "Semester 1 2024/2025", "SEMESTER 1 SESSION 2024/2025"
+    v_m := regexp_matches(
+        v_raw,
+        '^(?:SEM(?:ESTER)?)\s*[:.]?\s*([1-4])\s*[:.,]?(?:\s*(?:SESSION|SESI))?\s*(\d{4})\s*[\/\-]\s*(\d{4}|\d{2})$',
+        'i'
+    );
+    IF v_m IS NOT NULL AND array_length(v_m, 1) = 3 THEN
+        v_sem := v_m[1]::INT;
+        v_y1 := v_m[2]::INT;
+        v_y2_str := v_m[3];
     ELSE
-        -- Single 4-digit year fallback
-        v_year_matches := regexp_matches(v_raw, '\b(20\d{2}|19\d{2})\b');
-        IF v_year_matches IS NOT NULL AND array_length(v_year_matches, 1) >= 1 THEN
-            v_y1 := v_year_matches[1]::INT;
-            v_y2 := v_y1 + 1;
+        -- Pattern 2: <YYYY>/<YY or YYYY>-<1-4> or <YYYY>/<YY or YYYY> <1-4>
+        -- e.g. "2024/2025-1", "2024/2025 1", "2024/2025/1", "2024/25-2", "2024/2025 Sem 1"
+        v_m := regexp_matches(
+            v_raw,
+            '^(\d{4})\s*[\/\-]\s*(\d{4}|\d{2})\s*[-\/\s]\s*(?:SEM(?:ESTER)?\s*[:.]?\s*)?([1-4])$',
+            'i'
+        );
+        IF v_m IS NOT NULL AND array_length(v_m, 1) = 3 THEN
+            v_y1 := v_m[1]::INT;
+            v_y2_str := v_m[2];
+            v_sem := v_m[3]::INT;
         END IF;
     END IF;
 
-    -- 2. Extract Semester number
-    v_sem_matches := regexp_matches(v_raw, '(?:SEM(?:ESTER)?|TERM|TRIMESTER|QUARTER)\s*[:.]?\s*([1-4])\b', 'i');
-    IF v_sem_matches IS NOT NULL AND array_length(v_sem_matches, 1) >= 1 THEN
-        v_sem := v_sem_matches[1]::INT;
-    ELSE
-        v_sem_matches := regexp_matches(v_raw, '[\/\-]\s*([1-4])\b');
-        IF v_sem_matches IS NOT NULL AND array_length(v_sem_matches, 1) >= 1 THEN
-            v_sem := v_sem_matches[1]::INT;
-        ELSE
-            IF v_raw ~* 'fall|autumn' THEN
-                v_sem := 1;
-            ELSIF v_raw ~* 'spring' THEN
-                v_sem := 2;
-            ELSIF v_raw ~* 'summer|special|short' THEN
-                v_sem := 3;
-            ELSE
-                v_sem_matches := regexp_matches(v_raw, '\b([1-4])\b');
-                IF v_sem_matches IS NOT NULL AND array_length(v_sem_matches, 1) >= 1 THEN
-                    v_sem := v_sem_matches[1]::INT;
-                END IF;
-            END IF;
-        END IF;
-    END IF;
-
-    IF v_y1 IS NULL OR v_y2 IS NULL OR v_sem IS NULL THEN
+    IF v_y1 IS NULL OR v_y2_str IS NULL OR v_sem IS NULL THEN
         RAISE EXCEPTION 'Cannot normalise semester label: %', p_label;
+    END IF;
+
+    -- Expand 2-digit second year (e.g. 2024/25 -> 2025)
+    IF length(v_y2_str) = 2 THEN
+        v_y2 := (v_y1 / 100) * 100 + v_y2_str::INT;
+    ELSE
+        v_y2 := v_y2_str::INT;
     END IF;
 
     RETURN 'SEM ' || v_sem || ' ' || v_y1 || '/' || v_y2;
@@ -161,4 +154,57 @@ ALTER TABLE academic_records
 DROP FUNCTION IF EXISTS normalize_semester(TEXT);
 
 COMMIT;
+*/
+
+-- =============================================================================
+-- TEST SUITE / VERIFICATION SNIPPET: normalize_semester(p_label)
+-- Run this block in psql / Supabase SQL Editor to verify output for all cases.
+-- =============================================================================
+/*
+DO $$
+DECLARE
+    rec RECORD;
+    v_actual TEXT;
+    -- Test cases: input, expected_output, should_succeed
+    v_tests JSONB := '[
+        {"input": "Sem 1 2024/2025", "expected": "SEM 1 2024/2025", "ok": true},
+        {"input": "Sem 2 2024/2025", "expected": "SEM 2 2024/2025", "ok": true},
+        {"input": "SEM 1 2024/25", "expected": "SEM 1 2024/2025", "ok": true},
+        {"input": "Semester 1 2024/2025", "expected": "SEM 1 2024/2025", "ok": true},
+        {"input": "SEMESTER 1 SESSION 2024/2025", "expected": "SEM 1 2024/2025", "ok": true},
+        {"input": "SEM: 2, 2023/2024", "expected": "SEM 2 2023/2024", "ok": true},
+        {"input": "2024/2025-1", "expected": "SEM 1 2024/2025", "ok": true},
+        {"input": "2024/2025 1", "expected": "SEM 1 2024/2025", "ok": true},
+        {"input": "2024/2025/1", "expected": "SEM 1 2024/2025", "ok": true},
+        {"input": "2024/25-2", "expected": "SEM 2 2024/2025", "ok": true},
+        {"input": "2024/2025-3", "expected": "SEM 3 2024/2025", "ok": true},
+        {"input": "2024/2025-4", "expected": "SEM 4 2024/2025", "ok": true},
+        {"input": "FALL TERM 2024", "expected": NULL, "ok": false},
+        {"input": "Spring 2025", "expected": NULL, "ok": false},
+        {"input": "Summer 2024", "expected": NULL, "ok": false},
+        {"input": "2024", "expected": NULL, "ok": false},
+        {"input": "SEM 1 2024", "expected": NULL, "ok": false},
+        {"input": "1", "expected": NULL, "ok": false},
+        {"input": "Sem 1", "expected": NULL, "ok": false},
+        {"input": "2024/2025", "expected": NULL, "ok": false},
+        {"input": "Sem 5 2024/2025", "expected": NULL, "ok": false},
+        {"input": "", "expected": NULL, "ok": false}
+    ]'::JSONB;
+BEGIN
+    FOR rec IN SELECT * FROM jsonb_to_recordset(v_tests) AS x(input TEXT, expected TEXT, ok BOOLEAN) LOOP
+        BEGIN
+            v_actual := normalize_semester(rec.input);
+            IF NOT rec.ok THEN
+                RAISE EXCEPTION 'TEST FAILED: "%" should have been REJECTED, but returned "%"', rec.input, v_actual;
+            ELSIF v_actual <> rec.expected THEN
+                RAISE EXCEPTION 'TEST FAILED: "%" -> got "%", expected "%"', rec.input, v_actual, rec.expected;
+            END IF;
+        EXCEPTION WHEN OTHERS THEN
+            IF rec.ok THEN
+                RAISE EXCEPTION 'TEST FAILED: "%" raised exception unexpectedly: %', rec.input, SQLERRM;
+            END IF;
+        END;
+    END LOOP;
+    RAISE NOTICE 'ALL normalize_semester() SQL test cases passed successfully.';
+END $$;
 */
