@@ -536,26 +536,42 @@ export function AdvisorDashboard() {
   };
 
   // Standard Template CSV Generator and Downloader
-  const handleDownloadTemplate = () => {
-    const csvHeader = "course_code,course_name,credits,category,semester,prerequisite_code,min_grade\n";
-    const sampleRows = [
-      "CS101,Introduction to Computer Science,3,Core,1,,",
-      "CS102,Programming Fundamentals,3,Core,2,CS101,C",
-      "SWE300,Software Engineering Project I,3,Core,3,CS102,C",
-      "CS310,Systems Development Technology,3,Elective,4,,",
-      "GEN101,Creative Thinking and Innovation,2,University,1,,"
-    ].join("\n");
+const handleDownloadTemplate = () => {
+  // Must match backend/app/engine/parsers/csv_course_parser.py:
+  // course_code, course_name, credits, category, prerequisites
+  // - prerequisites: "CODE1 AND CODE2", "CODE1 OR CODE2", optional "min_grade: B", "min_credits: 80"
+  // - elective slot: code with "XX" (wildcard) or "/" (alternatives); repeat the row once per slot
+  const header = ["course_code", "course_name", "credits", "category", "prerequisites"];
 
-    const blob = new Blob([csvHeader + sampleRows], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.setAttribute("download", `syngrad_curriculum_template_${advisorStaffId}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  };
+  const rows: string[][] = [
+    ["CS1013", "Introduction to Programming", "3", "Core", ""],
+    ["CS1023", "Programming Techniques II", "3", "Core", "CS1013"],
+    ["CS2013", "Data Structures and Algorithms", "3", "Core", "CS1023 min_grade: B"],
+    ["CS2203", "Software Engineering", "3", "Core", "CS1023 AND CS2013"],
+    ["CS3032", "Final Year Project 1", "2", "Core", "CS2203 min_credits: 80"],
+    ["CSXXXX3", "Free Elective", "3", "Elective", ""],
+    ["CSXXXX3", "Free Elective", "3", "Elective", ""],
+    ["CS5XX3/IT5XX3", "Specialisation Elective (choose one)", "3", "Elective", ""],
+    ["GEN1012", "Creative Thinking, Innovation and Society", "2", "University", ""],
+  ];
+
+  // Quote every field and escape quotes so commas in names don't break columns
+  const toCsvLine = (fields: string[]) =>
+    fields.map((f) => `"${String(f).replace(/"/g, '""')}"`).join(",");
+
+  const csv = [toCsvLine(header), ...rows.map(toCsvLine)].join("\r\n");
+
+  // UTF-8 BOM so Excel opens it with the correct encoding
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "syngrad_curriculum_template.csv";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};
 
   // Handle Curriculum File Selection
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
