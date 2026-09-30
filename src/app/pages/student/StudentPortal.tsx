@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { 
   GraduationCap, Upload, FileText, LogOut, Menu, X, 
   FileUp, BarChart, CheckCircle, Target, Edit3, AlertTriangle, Clock,
-  Loader2, CheckCircle2, ShieldAlert
+  Loader2, CheckCircle2, ShieldAlert, MessageSquare
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button, Input } from "../../components/ui";
@@ -16,6 +16,7 @@ import { StudentDashboardView } from "./StudentDashboardView";
 import { AcademicHistoryView } from "./AcademicHistoryView";
 import { DegreeAuditView } from "./DegreeAuditView";
 import { CgpaCalculatorView } from "./CgpaCalculatorView";
+import { AdvisingNotesView } from "./AdvisingNotesView";
 
 export function StudentPortal() {
   const navigate = useNavigate();
@@ -443,6 +444,7 @@ export function StudentPortal() {
           <NavItem id="history" icon={FileText} label="Academic Timeline" />
           <NavItem id="audit" icon={CheckCircle} label="Degree Audit" />
           <NavItem id="whatif" icon={Target} label="Grade Predictor" />
+          <NavItem id="advising" icon={MessageSquare} label="Advising Notes" />
         </nav>
 
         {/* Student Profile Card & Sign Out */}
@@ -485,6 +487,7 @@ export function StudentPortal() {
                 {activeTab === "history" && "Academic Timeline"}
                 {activeTab === "audit" && "Degree Audit"}
                 {activeTab === "whatif" && "Grade Predictor"}
+                {activeTab === "advising" && "Advising Notes"}
               </h1>
             </div>
           </div>
@@ -537,6 +540,7 @@ export function StudentPortal() {
                   matricNo={studentMatric}
                 />
               )}
+              {activeTab === "advising" && <AdvisingNotesView />}
             </motion.div>
           </AnimatePresence>
         </main>

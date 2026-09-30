@@ -24,8 +24,12 @@ interface StudentViewProps {
 
 export function StudentView({ student, onBack }: StudentViewProps) {
   const { profile } = useAuth();
+  const [sessionDate, setSessionDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [notes, setNotes] = useState("");
   const [actionItem, setActionItem] = useState("");
+  const [followUpDate, setFollowUpDate] = useState("");
+  const [visibility, setVisibility] = useState<"shared" | "private">("shared");
+  const [inlineError, setInlineError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [pastLogs, setPastLogs] = useState<any[]>([]);
   const [fetchedRecords, setFetchedRecords] = useState<any[]>([]);
@@ -131,6 +135,7 @@ export function StudentView({ student, onBack }: StudentViewProps) {
   const handleSaveNotes = async () => {
     if (!notes.trim()) return;
     setIsSaving(true);
+    setInlineError(null);
     const advisorStaffId = (profile as any)?.staff_id;
     
     try {
@@ -140,8 +145,11 @@ export function StudentView({ student, onBack }: StudentViewProps) {
       const { data, error } = await db.from("advising_logs").insert([{
         student_matric_no: student.matric_no,
         advisor_staff_id: advisorStaffId,
+        session_date: sessionDate ? new Date(sessionDate).toISOString() : new Date().toISOString(),
         notes: notes.trim(),
-        action_item: actionItem.trim() || null
+        action_item: actionItem.trim() || null,
+        follow_up_date: followUpDate || null,
+        visibility: visibility,
       }]).select();
 
       if (error) {
@@ -153,11 +161,12 @@ export function StudentView({ student, onBack }: StudentViewProps) {
         setPastLogs([data[0], ...pastLogs]);
         setNotes("");
         setActionItem("");
-        alert("Academic intervention logs committed to database ledger.");
+        setFollowUpDate("");
+        setVisibility("shared");
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("MODAL_CRASH_DUMP: Exception in handleSaveNotes:", err);
-      alert("Failed to save advising log.");
+      setInlineError(err.message || "Failed to save advising log.");
     } finally {
       setIsSaving(false);
     }
@@ -387,31 +396,111 @@ export function StudentView({ student, onBack }: StudentViewProps) {
         {/* Right Side: Proactive Advising Note Hub */}
         <Card className="flex flex-col h-full border border-gray-200">
           <div className="flex-1 overflow-y-auto">
-            <CardHeader className="border-b border-gray-100 bg-gray-50/50 sticky top-0 z-10">
+            <CardHeader className="border-b border-gray-100 bg-gray-50/50 sticky top-0 z-10 pb-3">
               <CardTitle className="text-base font-bold text-gray-800 flex items-center gap-2">
                 <AlertCircle className="w-5 h-5 text-amber-500" /> Advising Logs
               </CardTitle>
+              <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+                Your record of each advising meeting: what was discussed and the next steps agreed. Shared notes are visible to the student; private notes are visible only to you.
+              </p>
             </CardHeader>
             <CardContent className="p-4 space-y-4">
               <div className="space-y-3">
-                <div className="text-xs text-gray-500 font-medium flex items-center gap-1">
-                  <Calendar className="w-3.5 h-3.5" /> Date: {new Date().toLocaleDateString()}
-                </div>
-                <textarea
-                  className="w-full min-h-[100px] p-3 text-sm text-gray-800 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-900 bg-white resize-none shadow-sm"
-                  placeholder="Notes (e.g., student advised to repeat Operating Systems)..."
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                />
-                <div className="relative">
-                  <CheckSquare className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
+                <div>
+                  <label className="text-xs font-semibold text-gray-700 block mb-1">
+                    Session Date
+                  </label>
                   <Input
-                    placeholder="Action Item (Optional)"
-                    value={actionItem}
-                    onChange={(e) => setActionItem(e.target.value)}
-                    className="pl-9 h-9 text-sm"
+                    type="date"
+                    value={sessionDate}
+                    onChange={(e) => setSessionDate(e.target.value)}
+                    className="h-9 text-xs"
                   />
                 </div>
+
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-xs font-semibold text-gray-700">
+                      Notes <span className="text-rose-500">*</span>
+                    </label>
+                    <span className="text-[10px] text-gray-400">Required</span>
+                  </div>
+                  <textarea
+                    className="w-full min-h-[100px] p-3 text-sm text-gray-800 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-900 bg-white resize-none shadow-sm"
+                    placeholder="Notes (e.g., student advised to repeat Operating Systems)..."
+                    value={notes}
+                    onChange={(e) => {
+                      setNotes(e.target.value);
+                      if (inlineError) setInlineError(null);
+                    }}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-gray-700 block mb-1">
+                    Action Item
+                  </label>
+                  <div className="relative">
+                    <CheckSquare className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
+                    <Input
+                      placeholder="Action Item (Optional)"
+                      value={actionItem}
+                      onChange={(e) => setActionItem(e.target.value)}
+                      className="pl-9 h-9 text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-gray-700 block mb-1">
+                    Follow-up Date
+                  </label>
+                  <Input
+                    type="date"
+                    value={followUpDate}
+                    onChange={(e) => setFollowUpDate(e.target.value)}
+                    className="h-9 text-xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-gray-700 block mb-1">
+                    Visibility
+                  </label>
+                  <div className="inline-flex rounded-lg border border-gray-200 bg-gray-100 p-1 w-full text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setVisibility("shared")}
+                      className={`flex-1 py-1.5 rounded-md font-medium transition-all text-center cursor-pointer ${
+                        visibility === "shared"
+                          ? "bg-white text-gray-900 shadow-sm font-semibold"
+                          : "text-gray-500 hover:text-gray-700"
+                      }`}
+                    >
+                      Shared
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setVisibility("private")}
+                      className={`flex-1 py-1.5 rounded-md font-medium transition-all text-center cursor-pointer ${
+                        visibility === "private"
+                          ? "bg-white text-gray-900 shadow-sm font-semibold"
+                          : "text-gray-500 hover:text-gray-700"
+                      }`}
+                    >
+                      Private
+                    </button>
+                  </div>
+                </div>
+
+                {inlineError && (
+                  <div className="p-2.5 text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />
+                    <span>{inlineError}</span>
+                  </div>
+                )}
+
                 <Button 
                   className="w-full bg-blue-900 hover:bg-blue-800 text-white font-medium flex items-center justify-center gap-2 cursor-pointer"
                   onClick={handleSaveNotes}
@@ -427,15 +516,32 @@ export function StudentView({ student, onBack }: StudentViewProps) {
                   <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
                     {pastLogs.map((log) => (
                       <div key={log.id} className="bg-gray-50 p-3 rounded-lg border border-gray-100 text-sm">
-                        <div className="flex items-center gap-2 text-xs text-gray-500 mb-1.5 font-medium">
-                          <Calendar className="w-3.5 h-3.5" />
-                          {new Date(log.session_date).toLocaleDateString()}
+                        <div className="flex items-center justify-between gap-2 text-xs text-gray-500 mb-1.5 font-medium">
+                          <div className="flex items-center gap-1.5">
+                            <Calendar className="w-3.5 h-3.5 text-gray-400" />
+                            <span>{new Date(log.session_date).toLocaleDateString()}</span>
+                          </div>
+                          {log.visibility === "private" ? (
+                            <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-800 border-amber-200 font-bold px-1.5 py-0">
+                              Private
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-[10px] bg-blue-50 text-blue-700 border-blue-200 font-medium px-1.5 py-0">
+                              Shared
+                            </Badge>
+                          )}
                         </div>
                         <p className="text-gray-800 whitespace-pre-wrap">{log.notes}</p>
                         {log.action_item && (
-                          <div className="mt-2 text-xs font-medium text-amber-700 bg-amber-50 p-1.5 rounded-md flex items-start gap-1.5">
-                            <CheckSquare className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                          <div className="mt-2 text-xs font-medium text-amber-700 bg-amber-50 p-1.5 rounded-md flex items-start gap-1.5 border border-amber-100">
+                            <CheckSquare className="w-3.5 h-3.5 mt-0.5 shrink-0 text-amber-600" />
                             <span>Action: {log.action_item}</span>
+                          </div>
+                        )}
+                        {log.follow_up_date && (
+                          <div className="mt-1.5 text-[11px] text-gray-500 flex items-center gap-1">
+                            <Calendar className="w-3 h-3 text-gray-400" />
+                            <span>Follow-up: {new Date(log.follow_up_date).toLocaleDateString()}</span>
                           </div>
                         )}
                       </div>
