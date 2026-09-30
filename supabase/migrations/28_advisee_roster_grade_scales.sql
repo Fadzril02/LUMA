@@ -18,7 +18,9 @@ ALTER TABLE students ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DE
 -- -----------------------------------------------------------------------------
 -- 1. REWRITE VIEW: advisee_roster_summary
 -- -----------------------------------------------------------------------------
-CREATE OR REPLACE VIEW advisee_roster_summary
+-- Column order/names changed vs migration 13, so CREATE OR REPLACE is not allowed: drop and recreate.
+DROP VIEW IF EXISTS advisee_roster_summary;
+CREATE VIEW advisee_roster_summary
 WITH (security_invoker = true) AS
 WITH latest_audits AS (
     SELECT DISTINCT ON (matric_no)
