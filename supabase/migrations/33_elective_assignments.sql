@@ -50,12 +50,12 @@ ALTER TABLE public.elective_assignments ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "elective_assignments_student_select" ON public.elective_assignments;
 CREATE POLICY "elective_assignments_student_select" ON public.elective_assignments
 FOR SELECT TO authenticated
-USING (matric_no IN (SELECT matric_no FROM public.my_matric_nos()));
+USING ((tenant_id, matric_no) IN (SELECT tenant_id, matric_no FROM public.my_matric_nos()));
 
 DROP POLICY IF EXISTS "elective_assignments_advisor_select" ON public.elective_assignments;
 CREATE POLICY "elective_assignments_advisor_select" ON public.elective_assignments
 FOR SELECT TO authenticated
-USING (matric_no IN (SELECT matric_no FROM public.my_advisee_matric_nos()));
+USING ((tenant_id, matric_no) IN (SELECT tenant_id, matric_no FROM public.my_advisee_matric_nos()));
 
 -- Note: No INSERT, UPDATE, or DELETE policies are granted to authenticated or anon.
 -- All writes must route through backend service-role endpoints.
