@@ -30,6 +30,7 @@ try:
     from app.engine.grading import load_scale, GradingScale, normalize_semester
     from app.engine.graph_resolver import PrerequisiteGraphResolver
     from app.engine.llm_fallback import MicroLLMFallback
+    from app.engine.progress import compute_progress
     from app.core.supabase_client import SupabaseService
     from app.core.auth import verify_advisor_jwt
 except ImportError:
@@ -55,6 +56,7 @@ except ImportError:
     from backend.app.engine.grading import load_scale, GradingScale, normalize_semester
     from backend.app.engine.graph_resolver import PrerequisiteGraphResolver
     from backend.app.engine.llm_fallback import MicroLLMFallback
+    from backend.app.engine.progress import compute_progress
     from backend.app.core.supabase_client import SupabaseService
     from backend.app.core.auth import verify_advisor_jwt
 
@@ -885,3 +887,159 @@ async def submit_student_verification(
         )
 
     return {"success": True, "document_id": doc["id"], "altered_count": altered_count}
+
+
+@router.get(
+    "/progress/{matric_no}",
+    status_code=status.HTTP_200_OK,
+    summary="Degree progress check: match academic records against the student's template"
+)
+async def get_student_progress(
+    matric_no: str,
+    jwt_payload: dict = Depends(verify_advisor_jwt),
+):
+    """
+    Returns requirement matching progress for a student.
+
+    Authorization:
+    - Student: JWT sub must match students.user_id for the given matric_no.
+    - Advisor: must be the student's assigned advisor in the same tenant
+               (same check as finalize-approval).
+    - Anyone else: 403.
+
+    Tenant_id is derived server-side from JWT/DB only, never from the request.
+
+    409 is returned (never silently defaults) when:
+    - The student has no cohort assigned.
+    - The cohort has no degree template.
+    """
+    jwt_sub = jwt_payload.get("sub")
+    if not jwt_sub:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token: missing sub")
+    if not supabase_svc.client:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database client unavailable")
+
+    clean_matric = (matric_no or "").strip().upper()
+    if not clean_matric:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="matric_no is required")
+
+    # Load student row
+    stu_res = (
+        supabase_svc.client.table("students")
+        .select("matric_no, user_id, advisor_staff_id, tenant_id, cohort_id")
+        .eq("matric_no", clean_matric)
+        .limit(1)
+        .execute()
+    )
+    if not stu_res.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Student '{clean_matric}' not found")
+    student = stu_res.data[0]
+
+    # Authorization: student owns this matric OR is their advisor
+    is_student_self = student.get("user_id") == jwt_sub
+    is_authorized = is_student_self
+
+    if not is_authorized:
+        adv_res = (
+            supabase_svc.client.table("advisors")
+            .select("staff_id, tenant_id")
+            .eq("user_id", jwt_sub)
+            .limit(1)
+            .execute()
+        )
+        if (
+            adv_res.data
+            and adv_res.data[0].get("staff_id") == student.get("advisor_staff_id")
+            and adv_res.data[0].get("tenant_id") == student.get("tenant_id")
+        ):
+            is_authorized = True
+
+    if not is_authorized:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized for this student's progress")
+
+    tenant_id = student.get("tenant_id") or ""
+
+    # Resolve cohort -> template_id
+    cohort_id = student.get("cohort_id")
+    if not cohort_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Student '{clean_matric}' has no cohort assigned. Assign a cohort before checking progress."
+        )
+
+    cohort_res = (
+        supabase_svc.client.table("cohorts")
+        .select("template_id")
+        .eq("id", cohort_id)
+        .limit(1)
+        .execute()
+    )
+    if not cohort_res.data or not cohort_res.data[0].get("template_id"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Cohort for student '{clean_matric}' has no degree template assigned."
+        )
+    template_id = cohort_res.data[0]["template_id"]
+
+    # Load template_courses (real columns: credit_hour, is_elective_slot, slot_no, match_patterns)
+    tc_res = (
+        supabase_svc.client.table("template_courses")
+        .select("id, course_code, course_name, credit_hour, category, is_elective_slot, slot_no, match_patterns")
+        .eq("template_id", template_id)
+        .execute()
+    )
+    template_rows = tc_res.data or []
+    if not template_rows:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Degree template '{template_id}' has no courses. Upload a template CSV first."
+        )
+
+    # Load academic_records for this student (all attempts; repeat policy applied in engine)
+    rec_res = (
+        supabase_svc.client.table("academic_records")
+        .select("course_code, course_name, credits, grade, semester, status")
+        .eq("tenant_id", tenant_id)
+        .eq("matric_no", clean_matric)
+        .execute()
+    )
+    records = rec_res.data or []
+
+    # Load tenant grading scale + repeat_policy
+    repeat_policy = "latest"
+    try:
+        t_res = (
+            supabase_svc.client.table("tenants")
+            .select("repeat_policy")
+            .eq("id", tenant_id)
+            .limit(1)
+            .execute()
+        )
+        if t_res.data and t_res.data[0].get("repeat_policy"):
+            repeat_policy = t_res.data[0]["repeat_policy"]
+    except Exception:
+        pass
+
+    try:
+        scale = load_scale(tenant_id, client=supabase_svc.client)
+    except ValueError as ve:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"No grading scale configured for tenant '{tenant_id}': {ve}"
+        )
+
+    try:
+        result = compute_progress(
+            template_rows=template_rows,
+            records=records,
+            scale=scale,
+            repeat_policy=repeat_policy,
+            overrides={},   # Part B will populate from the overrides table
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Progress computation failed: {e}"
+        )
+
+    return {"matric_no": clean_matric, **result}

@@ -231,6 +231,29 @@ export const api = {
     const res = await apiClient.patch(`/api/v1/students/${encodeURIComponent(matricNo)}/exemptions`, payload);
     return res.data;
   },
+
+  getProgress: async (matricNo: string): Promise<{
+    matric_no: string;
+    rows: Array<{
+      template_course_id: string;
+      code: string;
+      name: string;
+      category: string;
+      credits: number;
+      is_slot: boolean;
+      slot_no: number | null;
+      status: 'done' | 'in_progress' | 'missing';
+      satisfied_by: { course_code: string; grade: string | null; semester: string | null } | null;
+      source: 'exact' | 'pattern' | 'override' | null;
+    }>;
+    categories: Array<{ category: string; required: number; earned: number }>;
+    unassigned: Array<{ course_code: string; course_name: string; grade: string | null; credits: number; semester: string | null }>;
+    totals: { required: number; earned: number };
+    warnings: string[];
+  }> => {
+    const res = await apiClient.get(`/api/v1/audit/progress/${encodeURIComponent(matricNo)}`);
+    return res.data;
+  },
 };
 
 

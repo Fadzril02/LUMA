@@ -8,6 +8,7 @@ import {
   Save,
   Hash,
   Info,
+  CheckCircle,
   CheckCircle2,
   AlertTriangle,
   BookOpen,
@@ -60,6 +61,44 @@ export function StudentView({ student, onBack }: StudentViewProps) {
   const [isExemptionsSaving, setIsExemptionsSaving] = useState<boolean>(false);
   const [exemptionsFeedback, setExemptionsFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [showAuditHistory, setShowAuditHistory] = useState<boolean>(false);
+
+  // Degree audit progress state (SynGrad 4A)
+  const [progressCategories, setProgressCategories] = useState<Array<{ category: string; required: number; earned: number }>>([]);
+  const [progressRows, setProgressRows] = useState<any[]>([]);
+  const [progressUnassigned, setProgressUnassigned] = useState<any[]>([]);
+  const [progressWarnings, setProgressWarnings] = useState<string[]>([]);
+  const [progressLoading, setProgressLoading] = useState(false);
+  const [progressError, setProgressError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!student?.matric_no) return;
+    let isMounted = true;
+    setProgressLoading(true);
+    setProgressError(null);
+    api.getProgress(student.matric_no)
+      .then((data) => {
+        if (!isMounted) return;
+        setProgressCategories(data.categories || []);
+        setProgressRows(data.rows || []);
+        setProgressUnassigned(data.unassigned || []);
+        setProgressWarnings(data.warnings || []);
+      })
+      .catch((err) => {
+        if (!isMounted) return;
+        const msg = err?.response?.data?.detail || err?.message || "Could not load progress data.";
+        if (err?.response?.status === 409) {
+          setProgressError(`ℹ️ ${msg}`);
+        } else {
+          setProgressError(msg);
+        }
+      })
+      .finally(() => {
+        if (isMounted) setProgressLoading(false);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [student?.matric_no]);
 
   // Diagnostic Hook: Robust try/catch blocks with explicit MODAL_CRASH_DUMP logs
   // Placed unconditionally before any early returns to strictly follow the Rules of Hooks
@@ -895,6 +934,168 @@ export function StudentView({ student, onBack }: StudentViewProps) {
                   ))}
                 </div>
               )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* 📊 DEGREE AUDIT PROGRESS & REQUIREMENT MATCHING (SynGrad 4A) */}
+      <Card className="bg-white border border-gray-200 shadow-sm">
+        <CardHeader className="pb-3 border-b border-gray-100">
+          <div className="flex items-center gap-2">
+            <div className="p-2 rounded-lg bg-blue-900/10 text-blue-900">
+              <GraduationCap size={18} />
+            </div>
+            <div>
+              <CardTitle className="text-base font-bold text-gray-900">Degree Requirement Progress</CardTitle>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Automated requirement matching engine progress against degree syllabus (read-only)
+              </p>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="p-6 space-y-6">
+          {progressLoading && (
+            <p className="text-xs text-gray-400 animate-pulse">Loading requirement matching…</p>
+          )}
+          {!progressLoading && progressError && (
+            <div className="flex items-start gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3">
+              <Info size={14} className="shrink-0 mt-0.5" />
+              <span>{progressError}</span>
+            </div>
+          )}
+
+          {/* Module Classification Categories */}
+          {!progressLoading && progressCategories.length > 0 && (
+            <div>
+              <h4 className="text-xs font-bold uppercase tracking-wider text-gray-700 mb-3">Module Classification</h4>
+              <div className="space-y-3">
+                {progressCategories.map((cat, idx) => {
+                  const percent = cat.required > 0 ? Math.min(100, Math.round((cat.earned / cat.required) * 100)) : 0;
+                  const color = ["bg-blue-900", "bg-blue-700", "bg-blue-500", "bg-blue-400", "bg-blue-300"][idx % 5];
+                  return (
+                    <div key={idx} className="space-y-1">
+                      <div className="flex justify-between text-xs font-medium">
+                        <span className="text-gray-700">{cat.category}</span>
+                        <span className="text-gray-500 font-mono">
+                          {cat.earned} / {cat.required} cr ({percent}%)
+                        </span>
+                      </div>
+                      <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+                        <div
+                          className={`h-full ${color} rounded-full transition-all duration-300`}
+                          style={{ width: `${percent}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Template Requirement Match Table */}
+          {!progressLoading && progressRows.length > 0 && (
+            <div className="border border-gray-200 rounded-lg overflow-hidden">
+              <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-gray-700 flex items-center gap-1.5">
+                  <CheckCircle2 size={14} className="text-blue-900" />
+                  Template Requirement Match
+                </span>
+                <span className="text-xs text-gray-500">
+                  {progressRows.filter((r) => r.status === "done").length} / {progressRows.length} rows satisfied
+                </span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-xs">
+                  <thead className="bg-gray-50 border-b border-gray-100">
+                    <tr>
+                      <th className="text-left px-4 py-2.5 font-bold text-gray-500 uppercase tracking-wider">Code</th>
+                      <th className="text-left px-4 py-2.5 font-bold text-gray-500 uppercase tracking-wider">Course Name</th>
+                      <th className="text-center px-4 py-2.5 font-bold text-gray-500 uppercase tracking-wider">Cr</th>
+                      <th className="text-left px-4 py-2.5 font-bold text-gray-500 uppercase tracking-wider">Category</th>
+                      <th className="text-left px-4 py-2.5 font-bold text-gray-500 uppercase tracking-wider">Satisfied By</th>
+                      <th className="text-center px-4 py-2.5 font-bold text-gray-500 uppercase tracking-wider">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {progressRows.map((row, i) => (
+                      <tr key={row.template_course_id || i} className={row.status === 'done' ? '' : 'bg-gray-50/60'}>
+                        <td className="px-4 py-2.5 font-mono font-bold text-gray-900 whitespace-nowrap">
+                          {row.code}
+                          {row.is_slot && (
+                            <span className="ml-1.5 text-[10px] bg-blue-100 text-blue-800 font-semibold px-1.5 py-0.5 rounded">SLOT</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-2.5 text-gray-700 max-w-[200px] truncate" title={row.name}>{row.name}</td>
+                        <td className="px-4 py-2.5 text-center font-mono text-gray-600">{row.credits}</td>
+                        <td className="px-4 py-2.5 text-gray-500">{row.category}</td>
+                        <td className="px-4 py-2.5 font-mono text-gray-700">
+                          {row.satisfied_by ? (
+                            <span>
+                              <span className="font-bold">{row.satisfied_by.course_code}</span>
+                              {row.satisfied_by.grade && <span className="ml-1 text-gray-500">({row.satisfied_by.grade})</span>}
+                              {row.satisfied_by.semester && <span className="ml-1 text-gray-400 text-[10px]">{row.satisfied_by.semester}</span>}
+                            </span>
+                          ) : <span className="text-gray-300">—</span>}
+                        </td>
+                        <td className="px-4 py-2.5 text-center">
+                          {row.status === 'done' && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              <CheckCircle size={10} /> Done
+                            </span>
+                          )}
+                          {row.status === 'in_progress' && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                              In Progress
+                            </span>
+                          )}
+                          {row.status === 'missing' && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-gray-100 text-gray-500 border border-gray-200">
+                              Missing
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Engine Warnings */}
+          {progressWarnings.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 space-y-1">
+              <div className="flex items-center gap-2 mb-1">
+                <AlertTriangle size={14} className="text-amber-700" />
+                <span className="text-xs font-bold text-amber-800">Progress Engine Warnings</span>
+              </div>
+              {progressWarnings.map((w, i) => (
+                <p key={i} className="text-xs text-amber-700 ml-5">{w}</p>
+              ))}
+            </div>
+          )}
+
+          {/* Unassigned Courses */}
+          {progressUnassigned.length > 0 && (
+            <div className="p-4 rounded-lg bg-gray-50 border border-gray-200 space-y-2">
+              <div className="flex items-center gap-2">
+                <Info size={14} className="text-blue-700" />
+                <span className="text-xs font-bold uppercase tracking-wider text-gray-700">Courses Not Matched to Template</span>
+              </div>
+              <p className="text-xs text-gray-500">
+                These passing courses are recorded but do not map to any row in the student's degree template.
+              </p>
+              <div className="flex flex-wrap gap-2 pt-1">
+                {progressUnassigned.map((u) => (
+                  <span key={u.course_code} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white text-gray-700 text-xs font-mono font-semibold border border-gray-200">
+                    {u.course_code}
+                    {u.grade && <span className="text-gray-400">({u.grade})</span>}
+                    {u.credits && <span className="text-gray-400">{u.credits}cr</span>}
+                  </span>
+                ))}
+              </div>
             </div>
           )}
         </CardContent>

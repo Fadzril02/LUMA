@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
-import { CheckCircle2, ShieldAlert, Award, BookOpen, CheckCircle, Hash, Calendar, Layers } from "lucide-react";
+import { CheckCircle2, ShieldAlert, Award, BookOpen, CheckCircle, Hash, Calendar, Layers, AlertTriangle, Info } from "lucide-react";
 import { db } from "../../../lib/supabase";
+import { api } from "../../../lib/api";
 import { useAuth } from "../../../context/AuthContext";
 import { CourseLedger, CourseLedgerRecord, LedgerColumn } from "../../../components/shared/CourseLedger";
 import { fetchGradeScale, findGradeDefinition, GradeScaleRow } from "../../../lib/gradeScale";
@@ -30,6 +31,14 @@ export function DegreeAuditView({
   const [isLoading, setIsLoading] = useState<boolean>(
     !propCourses || propCgpa === undefined || propEarnedCredits === undefined
   );
+
+  // Progress engine state (from /audit/progress/{matric})
+  const [progressCategories, setProgressCategories] = useState<Array<{ category: string; required: number; earned: number }>>([]);
+  const [progressRows, setProgressRows] = useState<any[]>([]);
+  const [progressUnassigned, setProgressUnassigned] = useState<any[]>([]);
+  const [progressWarnings, setProgressWarnings] = useState<string[]>([]);
+  const [progressLoading, setProgressLoading] = useState<boolean>(false);
+  const [progressError, setProgressError] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -152,6 +161,34 @@ export function DegreeAuditView({
     };
   }, [propCourses, propCgpa, propEarnedCredits, activeMatric, user?.id]);
 
+  // Fetch progress engine results separately (once matric is known)
+  useEffect(() => {
+    if (!activeMatric) return;
+    let isMounted = true;
+    setProgressLoading(true);
+    setProgressError(null);
+    api.getProgress(activeMatric)
+      .then((data) => {
+        if (!isMounted) return;
+        setProgressCategories(data.categories || []);
+        setProgressRows(data.rows || []);
+        setProgressUnassigned(data.unassigned || []);
+        setProgressWarnings(data.warnings || []);
+      })
+      .catch((err) => {
+        if (!isMounted) return;
+        const msg = err?.response?.data?.detail || err?.message || "Could not load progress data.";
+        // 409 means no template/cohort — show as info, not error
+        if (err?.response?.status === 409) {
+          setProgressError(`ℹ️ ${msg}`);
+        } else {
+          setProgressError(msg);
+        }
+      })
+      .finally(() => { if (isMounted) setProgressLoading(false); });
+    return () => { isMounted = false; };
+  }, [activeMatric, user?.id]);
+
   // Filter approved and non-passing courses
   const approvedCourses = currentCourses.filter((c) => {
     const defn = findGradeDefinition(c.grade, gradeScale);
@@ -178,43 +215,11 @@ export function DegreeAuditView({
     );
   });
 
-  // Dynamic module distribution derived from live approved course codes
-  const coreCredits = approvedCourses
-    .filter((c) => /^(SCSE|SECJ|SCS|SE|CS|SEC)/i.test(c.code))
-    .reduce((sum, c) => sum + (c.credits || 0), 0);
-
-  const electiveCredits = approvedCourses
-    .filter((c) => /^(SCSR|SCST|SECV|SECR|SECD)/i.test(c.code))
-    .reduce((sum, c) => sum + (c.credits || 0), 0);
-
-  const generalCredits = approvedCourses
-    .filter((c) => /^(UHLB|ULRS|UHMT|UBSS|UKQF|UCS|U)/i.test(c.code))
-    .reduce((sum, c) => sum + (c.credits || 0), 0);
-
-  const targetCore = Math.round(totalRequiredCredits * 0.65);
-  const targetElective = Math.round(totalRequiredCredits * 0.2);
-  const targetGeneral = Math.max(1, totalRequiredCredits - targetCore - targetElective);
-
-  const dynamicCategories = [
-    {
-      category: "Core Software Engineering Modules",
-      earned: coreCredits,
-      required: targetCore,
-      color: "bg-blue-900",
-    },
-    {
-      category: "Departmental Elective Modules",
-      earned: electiveCredits,
-      required: targetElective,
-      color: "bg-blue-700",
-    },
-    {
-      category: "University General Requirements",
-      earned: generalCredits,
-      required: targetGeneral,
-      color: "bg-blue-500",
-    },
-  ];
+  // dynamicCategories is now sourced from the progress engine API (no hardcoded prefixes)
+  const dynamicCategories = progressCategories.map((c, idx) => ({
+    ...c,
+    color: ["bg-blue-900", "bg-blue-700", "bg-blue-500", "bg-blue-400", "bg-blue-300"][idx % 5],
+  }));
 
   const studentColumns: LedgerColumn<CourseLedgerRecord>[] = [
     {
@@ -412,8 +417,123 @@ export function DegreeAuditView({
               </div>
             );
           })}
+        {/* Progress loading/error state */}
+          {progressLoading && (
+            <p className="text-xs text-gray-400 mt-4 animate-pulse">Loading requirement matching…</p>
+          )}
+          {!progressLoading && progressError && (
+            <div className="mt-4 flex items-start gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3">
+              <Info size={14} className="shrink-0 mt-0.5" />
+              <span>{progressError}</span>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Requirement Matching Table (from progress engine) */}
+      {!progressLoading && progressRows.length > 0 && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200">
+          <div className="flex items-center gap-3 px-6 pt-5 pb-4 border-b border-gray-100">
+            <div className="w-9 h-9 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-900">
+              <CheckCircle2 size={20} />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-gray-900">Template Requirement Match</h2>
+              <p className="text-xs text-gray-500">Course-by-course mapping against the degree syllabus</p>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-xs">
+              <thead className="bg-gray-50 border-b border-gray-100">
+                <tr>
+                  <th className="text-left px-4 py-2.5 font-bold text-gray-500 uppercase tracking-wider">Code</th>
+                  <th className="text-left px-4 py-2.5 font-bold text-gray-500 uppercase tracking-wider">Course Name</th>
+                  <th className="text-center px-4 py-2.5 font-bold text-gray-500 uppercase tracking-wider">Cr</th>
+                  <th className="text-left px-4 py-2.5 font-bold text-gray-500 uppercase tracking-wider">Category</th>
+                  <th className="text-left px-4 py-2.5 font-bold text-gray-500 uppercase tracking-wider">Satisfied By</th>
+                  <th className="text-center px-4 py-2.5 font-bold text-gray-500 uppercase tracking-wider">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {progressRows.map((row, i) => (
+                  <tr key={row.template_course_id || i} className={row.status === 'done' ? '' : 'bg-gray-50/60'}>
+                    <td className="px-4 py-2.5 font-mono font-bold text-gray-900 whitespace-nowrap">
+                      {row.code}
+                      {row.is_slot && (
+                        <span className="ml-1.5 text-[10px] bg-blue-100 text-blue-800 font-semibold px-1.5 py-0.5 rounded">SLOT</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2.5 text-gray-700 max-w-[180px] truncate" title={row.name}>{row.name}</td>
+                    <td className="px-4 py-2.5 text-center font-mono text-gray-600">{row.credits}</td>
+                    <td className="px-4 py-2.5 text-gray-500">{row.category}</td>
+                    <td className="px-4 py-2.5 font-mono text-gray-700">
+                      {row.satisfied_by ? (
+                        <span>
+                          <span className="font-bold">{row.satisfied_by.course_code}</span>
+                          {row.satisfied_by.grade && <span className="ml-1 text-gray-500">({row.satisfied_by.grade})</span>}
+                          {row.satisfied_by.semester && <span className="ml-1 text-gray-400 text-[10px]">{row.satisfied_by.semester}</span>}
+                        </span>
+                      ) : <span className="text-gray-300">—</span>}
+                    </td>
+                    <td className="px-4 py-2.5 text-center">
+                      {row.status === 'done' && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          <CheckCircle size={10} /> Done
+                        </span>
+                      )}
+                      {row.status === 'in_progress' && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                          In Progress
+                        </span>
+                      )}
+                      {row.status === 'missing' && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-gray-100 text-gray-500 border border-gray-200">
+                          Missing
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Engine Warnings */}
+      {progressWarnings.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-1">
+          <div className="flex items-center gap-2 mb-2">
+            <AlertTriangle size={14} className="text-amber-700" />
+            <span className="text-xs font-bold text-amber-800">Progress Engine Warnings</span>
+          </div>
+          {progressWarnings.map((w, i) => (
+            <p key={i} className="text-xs text-amber-700 ml-5">{w}</p>
+          ))}
+        </div>
+      )}
+
+      {/* Unassigned Courses */}
+      {progressUnassigned.length > 0 && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <Info size={14} className="text-blue-700" />
+            <span className="text-sm font-bold text-gray-800">Courses Not Matched to Template</span>
+          </div>
+          <p className="text-xs text-gray-500 mb-3">
+            These passing courses are recorded but do not map to any row in your degree template.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {progressUnassigned.map((u) => (
+              <span key={u.course_code} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-100 text-gray-700 text-xs font-mono font-semibold border border-gray-200">
+                {u.course_code}
+                {u.grade && <span className="text-gray-400">({u.grade})</span>}
+                {u.credits && <span className="text-gray-400">{u.credits}cr</span>}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Prerequisite Alert Status Panel */}
       {failedCourses.length > 0 ? (
