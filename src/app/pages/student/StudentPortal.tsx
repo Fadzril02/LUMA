@@ -32,7 +32,17 @@ export function StudentPortal() {
   
   const [courseHistory, setCourseHistory] = useState<any[]>([]);
   const [creditProgress, setCreditProgress] = useState<any[]>([]);
-  const [stats, setStats] = useState({ cgpa: "0.00", earned: 0, required: 120 });
+  const [stats, setStats] = useState<{
+    cgpa: string;
+    earned: number | null;
+    required: number | null;
+    progressError?: string | null;
+  }>({
+    cgpa: "0.00",
+    earned: null,
+    required: null,
+    progressError: null,
+  });
   const [hasUnseenNotes, setHasUnseenNotes] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
 
@@ -101,51 +111,21 @@ export function StudentPortal() {
           // uploaded_documents table may not exist; lockout defaults to false
         }
 
-        // ── Query students table for cgpa & degree template required credits ──
+        // ── Query students table for cgpa ──
         let studentCgpa: string = "0.00";
-        let studentEarnedCredits = 0;
-        let dynamicRequiredCredits = 120;
 
         try {
           const { data: studentRecord } = await db
             .from("students")
-            .select("cgpa, cohort_id, cohorts(template_id, degree_templates(total_credits_required))")
+            .select("cgpa")
             .eq("matric_no", profile.matric_no)
             .maybeSingle();
 
-          if (studentRecord) {
-            if (studentRecord.cgpa !== null && studentRecord.cgpa !== undefined) {
-              studentCgpa = Number(studentRecord.cgpa).toFixed(2);
-            }
-            const tmplCredits = (studentRecord as any)?.cohorts?.degree_templates?.total_credits_required;
-            if (tmplCredits && typeof tmplCredits === "number") {
-              dynamicRequiredCredits = tmplCredits;
-            }
+          if (studentRecord && studentRecord.cgpa !== null && studentRecord.cgpa !== undefined) {
+            studentCgpa = Number(studentRecord.cgpa).toFixed(2);
           }
         } catch (creditErr) {
           console.warn("[StudentPortal] Student record fetch warning:", creditErr);
-        }
-
-        // ── Query degree_audits table snapshot for official total_credits_earned ──
-        try {
-          const { data: auditDoc } = await db
-            .from("degree_audits")
-            .select("total_credits_earned, total_credits_required")
-            .eq("matric_no", profile.matric_no)
-            .order("created_at", { ascending: false })
-            .limit(1)
-            .maybeSingle();
-
-          if (auditDoc) {
-            if (auditDoc.total_credits_earned) {
-              studentEarnedCredits = Number(auditDoc.total_credits_earned) || 0;
-            }
-            if (auditDoc.total_credits_required) {
-              dynamicRequiredCredits = Number(auditDoc.total_credits_required) || 120;
-            }
-          }
-        } catch (auditErr) {
-          console.warn("[StudentPortal] degree_audits query warning:", auditErr);
         }
 
         // ── Query academic_records ──────────────────────────────────────────
@@ -173,29 +153,47 @@ export function StudentPortal() {
 
         setCourseHistory(historyMapped);
 
-        // Use backend-computed values from students.cgpa and degree_audits/records where available
-        const liveEarned = studentEarnedCredits > 0
-          ? studentEarnedCredits
-          : historyMapped
-              .filter((item) => ["Passed", "Pass", "Pass/Approved", "Approved", "Exempted"].includes(item.status))
-              .reduce((sum, item) => sum + item.credits, 0);
+        // ── Single source of truth for totals: api.getProgress().totals ────
+        let liveEarned: number | null = null;
+        let dynamicRequiredCredits: number | null = null;
+        let progressErrorMsg: string | null = null;
+
+        try {
+          const progressData = await api.getProgress(profile.matric_no);
+          if (progressData?.totals) {
+            liveEarned = progressData.totals.earned;
+            dynamicRequiredCredits = progressData.totals.required;
+          }
+        } catch (progErr: any) {
+          progressErrorMsg = progErr?.response?.data?.detail || progErr?.message || "Failed to load progress";
+          console.warn("[StudentPortal] Progress fetch warning:", progressErrorMsg);
+        }
 
         const liveCgpa = studentCgpa && Number(studentCgpa) > 0 ? studentCgpa : "0.00";
 
-        setStats({ cgpa: liveCgpa, earned: liveEarned, required: dynamicRequiredCredits });
+        setStats({
+          cgpa: liveCgpa,
+          earned: liveEarned,
+          required: dynamicRequiredCredits,
+          progressError: progressErrorMsg,
+        });
 
-        const coreCredits = historyMapped
-          .filter((c) => /^(SCSE|SECJ|SCS|SE|CS|SEC)/i.test(c.code) && (c.status === "Passed" || c.status === "Pass" || c.status === "Pass/Approved" || c.status === "Approved"))
-          .reduce((sum, c) => sum + (c.credits || 0), 0);
+        if (liveEarned !== null && dynamicRequiredCredits !== null) {
+          const coreCredits = historyMapped
+            .filter((c) => /^(SCSE|SECJ|SCS|SE|CS|SEC)/i.test(c.code) && (c.status === "Passed" || c.status === "Pass" || c.status === "Pass/Approved" || c.status === "Approved"))
+            .reduce((sum, c) => sum + (c.credits || 0), 0);
 
-        setCreditProgress([
-          { name: "Syllabus Total", earned: liveEarned, total: dynamicRequiredCredits },
-          {
-            name: "Core Modules",
-            earned: coreCredits,
-            total: Math.round(dynamicRequiredCredits * 0.65),
-          },
-        ]);
+          setCreditProgress([
+            { name: "Syllabus Total", earned: liveEarned, total: dynamicRequiredCredits },
+            {
+              name: "Core Modules",
+              earned: coreCredits,
+              total: Math.round(dynamicRequiredCredits * 0.65),
+            },
+          ]);
+        } else {
+          setCreditProgress([]);
+        }
 
         // ── Check for unseen shared advising notes ─────────────────────────
         try {

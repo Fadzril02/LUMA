@@ -1,4 +1,4 @@
-﻿"""
+"""
 Tests for the requirement matching engine (4A) and the /audit/progress endpoint.
 
 Pure-function tests use no network. Endpoint tests use the fake-DB pattern
@@ -16,12 +16,14 @@ try:
     import app.v1.endpoints.audit as audit_mod
     from app.engine.progress import compute_progress, _build_pattern_regex, _code_matches_pattern
     from app.engine.grading import GradingScale, GradeDefinition
+    from app.engine.parsers.csv_course_parser import CSVCourseParser
 except ImportError:
     from backend.app.main import app
     from backend.app.core.auth import verify_advisor_jwt
     import backend.app.v1.endpoints.audit as audit_mod
     from backend.app.engine.progress import compute_progress, _build_pattern_regex, _code_matches_pattern
     from backend.app.engine.grading import GradingScale, GradeDefinition
+    from backend.app.engine.parsers.csv_course_parser import CSVCourseParser
 
 # =============================================================================
 # Fixtures
@@ -317,6 +319,7 @@ def _endpoint_db():
             {"user_id": "non-adv",  "staff_id": "OTHER9",  "tenant_id": "UTM"},
         ],
         "cohorts": [{"id": "cohort-1", "template_id": "tmpl-1"}],
+        "degree_templates": [{"id": "tmpl-1", "total_credits_required": 130}],
         "template_courses": [{
             "id": "tc-1", "template_id": "tmpl-1",
             "course_code": "SCSR2213", "course_name": "Data Structures",
@@ -408,3 +411,83 @@ def test_progress_no_template_409(fake_db_progress):
     c = _client_as("stu-uid")
     res = c.get("/api/v1/audit/progress/A24MJ5050")
     assert res.status_code == 409
+
+
+class TestBipartiteSlotMatching:
+    def test_bipartite_specific_beats_broad(self, scale):
+        """
+        Test a: slots [SXXXXXX3 (slot 1), "SCSE3143/SCSR3113" (slot 2)],
+        courses [SCSE3143, SKEU1013] -> slot 2 = SCSE3143, slot 1 = SKEU1013.
+        """
+        slots = [
+            _slot("slot-1", "SXXXXXX3", ["SXXXXXX3"], slot_no=1),
+            _slot("slot-2", "SCSE3143/SCSR3113", ["SCSE3143", "SCSR3113"], slot_no=2),
+        ]
+        records = [
+            _rec("SCSE3143", "C+"),
+            _rec("SKEU1013", "C+"),
+        ]
+        res = compute_progress(slots, records, scale)
+        r_by_id = {r["template_course_id"]: r for r in res["rows"]}
+
+        assert r_by_id["slot-2"]["status"] == "done"
+        assert r_by_id["slot-2"]["satisfied_by"]["course_code"] == "SCSE3143"
+
+        assert r_by_id["slot-1"]["status"] == "done"
+        assert r_by_id["slot-1"]["satisfied_by"]["course_code"] == "SKEU1013"
+
+        assert res["unassigned"] == []
+
+    def test_single_course_fills_specific_slot_not_broad(self, scale):
+        """A course must never fill a broad slot if that leaves a more specific slot empty."""
+        slots = [
+            _slot("slot-1", "SXXXXXX3", ["SXXXXXX3"], slot_no=1),
+            _slot("slot-2", "SCSE3143/SCSR3113", ["SCSE3143", "SCSR3113"], slot_no=2),
+        ]
+        records = [
+            _rec("SCSE3143", "C+"),
+        ]
+        res = compute_progress(slots, records, scale)
+        r_by_id = {r["template_course_id"]: r for r in res["rows"]}
+
+        assert r_by_id["slot-2"]["status"] == "done"
+        assert r_by_id["slot-2"]["satisfied_by"]["course_code"] == "SCSE3143"
+
+        assert r_by_id["slot-1"]["status"] == "missing"
+        assert r_by_id["slot-1"]["satisfied_by"] is None
+
+
+class TestMinCreditsPrereqParsing:
+    def test_min_credits_only_prerequisite_row(self):
+        """Test b: A min_credits-only prerequisite row still parses."""
+        res1 = CSVCourseParser.parse_prerequisite_string("min_credits: 80")
+        assert res1["min_credits"] == 80
+        assert res1["courses"] == []
+
+        res2 = CSVCourseParser.parse_prerequisite_string("credits: 90")
+        assert res2["min_credits"] == 90
+        assert res2["courses"] == []
+
+        res3 = CSVCourseParser.parse_prerequisite_string("jam kredit: 80")
+        assert res3["min_credits"] == 80
+        assert res3["courses"] == []
+
+
+class TestEngineWarningTemplateCredits:
+    def test_template_total_credits_mismatch_warning(self, scale):
+        """Warning generated when template rows credit sum != template_total_credits."""
+        rows = [
+            _core("c-1", "SCSR2213", credits=3),
+            _core("c-2", "ULRS1182", credits=2),
+        ]
+        res = compute_progress(rows, [], scale, template_total_credits=130)
+        assert any("Template rows total 5 credits but programme requires 130." in w for w in res["warnings"])
+
+    def test_template_total_credits_match_no_warning(self, scale):
+        rows = [
+            _core("c-1", "SCSR2213", credits=3),
+            _core("c-2", "ULRS1182", credits=2),
+        ]
+        res = compute_progress(rows, [], scale, template_total_credits=5)
+        assert not any("Template rows total" in w for w in res["warnings"])
+

@@ -986,6 +986,21 @@ async def get_student_progress(
         )
     template_id = cohort_res.data[0]["template_id"]
 
+    # Load degree_templates to get total_credits_required
+    tmpl_total: Optional[int] = None
+    dt_res = (
+        supabase_svc.client.table("degree_templates")
+        .select("total_credits_required")
+        .eq("id", template_id)
+        .limit(1)
+        .execute()
+    )
+    if dt_res.data and dt_res.data[0].get("total_credits_required") is not None:
+        try:
+            tmpl_total = int(dt_res.data[0]["total_credits_required"])
+        except (ValueError, TypeError):
+            tmpl_total = None
+
     # Load template_courses (real columns: credit_hour, is_elective_slot, slot_no, match_patterns)
     tc_res = (
         supabase_svc.client.table("template_courses")
@@ -1028,6 +1043,7 @@ async def get_student_progress(
             scale=scale,
             repeat_policy=repeat_policy,
             overrides={},   # Part B will populate from the overrides table
+            template_total_credits=tmpl_total,
         )
     except Exception as e:
         raise HTTPException(

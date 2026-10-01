@@ -8,8 +8,9 @@ export function StudentDashboardView({ stats, creditProgress }: { stats?: any, c
   // Real DB stats — no fake fallback data
   const displayStats = stats || {
     cgpa: "0.00",
-    earned: 0,
-    required: 120
+    earned: null,
+    required: null,
+    progressError: null,
   };
 
   const displayProgress = creditProgress && creditProgress.length > 0 ? creditProgress : [];
@@ -37,10 +38,18 @@ export function StudentDashboardView({ stats, creditProgress }: { stats?: any, c
               <BookOpen className="w-4 h-4" />
             </div>
           </div>
-          <div className="mt-3 flex items-baseline gap-1.5">
-            <span className="text-4xl font-extrabold text-gray-900 tracking-tight">{displayStats.earned}</span>
-            <span className="text-sm text-gray-500 font-semibold">/ {displayStats.required} Credits</span>
-          </div>
+          {displayStats.progressError ? (
+            <div className="mt-3 text-xs text-rose-600 font-semibold leading-relaxed">
+              {displayStats.progressError}
+            </div>
+          ) : displayStats.earned !== null && displayStats.required !== null ? (
+            <div className="mt-3 flex items-baseline gap-1.5">
+              <span className="text-4xl font-extrabold text-gray-900 tracking-tight font-mono">{displayStats.earned}</span>
+              <span className="text-sm text-gray-500 font-semibold font-mono">/ {displayStats.required} Credits</span>
+            </div>
+          ) : (
+            <div className="mt-3 text-xs text-gray-400 font-mono animate-pulse">Loading progress…</div>
+          )}
           <p className="text-xs text-gray-500 mt-1 font-medium">Total graduation credit requirement</p>
         </div>
         

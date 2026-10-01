@@ -37,6 +37,7 @@ export function DegreeAuditView({
   const [progressRows, setProgressRows] = useState<any[]>([]);
   const [progressUnassigned, setProgressUnassigned] = useState<any[]>([]);
   const [progressWarnings, setProgressWarnings] = useState<string[]>([]);
+  const [progressTotals, setProgressTotals] = useState<{ required: number; earned: number } | null>(null);
   const [progressLoading, setProgressLoading] = useState<boolean>(false);
   const [progressError, setProgressError] = useState<string | null>(null);
 
@@ -55,13 +56,14 @@ export function DegreeAuditView({
 
   // Derive final display values cleanly during render: props always override local fetches
   const liveCgpa = Number(propCgpa ?? fetchedCgpa ?? 0).toFixed(2);
-  const liveEarnedCredits = Number(propEarnedCredits ?? fetchedCredits ?? 0);
-  const totalRequiredCredits = Number(propRequiredCredits ?? 120);
+  // Single source of truth for totals: api.getProgress().totals (no hardcoded fallback)
+  const liveEarnedCredits = progressTotals?.earned ?? null;
+  const totalRequiredCredits = progressTotals?.required ?? null;
   const currentCourses = propCourses ?? courseList;
 
   // Dynamic progress percentage: (live_earned_credits / total_required_credits) * 100
   const progressPercentage =
-    totalRequiredCredits > 0
+    totalRequiredCredits && totalRequiredCredits > 0 && liveEarnedCredits !== null
       ? Math.min(100, Math.round((liveEarnedCredits / totalRequiredCredits) * 100))
       : 0;
 
@@ -174,9 +176,11 @@ export function DegreeAuditView({
         setProgressRows(data.rows || []);
         setProgressUnassigned(data.unassigned || []);
         setProgressWarnings(data.warnings || []);
+        setProgressTotals(data.totals || null);
       })
       .catch((err) => {
         if (!isMounted) return;
+        setProgressTotals(null);
         const msg = err?.response?.data?.detail || err?.message || "Could not load progress data.";
         // 409 means no template/cohort — show as info, not error
         if (err?.response?.status === 409) {
@@ -332,14 +336,22 @@ export function DegreeAuditView({
               <BookOpen size={18} />
             </div>
           </div>
-          <div className="mt-3 flex items-baseline gap-1.5">
-            <span className="text-4xl font-extrabold text-gray-900 tracking-tight font-mono">
-              {liveEarnedCredits}
-            </span>
-            <span className="text-sm text-gray-500 font-semibold font-mono">
-              / {totalRequiredCredits} Credits
-            </span>
-          </div>
+          {progressLoading ? (
+            <p className="text-xs text-gray-400 mt-3 animate-pulse">Loading credits…</p>
+          ) : progressError ? (
+            <p className="text-xs text-rose-600 mt-3 font-semibold leading-relaxed">{progressError}</p>
+          ) : liveEarnedCredits !== null && totalRequiredCredits !== null ? (
+            <div className="mt-3 flex items-baseline gap-1.5">
+              <span className="text-4xl font-extrabold text-gray-900 tracking-tight font-mono">
+                {liveEarnedCredits}
+              </span>
+              <span className="text-sm text-gray-500 font-semibold font-mono">
+                / {totalRequiredCredits} Credits
+              </span>
+            </div>
+          ) : (
+            <p className="text-xs text-gray-400 mt-3 font-mono">—</p>
+          )}
           <p className="text-xs text-gray-500 mt-1 font-medium">Approved graduation credit requirement</p>
         </div>
 
@@ -350,11 +362,19 @@ export function DegreeAuditView({
               <CheckCircle size={18} />
             </div>
           </div>
-          <div className="mt-3 flex items-baseline gap-1.5">
-            <span className="text-4xl font-extrabold text-gray-900 tracking-tight font-mono">
-              {progressPercentage}%
-            </span>
-          </div>
+          {progressLoading ? (
+            <p className="text-xs text-gray-400 mt-3 animate-pulse">Calculating…</p>
+          ) : progressError ? (
+            <p className="text-xs text-rose-600 mt-3 font-semibold leading-relaxed">{progressError}</p>
+          ) : liveEarnedCredits !== null && totalRequiredCredits !== null ? (
+            <div className="mt-3 flex items-baseline gap-1.5">
+              <span className="text-4xl font-extrabold text-gray-900 tracking-tight font-mono">
+                {progressPercentage}%
+              </span>
+            </div>
+          ) : (
+            <p className="text-xs text-gray-400 mt-3 font-mono">—</p>
+          )}
           <p className="text-xs text-gray-500 mt-1 font-medium">Progress towards degree syllabus blueprint</p>
         </div>
       </div>
@@ -373,9 +393,17 @@ export function DegreeAuditView({
           </div>
           <div className="text-right">
             <span className="text-xs font-semibold text-gray-500">Overall Progress</span>
-            <p className="text-sm font-extrabold text-blue-900 font-mono">
-              {liveEarnedCredits} / {totalRequiredCredits} Cr ({progressPercentage}%)
-            </p>
+            {progressLoading ? (
+              <p className="text-xs text-gray-400 animate-pulse font-mono">Loading…</p>
+            ) : progressError ? (
+              <p className="text-xs text-rose-600 font-semibold">{progressError}</p>
+            ) : liveEarnedCredits !== null && totalRequiredCredits !== null ? (
+              <p className="text-sm font-extrabold text-blue-900 font-mono">
+                {liveEarnedCredits} / {totalRequiredCredits} Cr ({progressPercentage}%)
+              </p>
+            ) : (
+              <p className="text-xs text-gray-400 font-mono">—</p>
+            )}
           </div>
         </div>
 

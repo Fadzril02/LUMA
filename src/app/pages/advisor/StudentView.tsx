@@ -67,6 +67,7 @@ export function StudentView({ student, onBack }: StudentViewProps) {
   const [progressRows, setProgressRows] = useState<any[]>([]);
   const [progressUnassigned, setProgressUnassigned] = useState<any[]>([]);
   const [progressWarnings, setProgressWarnings] = useState<string[]>([]);
+  const [progressTotals, setProgressTotals] = useState<{ required: number; earned: number } | null>(null);
   const [progressLoading, setProgressLoading] = useState(false);
   const [progressError, setProgressError] = useState<string | null>(null);
 
@@ -82,9 +83,11 @@ export function StudentView({ student, onBack }: StudentViewProps) {
         setProgressRows(data.rows || []);
         setProgressUnassigned(data.unassigned || []);
         setProgressWarnings(data.warnings || []);
+        setProgressTotals(data.totals || null);
       })
       .catch((err) => {
         if (!isMounted) return;
+        setProgressTotals(null);
         const msg = err?.response?.data?.detail || err?.message || "Could not load progress data.";
         if (err?.response?.status === 409) {
           setProgressError(`ℹ️ ${msg}`);
@@ -401,14 +404,13 @@ export function StudentView({ student, onBack }: StudentViewProps) {
     is_ai_parsed: r.is_ai_parsed,
   }));
 
-  const totalRequiredCredits =
-    student?.total_credits_required ||
-    student?.required_credits ||
-    student?.degree_template?.total_credits_required ||
-    student?.cohorts?.degree_templates?.total_credits_required ||
-    120;
-  const currentCredits = Number(student?.credits || student?.total_earned_credits) || 0;
-  const creditProgressPercentage = Math.min((currentCredits / totalRequiredCredits) * 100, 100);
+  // Single source of truth for totals: api.getProgress().totals (no hardcoded fallback)
+  const totalRequiredCredits = progressTotals?.required ?? null;
+  const currentCredits = progressTotals?.earned ?? null;
+  const creditProgressPercentage =
+    totalRequiredCredits && totalRequiredCredits > 0 && currentCredits !== null
+      ? Math.min((currentCredits / totalRequiredCredits) * 100, 100)
+      : 0;
 
   const handleSaveNotes = async () => {
     if (!notes.trim()) return;
@@ -655,14 +657,26 @@ export function StudentView({ student, onBack }: StudentViewProps) {
             <div className="space-y-2 pt-4 border-t border-gray-100">
               <div className="flex justify-between text-sm font-medium">
                 <span className="text-gray-600">Total Program Credit Progress</span>
-                <span className="text-gray-900 font-bold">{currentCredits} / {totalRequiredCredits} Credits</span>
+                {progressLoading ? (
+                  <span className="text-xs text-gray-400 animate-pulse font-mono">Loading…</span>
+                ) : progressError ? (
+                  <span className="text-xs text-rose-600 font-semibold">{progressError}</span>
+                ) : currentCredits !== null && totalRequiredCredits !== null ? (
+                  <span className="text-gray-900 font-bold font-mono">
+                    {currentCredits} / {totalRequiredCredits} Credits ({Math.round(creditProgressPercentage)}%)
+                  </span>
+                ) : (
+                  <span className="text-xs text-gray-400 font-mono">—</span>
+                )}
               </div>
-              <div className="w-full bg-gray-100 h-3 rounded-full overflow-hidden">
-                <div 
-                  className="bg-emerald-500 h-full rounded-full transition-all duration-500" 
-                  style={{ width: `${creditProgressPercentage}%` }}
-                />
-              </div>
+              {!progressError && currentCredits !== null && totalRequiredCredits !== null && (
+                <div className="w-full bg-gray-100 h-3 rounded-full overflow-hidden">
+                  <div 
+                    className="bg-emerald-500 h-full rounded-full transition-all duration-500" 
+                    style={{ width: `${creditProgressPercentage}%` }}
+                  />
+                </div>
+              )}
               <p className="text-xs text-gray-400">Completion threshold calculated against degree program blueprint.</p>
             </div>
           </CardContent>

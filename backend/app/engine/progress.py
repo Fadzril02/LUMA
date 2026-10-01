@@ -1,4 +1,4 @@
-﻿"""
+"""
 SynGrad Requirement Matching Engine (4A)
 
 Pure function — no DB access, no hardcoded university logic.
@@ -35,6 +35,18 @@ def _build_pattern_regex(pattern: str) -> re.Pattern:
     return re.compile(r'^' + regex_str)
 
 
+def _pattern_wildcard_count(pattern: str) -> int:
+    """Number of wildcard characters represented by runs of 2+ 'X' in pattern."""
+    return sum(len(m.group()) for m in re.finditer(r'X{2,}', pattern.upper()))
+
+
+def _slot_wildcard_count(patterns: List[str]) -> int:
+    """Minimum wildcard count across patterns for a slot. Explicit codes have 0."""
+    if not patterns:
+        return 0
+    return min(_pattern_wildcard_count(p) for p in patterns)
+
+
 def _code_matches_pattern(course_code: str, pattern: str) -> bool:
     """Return True if course_code prefix-matches the slot pattern."""
     try:
@@ -60,6 +72,7 @@ def compute_progress(
     scale: GradingScale,
     repeat_policy: str = "latest",
     overrides: Optional[Dict[str, str]] = None,
+    template_total_credits: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Match academic records against a degree template and compute progress.
@@ -74,6 +87,7 @@ def compute_progress(
         repeat_policy: 'latest' or 'best'.
         overrides: {template_course_id (str) -> course_code (str)} mapping.
                    Overrides are applied before any auto-matching.
+        template_total_credits: Optional total_credits_required from degree_templates.
 
     Returns:
         {
@@ -89,6 +103,13 @@ def compute_progress(
         overrides = {}
 
     warnings: List[str] = []
+
+    # Check template total credits warning if programme requirement provided
+    template_row_credits_sum = sum(int(r.get("credit_hour") or r.get("credits") or 0) for r in template_rows)
+    if template_total_credits is not None and template_row_credits_sum != int(template_total_credits):
+        warnings.append(
+            f"Template rows total {template_row_credits_sum} credits but programme requires {template_total_credits}."
+        )
 
     # ------------------------------------------------------------------
     # 1. Apply repeat policy to raw records → one row per course_code
@@ -145,7 +166,6 @@ def compute_progress(
     # Step 1 (overrides first): for any template_course_id in overrides,
     #   pin the specified course_code to that row regardless of pattern.
     # ------------------------------------------------------------------
-    # We do this by pre-consuming those codes from unmatched_passing.
     override_by_tmpl_id: Dict[str, str] = {
         str(k): str(v).replace(" ", "").upper()
         for k, v in overrides.items()
@@ -159,7 +179,7 @@ def compute_progress(
         tmpl_id = str(row.get("id") or "")
         tmpl_code = str(row.get("course_code") or "").replace(" ", "").upper()
         tmpl_name = row.get("course_name") or tmpl_code
-        tmpl_credits = int(row.get("credit_hour") or 0)
+        tmpl_credits = int(row.get("credit_hour") or row.get("credits") or 0)
         category = (row.get("category") or "Uncategorised")
 
         # Override takes precedence
@@ -215,18 +235,20 @@ def compute_progress(
             ))
 
     # ------------------------------------------------------------------
-    # Step 3: Slot rows — greedy assign from remaining passing codes
+    # Step 3: Slot rows — Maximum Bipartite Matching (augmenting paths)
     # ------------------------------------------------------------------
+    resolved_slot_rows: Dict[str, Dict[str, Any]] = {}
+    active_slot_rows: List[Dict[str, Any]] = []
+
     for row in slot_rows:
         tmpl_id = str(row.get("id") or "")
-        tmpl_code = str(row.get("course_code") or "")  # e.g. "SCSRXXX3/SCSTXXX3"
+        tmpl_code = str(row.get("course_code") or "")
         tmpl_name = row.get("course_name") or tmpl_code
-        tmpl_credits = int(row.get("credit_hour") or 0)
+        tmpl_credits = int(row.get("credit_hour") or row.get("credits") or 0)
         category = (row.get("category") or "Uncategorised")
         slot_no = row.get("slot_no")
-        patterns = row.get("match_patterns") or []
 
-        # Override takes precedence
+        # Overrides applied first
         if tmpl_id in override_by_tmpl_id:
             pinned_code = override_by_tmpl_id[tmpl_id]
             rec = passing_codes.get(pinned_code)
@@ -239,31 +261,97 @@ def compute_progress(
                         f"template={tmpl_credits}cr, record={rec_credits}cr. Using record credits."
                     )
                     tmpl_credits = rec_credits
-                result_rows.append(_make_row(
+                resolved_slot_rows[tmpl_id] = _make_row(
                     tmpl_id, tmpl_code, tmpl_name, category, tmpl_credits,
                     is_slot=True, slot_no=slot_no,
                     status="done", rec=rec, source="override"
-                ))
+                )
             else:
                 in_rec = in_progress_codes.get(pinned_code)
                 status = "in_progress" if in_rec else "missing"
-                result_rows.append(_make_row(
+                resolved_slot_rows[tmpl_id] = _make_row(
                     tmpl_id, tmpl_code, tmpl_name, category, tmpl_credits,
                     is_slot=True, slot_no=slot_no,
                     status=status, rec=in_rec, source="override"
-                ))
+                )
+        else:
+            active_slot_rows.append(row)
+
+    # Normalize patterns for each active slot
+    slot_patterns: Dict[str, List[str]] = {}
+    for row in active_slot_rows:
+        tmpl_id = str(row.get("id") or "")
+        pats = row.get("match_patterns") or []
+        if not pats and row.get("course_code"):
+            pats = [p.strip() for p in str(row["course_code"]).split("/") if p.strip()]
+        slot_patterns[tmpl_id] = pats
+
+    # Build candidates for each slot, ordered by pattern specificity (fewest wildcards first)
+    available_codes = list(unmatched_passing.keys())
+    slot_candidates: Dict[str, List[str]] = {}
+    for row in active_slot_rows:
+        tmpl_id = str(row.get("id") or "")
+        pats = slot_patterns[tmpl_id]
+        matching = []
+        for code in available_codes:
+            valid_pats = [p for p in pats if _code_matches_pattern(code, p)]
+            if valid_pats:
+                min_wild = min(_pattern_wildcard_count(p) for p in valid_pats)
+                matching.append((min_wild, code))
+        matching.sort(key=lambda item: (item[0], item[1]))
+        slot_candidates[tmpl_id] = [c for _, c in matching]
+
+    # Sort active slots: prefer specific slots (fewer wildcard characters / explicit codes), tie-break by slot_no
+    sorted_active_slots = sorted(
+        active_slot_rows,
+        key=lambda r: (
+            _slot_wildcard_count(slot_patterns[str(r.get("id") or "")]),
+            r.get("slot_no") or 0
+        )
+    )
+
+    # Augmenting path matching
+    slot_match: Dict[str, str] = {}
+    code_match: Dict[str, str] = {}
+
+    def dfs(s_id: str, visited_courses: set) -> bool:
+        for c_code in slot_candidates[s_id]:
+            if c_code in visited_courses:
+                continue
+            visited_courses.add(c_code)
+            curr_slot = code_match.get(c_code)
+            if curr_slot is None or dfs(curr_slot, visited_courses):
+                slot_match[s_id] = c_code
+                code_match[c_code] = s_id
+                return True
+        return False
+
+    for s_row in sorted_active_slots:
+        s_id = str(s_row.get("id") or "")
+        visited: set = set()
+        dfs(s_id, visited)
+
+    # Consume matched courses from unmatched_passing
+    for s_id, c_code in slot_match.items():
+        unmatched_passing.pop(c_code, None)
+
+    # Build final row objects in original slot_no order
+    for row in slot_rows:
+        tmpl_id = str(row.get("id") or "")
+        if tmpl_id in resolved_slot_rows:
+            result_rows.append(resolved_slot_rows[tmpl_id])
             continue
 
-        # Greedy: find first unmatched passing code that matches any pattern
-        matched_code = None
-        matched_rec = None
-        for code in list(unmatched_passing.keys()):
-            if _code_matches_any_pattern(code, patterns):
-                matched_code = code
-                matched_rec = unmatched_passing.pop(code)
-                break
+        tmpl_code = str(row.get("course_code") or "")
+        tmpl_name = row.get("course_name") or tmpl_code
+        tmpl_credits = int(row.get("credit_hour") or row.get("credits") or 0)
+        category = (row.get("category") or "Uncategorised")
+        slot_no = row.get("slot_no")
+        pats = slot_patterns.get(tmpl_id, [])
 
-        if matched_rec is not None:
+        if tmpl_id in slot_match:
+            matched_code = slot_match[tmpl_id]
+            matched_rec = passing_codes[matched_code]
             rec_credits = int(matched_rec.get("credits") or 0)
             slot_cr = rec_credits if rec_credits else tmpl_credits
             if rec_credits and tmpl_credits and rec_credits != tmpl_credits:
@@ -277,10 +365,9 @@ def compute_progress(
                 status="done", rec=matched_rec, source="pattern"
             ))
         else:
-            # Check in-progress among codes matching any pattern
             in_rec = None
             for code, rec in in_progress_codes.items():
-                if _code_matches_any_pattern(code, patterns):
+                if _code_matches_any_pattern(code, pats):
                     in_rec = rec
                     break
             status = "in_progress" if in_rec else "missing"
