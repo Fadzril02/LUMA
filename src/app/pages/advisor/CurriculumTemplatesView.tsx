@@ -739,7 +739,7 @@ export function CurriculumTemplatesView() {
                   <th className="py-3 px-4">Category</th>
                   <th className="py-3 px-4">Prerequisites</th>
                   {templateDetail.can_edit && (
-                    <th className="py-3 px-4 text-right">Actions</th>
+                    <th className="py-3 px-4 text-right sticky right-0 bg-gray-50 z-10 shadow-[-6px_0_6px_-6px_rgba(0,0,0,0.15)]">Actions</th>
                   )}
                 </tr>
               </thead>
@@ -860,7 +860,7 @@ export function CurriculumTemplatesView() {
                               {formatPrereqsText(row.prerequisites)}
                             </td>
                             {templateDetail.can_edit && (
-                              <td className="py-3.5 px-4 text-right space-x-1 whitespace-nowrap">
+                              <td className="py-3.5 px-4 text-right space-x-1 whitespace-nowrap sticky right-0 bg-white z-10 shadow-[-6px_0_6px_-6px_rgba(0,0,0,0.15)]">
                                 <button
                                   onClick={() => startEditRow(row)}
                                   className="p-1.5 text-gray-500 hover:text-blue-900 hover:bg-gray-100 rounded-md transition-colors"

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   ArrowLeft,
   GraduationCap,
@@ -1214,7 +1214,7 @@ export function StudentView({ student, onBack }: StudentViewProps) {
                       <th className="text-left px-4 py-2.5 font-bold text-gray-500 uppercase tracking-wider">Category</th>
                       <th className="text-left px-4 py-2.5 font-bold text-gray-500 uppercase tracking-wider">Satisfied By</th>
                       <th className="text-center px-4 py-2.5 font-bold text-gray-500 uppercase tracking-wider">Status</th>
-                      <th className="text-right px-4 py-2.5 font-bold text-gray-500 uppercase tracking-wider">Action</th>
+                      <th className="text-right px-4 py-2.5 font-bold text-gray-500 uppercase tracking-wider sticky right-0 bg-gray-50 z-10 shadow-[-6px_0_6px_-6px_rgba(0,0,0,0.15)]">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
@@ -1268,7 +1268,7 @@ export function StudentView({ student, onBack }: StudentViewProps) {
                               </span>
                             )}
                           </td>
-                          <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                          <td className="px-4 py-2.5 text-right whitespace-nowrap sticky right-0 bg-white z-10 shadow-[-6px_0_6px_-6px_rgba(0,0,0,0.15)]">
                             {row.is_slot ? (
                               <div className="flex items-center justify-end gap-1.5">
                                 {(row.source === 'override' || row.override) && row.satisfied_by?.course_code && (
