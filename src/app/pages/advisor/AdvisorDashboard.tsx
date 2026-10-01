@@ -107,7 +107,7 @@ export function AdvisorDashboard() {
   const [templateName, setTemplateName] = useState<string>("");
   const [programCode, setProgramCode] = useState<string>("");
   const [syllabusYear, setSyllabusYear] = useState<string>("");
-  const [totalCredits, setTotalCredits] = useState<number>(130);
+  const [totalCredits, setTotalCredits] = useState<string>("");
 
   const advisorStaffId = (profile as any)?.staff_id;
   const tenantId = (profile as any)?.tenant_id || (profile as any)?.university_id;
@@ -607,7 +607,7 @@ const handleDownloadTemplate = () => {
       setUploadMessage("Please enter the Syllabus Year (e.g. 2024/2025).");
       return;
     }
-    if (!totalCredits || totalCredits <= 0) {
+    if (!/^\d+$/.test(totalCredits) || Number(totalCredits) <= 0) {
       setUploadStatus("error");
       setUploadMessage("Please enter a valid total credits requirement.");
       return;
@@ -621,7 +621,7 @@ const handleDownloadTemplate = () => {
         selectedFile,
         templateName.trim(),
         programCode.trim().toUpperCase(),
-        totalCredits,
+        Number(totalCredits),
         syllabusYear.trim()
       );
       const insertedCount = result.total_inserted ?? result.total_parsed ?? 0;
@@ -669,7 +669,7 @@ const handleDownloadTemplate = () => {
         setTemplateName("");
         setProgramCode("");
         setSyllabusYear("");
-        setTotalCredits(130);
+        setTotalCredits("");
         setUploadMessage("");
         setUploadStatus("idle");
       }, 2500);
@@ -1433,11 +1433,11 @@ const handleDownloadTemplate = () => {
                       Total Credits <span className="text-rose-500">*</span>
                     </label>
                     <input
-                      type="number"
+                      type="text"
+                      inputMode="numeric"
                       required
-                      min={1}
                       value={totalCredits}
-                      onChange={(e) => setTotalCredits(Number(e.target.value))}
+                      onChange={(e) => setTotalCredits(e.target.value.replace(/\D/g, "").replace(/^0+/, ""))}
                       placeholder="e.g. 130"
                       className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
                     />
