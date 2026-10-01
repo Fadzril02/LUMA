@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
+import { PRODUCT } from "../../../config/product";
 import { 
   Users, 
   AlertTriangle, 
@@ -1033,8 +1034,8 @@ const handleDownloadTemplate = () => {
             </button>
           </div>
 
-          {/* Action 3: UAT feedback form — shown only when VITE_FEEDBACK_FORM_URL is set */}
-          {import.meta.env.VITE_FEEDBACK_FORM_URL && (
+          {/* Action 3: UAT feedback form — shown only when PRODUCT.feedbackFormUrl is set */}
+          {PRODUCT.feedbackFormUrl && (
           <div className="bg-gray-50/60 border border-gray-200 rounded-xl p-6 flex flex-col justify-between hover:border-gray-300 transition-colors">
             <div className="space-y-2">
               <div className="w-9 h-9 rounded-lg bg-white border border-gray-200 text-emerald-700 flex items-center justify-center shadow-xs">
@@ -1046,7 +1047,7 @@ const handleDownloadTemplate = () => {
               </p>
             </div>
             <a
-              href={import.meta.env.VITE_FEEDBACK_FORM_URL}
+              href={PRODUCT.feedbackFormUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="mt-6 w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-white border border-gray-300 text-xs font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition-colors shadow-xs cursor-pointer"
