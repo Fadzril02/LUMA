@@ -1,8 +1,8 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import App from './app/App.tsx'; // Adjusted cleanly to reference your app/ directory setup
-import { AuthProvider } from './context/AuthContext.tsx';
-import { ErrorBoundary } from './components/shared/ErrorBoundary.tsx';
+import App from './app/App';
+import { AuthProvider } from './context/AuthContext';
+import { ErrorBoundary } from './components/shared/ErrorBoundary';
 import './index.css';
 window.addEventListener('error', (e) => {
   if (e.message?.includes('Failed to fetch dynamically imported module') || e.message?.includes('Importing a module script failed')) {

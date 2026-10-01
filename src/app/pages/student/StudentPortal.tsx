@@ -58,7 +58,8 @@ export function StudentPortal() {
   const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
 
   const studentName = (profile as any)?.name || (profile as any)?.full_name || "Student";
-  const studentMatric = profile?.matric_no || "";
+  const isStudent = profile?.role === "student";
+  const studentMatric = isStudent ? profile.matric_no : "";
 
   // Guard: If profile is not linked to a real student row, block rendering completely
   if (!profile || profile.role !== "student" || !profile.matric_no) {

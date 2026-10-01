@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { Target, Plus, Trash2, Calculator, Sparkles, TrendingUp, TrendingDown, BookOpen, AlertTriangle } from "lucide-react";
-import { Button, Input } from "../../components/ui";
 import { db } from "../../../lib/supabase";
 import { useAuth } from "../../../context/AuthContext";
+import { Button, Input } from "../../components/ui";
 import {
   fetchGradeScale,
   findGradeDefinition,
@@ -78,7 +78,7 @@ export function CgpaCalculatorView({
     propMatric ||
     student?.matric_no ||
     student?.id ||
-    profile?.matric_no ||
+    (profile?.role === "student" ? profile.matric_no : "") ||
     "";
 
   // Check if props provide starting data directly

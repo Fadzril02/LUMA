@@ -8,7 +8,7 @@ export const StudentUploadSlip = () => {
   const [uploading, setUploading] = useState(false);
 
   const handleUploadToQueue = async () => {
-    if (!file || !profile) return;
+    if (!file || !profile || profile.role !== "student") return;
     setUploading(true);
 
     try {

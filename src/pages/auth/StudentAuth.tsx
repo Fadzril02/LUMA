@@ -5,9 +5,9 @@ import {
   GraduationCap, User, Lock, Mail, 
   Eye, EyeOff, ArrowRight, CheckCircle2, AlertCircle, Loader2 
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle, Button, Input, Label } from "../../app/components/ui";
 import { useAuth } from "../../context/AuthContext";
 import { supabase } from "../../lib/supabase";
+import { Card, CardContent, CardHeader, CardTitle, Button, Input, Label } from "../../app/components/ui";
 
 export function StudentAuth() {
   const navigate = useNavigate();

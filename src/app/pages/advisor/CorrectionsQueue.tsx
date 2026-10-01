@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { Check, XCircle, Clock, CheckCircle2, FileText, Calendar, Eye, X, Plus, Trash2, AlertTriangle } from "lucide-react";
-import { Card, CardContent, Button, Badge } from "../../components/ui";
 import { db } from "../../../lib/supabase";
 import { api } from "../../../lib/api";
 import { useAuth } from "../../../context/AuthContext";
+import { Card, CardContent, Button } from "../../components/ui";
 import {
   fetchGradeScale,
   gradesForDropdown,

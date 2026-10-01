@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { Search, Filter, AlertTriangle, CheckCircle2, ChevronRight, GraduationCap, Loader2, AlertOctagon } from "lucide-react";
-import { Card, Input, Button } from "../../components/ui";
 import { db } from "../../../lib/supabase"; // 🔌 SUPABASE IMPORT
 import { useAuth } from "../../../context/AuthContext";
+import { Card, Button, Input } from "../../components/ui";
 
 // 🔌 IMPORT YOUR STUDENT deep-dive view
 import { StudentView } from "./StudentView";

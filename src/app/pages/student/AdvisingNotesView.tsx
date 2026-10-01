@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Calendar, User, ArrowRight, Clock, FileText, Loader2 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle, Badge } from "../../components/ui";
 import { db } from "../../../lib/supabase";
+import { Card, CardHeader, Badge, CardContent } from "../../components/ui";
 
 interface AdvisingLog {
   id: string;

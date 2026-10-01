@@ -72,7 +72,7 @@ export function DegreeAuditView({
     };
   }, []);
 
-  const activeMatric = propMatric || profile?.matric_no || "";
+  const activeMatric = propMatric || (profile?.role === "student" ? profile.matric_no : "") || "";
 
   // Derive final display values cleanly during render: props always override local fetches
   const liveCgpa = Number(propCgpa ?? fetchedCgpa ?? 0).toFixed(2);
