@@ -1,4 +1,4 @@
-﻿# SynGrad Deployment Guide
+# SynGrad Deployment Guide
 
 ## Environments
 
@@ -22,7 +22,7 @@ All secrets are managed in each platform's dashboard. **Never commit secret valu
 |------------------------------|-----------------------------------------------------------|
 | `SUPABASE_URL`               | Supabase project REST URL                                 |
 | `SUPABASE_SERVICE_ROLE_KEY`  | Service-role key — backend only, never exposed to browser |
-| `SUPABASE_JWT_SECRET`        | Used to verify Supabase-issued JWTs on every request      |
+| `SUPABASE_JWT_SECRET`        | Declared in `config.py` (accepted from env) but **not used for user-token verification** — the backend verifies tokens via JWKS/ES256 (`auth.py`). Set it anyway to avoid config noise if your `.env` includes it. |
 | `RESEND_API_KEY`             | Transactional email (advisor invites, notifications)      |
 | `RESEND_FROM`                | Sender address, e.g. `noreply@syngrad.my`                 |
 | `BACKEND_CORS_ORIGINS`       | Comma-separated exact allowed origins (no globs)          |
@@ -78,16 +78,33 @@ test on staging (advisor + student smoke test)
 
 ## Setting Up a Staging Environment from Scratch
 
-### 1. Supabase project
+### 1. Schema baseline — dump production, restore to staging
 
-Create a new Supabase project (`syngrad-staging`). Then apply all migrations in order:
+> **Why not replay migrations 01–29?**
+> Early migrations (01–16) were written against a drifted database and are not guaranteed
+> to replay cleanly on a blank schema. Use the production dump as the authoritative
+> baseline. Migrations **30 and later** are applied to both environments going forward.
+
+**Linux / macOS / WSL:**
 
 ```bash
-# From the repo root — replace $STAGING_DB_URL with the Supabase connection string
-for f in supabase/migrations/*.sql; do
-  echo "Applying $f…"
-  psql "$STAGING_DB_URL" < "$f"
-done
+# Dump schema only (no data) from production
+supabase db dump --db-url "$PROD_DB_URL" --schema public -f schema.sql
+
+# Apply to a freshly created staging Supabase project
+psql "$STAGING_DB_URL" -f schema.sql
+```
+
+**Windows (no CLI / WSL):**
+
+1. Run the `supabase db dump` command above in WSL or on a Linux machine, then copy `schema.sql` locally.
+2. Open the staging project in the **Supabase dashboard → SQL Editor**.
+3. Paste the contents of `schema.sql` and click **Run**.
+
+After the schema is applied, future migrations are run individually:
+
+```bash
+psql "$STAGING_DB_URL" -f supabase/migrations/30_next_feature.sql
 ```
 
 ### 2. Auth settings (Supabase dashboard)
@@ -99,34 +116,21 @@ done
 | Site URL            | Staging frontend URL (Vercel preview or fixed URL)  |
 | Redirect URLs       | Add the staging frontend URL + `/complete-registration` |
 
-### 3. Seed tenant + advisor invite code
+### 3. Seed advisor invite code
 
-Run the following SQL in the Supabase SQL editor or via `psql`:
+The UTM tenant and its grading scale are created by the schema copy
+(originally from migrations 18 and 26). Only an invite code needs to be seeded manually.
+
+Run in the Supabase SQL editor or via `psql`:
 
 ```sql
--- Seed tenant (UTM) — matches the UUID used in tests and migrations
-INSERT INTO tenants (id, name, repeat_policy)
-VALUES ('00000000-0000-0000-0000-000000000001', 'UTM', 'latest')
-ON CONFLICT (id) DO NOTHING;
-
--- Seed the UTM university row referenced by the course catalog
-INSERT INTO universities (id, name, code)
-VALUES ('00000000-0000-0000-0000-000000000001', 'Universiti Teknologi Malaysia', 'UTM')
-ON CONFLICT (id) DO NOTHING;
-
--- Create an advisor invite code for staging testing
--- Replace <YOUR_STAFF_ID> and <YOUR_EMAIL> with real staging values
-INSERT INTO advisor_invite_codes (code, staff_id, institutional_email, tenant_id, used, expires_at)
-VALUES (
-  'STAGING-INVITE-2026',
-  'TEST999',
-  'advisor@staging.utm.my',
-  '00000000-0000-0000-0000-000000000001',
-  false,
-  now() + interval '90 days'
-)
-ON CONFLICT DO NOTHING;
+-- UTM tenant + grading scale are created by the schema copy (migrations 18 and 26)
+INSERT INTO advisor_invites (code, tenant_id, expires_at)
+VALUES (upper(substr(md5(random()::text), 1, 8)), 'UTM', now() + interval '30 days')
+RETURNING code;
 ```
+
+Copy the returned `code` — give it to the staging advisor to complete registration.
 
 ### 4. Configure backend environment variables
 
