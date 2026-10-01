@@ -6,7 +6,7 @@ Company: [COMPANY_NAME]
 import csv
 import io
 import re
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Optional, Tuple
 
 
 class CSVCourseParser:
