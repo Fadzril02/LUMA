@@ -12,6 +12,72 @@
 
 ---
 
+## 0. Current State (2026-10-01) — supersedes anything below that conflicts
+
+Sections 1–5 were written at v1.0.0 and are partly outdated (e.g. `registration_disputes`, contest flow, `register_student_into_cohort` RPC, `revoke-student`). Trust this section and `supabase/migrations/` over them.
+
+### 0.1 Model
+- Multi-university. Every row is scoped by `tenant_id` (TEXT, e.g. `'UTM'`). No faculty layer: advisor ↔ student only.
+- Nothing university-specific is hardcoded in code or CHECK constraints. It lives in `tenants`, `grade_scales`, templates.
+
+### 0.2 Key tables
+| Table | Notes |
+|---|---|
+| `tenants` | `student_email_domains[]`, `matric_regex`, `min_pass_grade`, `default_prereq_min_grade`, `repeat_policy` (`latest`/`best`/…) |
+| `grade_scales` | per tenant: grade, point, min/max mark, `is_pass`, `achievement_label`; special codes (HL, EX, CT, TD, TS). Presets in `grade_scale_presets`, `clone_preset_to_tenant()` |
+| `advisor_invites` | invite codes for advisor registration |
+| `advisors`, `students` | identity columns protected by triggers; `students.matric_no` currently globally unique (blocks same matric at two tenants — fix before 2nd university) |
+| `cohorts` | cohort code → template; students join with code |
+| `degree_templates`, `template_courses` | tenant-scoped curriculum; elective slots = code containing `/` or `XX`, auto-numbered, `match_patterns`; partial unique index on real courses only |
+| `academic_records` | one row per attempt, unique `(tenant_id, matric_no, course_code, semester)`; semester normalised `SEM n YYYY/YYYY`; tenant `repeat_policy` picks the counted attempt |
+| `uploaded_documents` | slip metadata, `extracted_data` incl. server-side `original_courses`, `processing_status`, fraud flag; browser cannot write status/results (mig 29) |
+| `advising_logs` | advisor notes, student can read own; `created_at`/matric/advisor locked on UPDATE; notification sent-at for rate limit |
+| `degree_audits` | audit snapshots; read: own student or own advisor (mig 30) |
+| `exemption_audit` | exemption history |
+| view `advisee_roster_summary` | `security_invoker = true`; CGPA/credits computed from tenant grade scale |
+
+### 0.3 RLS model
+- SECURITY DEFINER helpers (avoid policy recursion): `my_staff_ids()`, `my_advisor_staff_ids()`, `my_matric_nos()`, `my_advisee_matric_nos()`, `my_tenant_id()`.
+- Students see their own rows; advisors see their advisees' rows; anon sees nothing.
+- Identity-protect triggers bypass only when there are no JWT claims (SQL editor) or role = `service_role`.
+- Storage `academic-slips` (mig 30): private bucket; INSERT only to `slips/<own matric>_<ts>.<ext>`; SELECT only for paths present in `uploaded_documents` rows the user can see. Advisors view via signed URL (1h).
+
+### 0.4 Identity
+- Backend verifies Supabase JWT via JWKS (ES256). `advisor_id`, `tenant_id`, `matric_no` come from the JWT/app_metadata or a DB lookup, never the request body.
+- Role + tenant written to `app_metadata` by `/register/*` (service role).
+
+### 0.5 API (prefix `/api/v1`)
+| Endpoint | Who | Purpose |
+|---|---|---|
+| `GET /health` | public | health (⚠ currently returns key prefixes — remove before launch) |
+| `POST /register/student` | new user | cohort code + matric + name; matric checked against `tenants.matric_regex` |
+| `POST /register/advisor` | new user | invite code |
+| `GET /register/validate-cohort/{code}` | public | cohort lookup |
+| `POST /courses/upload-csv` | advisor | curriculum template upload |
+| `GET /courses/template-csv` | advisor | blank template download |
+| `POST /audit/extract` | student/advisor (owner) | parse slip: regex first, Groq only for unparsed lines; saves results server-side |
+| `POST /audit/submit-verification` | student | confirm/edit rows; server computes `is_altered` vs `original_courses` |
+| `POST /audit/finalize-approval` | advisor (own advisee) | write `academic_records` |
+| `POST /audit/reject-document` | advisor (own advisee) | reject |
+| `POST /audit/process-storage` | advisor | legacy path; requires document row (removal pending decision) |
+| `POST /audit/purge-document` | backend | PDPA purge |
+| `POST /advising-logs/{log_id}/notify` | advisor | email student via Resend; no note text in email; 1/student/hour |
+| `PATCH /students/{matric_no}/exemptions` | advisor | exemptions |
+
+`document_id`/`file_path` access goes through `_load_authorized_document()` in `audit.py`.
+
+### 0.6 Slip parsing (UTM format, parser is generic-first)
+- SEMESTER and SESSION on separate lines; ST codes L=pass, G=fail, TD=withdrawn, UM=repeat, PK=special exam.
+- Summary: PNG (sem GPA), PNGK (CGPA), KK, KD, CE. Computed GPA is cross-checked against printed; mismatch = warning, never auto-correct.
+
+### 0.7 Migrations (applied in order; never edit after applied)
+01–16 legacy (written against a drifted DB; staging is built from a prod schema dump instead). 17 tenant curriculum · 18 tenants · 19 advisor_invites · 20 RLS lockdown · 21 drop email advisor policies · 22 elective slots · 23 cohorts lockdown · 24 advising_logs v2 · 25 advising notifications · 26 grading scales · 27 record attempts · 28 roster view · 29 uploaded_documents lockdown · 30 storage + degree_audits RLS (**apply after push**). From 30 on: apply to staging first, then prod.
+
+### 0.8 Known gaps
+- `/health` leaks key prefixes. `DegreeAuditView.tsx` has a UTM course-prefix regex. Dead code in `src/pages/advisor/` (fake radar scores) and old contest code. `students.matric_no` global unique. Render free tier cold starts.
+
+---
+
 ## 1. Technology Stack & Topology
 
 SynGrad is engineered around a hybrid cloud architecture combining a high-performance, single-page application (SPA), a managed backend-as-a-service (BaaS) for persistence and authentication, and an asynchronous analytical Python microservice for computer vision, natural language processing, and Directed Acyclic Graph (DAG) graph resolution.

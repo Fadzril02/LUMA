@@ -1,4 +1,6 @@
-# Smart Academic Assessment System - Backend Engine
+# SynGrad API (FastAPI)
+
+> Endpoint list, schema and RLS: see `../Architecture.md` §0. Env vars per environment: `../DEPLOYMENT.md`.
 
 High-performance, zero-waste FastAPI backend engine for automated degree audits, transcript parsing, prerequisite DAG graph evaluation, and student academic tracking.
 
@@ -68,11 +70,9 @@ Copy the `.env.example` template:
 ```bash
 cp .env.example .env
 ```
-Update `.env` with your actual Supabase credentials and optional LLM keys:
-* `SUPABASE_URL`
-* `SUPABASE_SERVICE_ROLE_KEY`
-* `SUPABASE_ANON_KEY`
-* `LLM_API_KEY` (Groq or OpenAI compatible, for ambiguous line parsing)
+Required: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `FRONTEND_URL`, `BACKEND_CORS_ORIGINS`, `ENVIRONMENT`.
+Optional: `BACKEND_CORS_ORIGIN_REGEX` (e.g. Vercel previews), `GROQ_API_KEY`/`LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL` (LLM fallback), `RESEND_API_KEY`, `RESEND_FROM` (advising emails).
+`SUPABASE_JWT_SECRET` is not used for user tokens (JWKS ES256).
 
 ### 4. Run the Server Locally
 ```bash
@@ -90,6 +90,8 @@ Run the test suite with `pytest`:
 ```bash
 pytest tests/
 ```
+
+93 tests at 2026-10-01. `tests/conftest.py` stubs document ownership unless a test is marked `real_doc_auth`.
 
 ---
 

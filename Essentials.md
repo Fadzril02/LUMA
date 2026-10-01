@@ -12,6 +12,25 @@
 
 ---
 
+## 0. Working Rules (current, 2026-10-01) — read this first
+
+These five override anything below that conflicts.
+
+1. **Zero-Waste pipeline.** Deterministic regex first. LLM (Groq) only for lines regex can't parse.
+2. **Multi-university.** Never hardcode matric format, email domain, grading scale, course codes or session formats in code or CHECK constraints. Read from `tenants`, `grade_scales`, templates.
+3. **Server-side identity only.** `advisor_id`, `tenant_id`, `matric_no`, document status and extraction results are decided by the backend/DB from the verified JWT. Never trust a request body or a browser write for them.
+4. **Cumulative, never overwrite.** Semester history accumulates; each attempt is its own row.
+5. **Fail loud.** No silent defaults, no guessing (e.g. semester `|| 1`). Unknown → error or warning shown to the user.
+
+Also:
+- Schema changes only via a new numbered migration. Never edit an applied one. Apply to staging first (from mig 30 on), then prod.
+- Free tiers only (Supabase, Render, Vercel, Resend). No cron, no polling, no new paid service.
+- No faculty layer. Advisor ↔ student only.
+- Verify "fixed in code" separately from "live in production".
+- UI palette: original SynGrad blue (users preferred it). Tailwind custom grey is `ink`, not `slate`.
+
+---
+
 ## 1. The Four Pillar Principles
 
 Every pull request, architectural decision, and line of code committed to this repository must strictly adhere to the following four immutable engineering pillars:
@@ -156,72 +175,42 @@ SynGrad is a multi-tenant blueprint engine designed to support multiple facultie
 
 ---
 
-## 6. Codebase Anatomy & File Map
-
-Contributors must place files according to the established module boundaries:
+## 6. Codebase Map (current)
 
 ```
-d:\smart-aa-system\
-├── backend/                             # Python Analytical Engine
-│   ├── app/
-│   │   ├── core/
-│   │   │   ├── auth.py                  # ES256 JWKS JWT verification & cross-check
-│   │   │   ├── config.py                # Pydantic v2 settings & environment variables
-│   │   │   └── supabase_client.py       # Thread-safe Supabase service wrapper
-│   │   ├── engine/
-│   │   │   ├── extractor.py             # PyMuPDF fast in-memory byte-stream parser
-│   │   │   ├── graph_resolver.py        # NetworkX prerequisite DAG verification
-│   │   │   ├── llm_fallback.py          # Gemini 1.5 Flash zero-temp micro-LLM
-│   │   │   └── parsers/
-│   │   │       └── malaysian_regex.py   # Deterministic transcript regex patterns
-│   │   ├── schemas/                     # Pydantic request/response schemas
-│   │   │   └── audit.py                 # Degree audit DTOs & payloads
-│   │   └── v1/
-│   │       └── endpoints/
-│   │           └── audit.py             # Secure degree audit route handlers
-│   └── main.py                          # FastAPI application entrypoint
-│
-├── src/                                 # Frontend Client SPA
-│   ├── app/
-│   │   ├── components/ui/               # Headless, high-contrast UI primitives
-│   │   ├── pages/
-│   │   │   ├── LandingPage.tsx          # Institutional landing & quick auth
-│   │   │   ├── advisor/
-│   │   │   │   ├── AdvisorDashboard.tsx # Cohort Gatekeeper & Surveillance Panel
-│   │   │   │   ├── CorrectionsQueue.tsx # Document audit & side-by-side verification
-│   │   │   │   └── StudentsList.tsx     # Full advisee roster diagnostics
-│   │   │   └── student/
-│   │   │       ├── StudentPortal.tsx    # Upload slips & tamper-trapped staging
-│   │   │       ├── DegreeAuditView.tsx  # Interactive curriculum DAG checklist
-│   │   │       └── AcademicHistoryView.tsx # Historical transcript timeline
-│   │   └── routes.tsx                   # React Router v7 route definitions
-│   ├── context/
-│   │   └── AuthContext.tsx              # Session lifecycle & zombie-session purge
-│   ├── lib/
-│   │   ├── api.ts                       # Axios client with automatic Bearer injection
-│   │   └── supabase.ts                  # Supabase JS client configuration
-│   └── pages/
-│       └── auth/
-│           └── StudentAuth.tsx          # Real-time matric regex & contest flow
-│
-└── supabase/
-    └── migrations/                      # PostgreSQL DDL & RLS Policies
-        ├── 01_schema.sql                # Core institutional tables
-        ├── 06_rls_hardening.sql         # Nuclear RLS drop & strict identity isolation
-        ├── 08_multi_tenant_blueprint_architecture.sql # Blueprints & Cohorts
-        └── 09_loose_admission_safety_net.sql # Registration disputes & RLS
+backend/app/
+  core/        auth.py (JWKS ES256), config.py (settings, CORS regex), supabase_client.py
+  engine/      extractor.py, parsers/malaysian_regex.py (slip regex), parsers/csv_course_parser.py,
+               grading.py (tenant grade scale, repeat policy), graph_resolver.py (prereqs),
+               llm_fallback.py (Groq, unparsed lines only)
+  schemas/     audit.py, course.py
+  v1/endpoints/ audit.py, register.py, courses.py, advising.py, students.py, health.py
+backend/tests/ pytest; conftest stubs _load_authorized_document unless marked real_doc_auth
+
+src/
+  app/routes.tsx, app/App.tsx
+  app/pages/landing/*        landing sections (FoundingAdvisorCallout to be removed)
+  app/pages/student/*        StudentPortal (upload + verify), DegreeAuditView, AcademicHistoryView,
+                             AdvisingNotesView, CgpaCalculatorView, StudentDashboardView
+  app/pages/advisor/*        AdvisorPortal/Layout, AdvisorDashboard, CorrectionsQueue, StudentsList, StudentView
+  app/pages/admin/*          curriculum/intake/elective/prereq tools
+  pages/auth/*               StudentAuth, AdvisorLogin, CompleteRegistration
+  pages/advisor/*            LEGACY / dead (fake radar scores) — remove
+  context/AuthContext.tsx    profile fetch deferred with setTimeout inside onAuthStateChange
+  lib/api.ts                 backend client (Bearer token); lib/gradeScale.ts; lib/tenants.ts; lib/supabase.ts
+
+supabase/migrations/         NN_name.sql, current head = 30
 ```
 
 ---
 
-## 7. Quality Assurance & Pull Request Checklist
+## 7. Pre-merge Checklist
 
-Before any code is merged into `main` or deployed to production, the developer must verify the following items:
-
-* [ ] **Zero TypeScript Errors:** `npm run build` must compile cleanly in `< 5 seconds`.
-* [ ] **Strict Matric Validation:** Matric Number inputs enforce `/^[A-Z]\d{2}[A-Z]{2}\d{4}$/i` with inline helper text `"Expected format: A24CS0001"` and button disablement.
-* [ ] **RLS Tenancy Verification:** All new database tables must run `ENABLE ROW LEVEL SECURITY` and `FORCE ROW LEVEL SECURITY`.
-* [ ] **JWKS Auth on Mutating Endpoints:** Every mutating FastAPI endpoint in `backend/app/v1/endpoints/` must depend on `Depends(verify_advisor_jwt)` and execute `_check_advisor_identity()`.
-* [ ] **No Hardcoded Constants:** Grep codebase for `'SECJ'`, `'2024/2025'`, or fallback strings. Ensure all parameters are variable-driven from `degree_templates`.
-* [ ] **Tamper Provenance Preserved:** Staged course modifications in `StudentPortal.tsx` must preserve `ai_grade` and toggle `is_altered = true`.
-* [ ] **Zombie Session Prevention:** Logout routines must execute local token eradication in a `finally` block.
+* [ ] `npm run build` clean; `pytest` green (93+).
+* [ ] No university constants: grep for `UTM`, `graduate.utm.my`, `SECJ`, `SCS`, matric regex literals, `'2024/2025'`, `|| 1`.
+* [ ] New table: RLS enabled + policies using the `my_*()` helpers; anon gets nothing; views use `security_invoker = true`.
+* [ ] New endpoint: JWT dependency; identity from JWT/DB; document access via `_load_authorized_document()`.
+* [ ] Browser never writes status, results, identity columns or other users' rows.
+* [ ] Migration added (not edited), with verify queries and rollback; applied to staging before prod.
+* [ ] No new paid service, cron or polling.
+* [ ] Tested live after deploy (not just locally); tag the milestone.

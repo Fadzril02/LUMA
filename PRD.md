@@ -300,50 +300,37 @@ stateDiagram-v2
 
 ---
 
-## 6. Product Roadmap & Phased Rollout Strategy
+## 6. Business Model & Roadmap (current, 2026-10-01)
 
-SynGrad is developed and released in four distinct phases to ensure uncompromising data integrity, security validation, and controlled institutional adoption.
+> Sections 3–4 describe some removed features (collision dispute / contest flow, revocation edge function, Gemini). Current behaviour: Architecture.md §0.
 
-```mermaid
-timeline
-    title SynGrad Phased Rollout Roadmap
-    Phase 0 (Pre-Launch Gate) : Schema Migrations (10_add_founding_advisor_flag) : DAG Prerequisite Depth & min_grade Check : Live ES256 JWT & RLS Security Verification : Documentation Sync
-    Phase 1 (UAT Pilot) : Cap at 5 Founding Advisors : is_founding_advisor=true Permanent Free Access : UTM Software Engineering Pilot (Advisor #1) : Zero-Waste In-Memory Transcript OCR : Forensic Tamper Trap
-    Phase 2 (Commercial Self-Serve) : Stripe Billing & Subscriptions : Single-Player B2C Mode (students.template_id) : Multi-Cohort Archival : Department Audit Analytics
-    Phase 3 (Enterprise Governance) : Curriculum Heatmaps & Failure Density : Predictive Attrition & Early Warning System : LMS API Sync (Canvas/Moodle/Blackboard) : University Central Administration
-```
+### 6.1 Goal
+Passive-income subscription SaaS. Sold to **individual advisors** (B2B2C: advisor pays, their students use it free). No faculty/department layer.
 
-### Phase 0: Pre-Launch Gate & Infrastructure Hardening (Current)
-* **Objective:** Establish unbreakable baseline security, schema version control, and prerequisite data integrity prior to exposing the platform to external users.
-* **Key Deliverables:**
-  1. **Idempotent Schema Versioning:** Database migration `10_add_founding_advisor_flag.sql` adding `is_founding_advisor BOOLEAN DEFAULT false` to `advisors`.
-  2. **Curriculum Integrity Gate:** Verification script [`verify_phase0_curriculum.py`](file:///d:/smart-aa-system/scripts/verify_phase0_curriculum.py) enforcing graph depth and eliminating false-GREEN risks by asserting explicit `min_grade >= 'C'`.
-  3. **Security Gate Proof:** Live execution of asymmetric ES256 JWT verification (`401/403` rejection logs) and 2x2 multi-tenant RLS isolation proving zero cross-tenant data leakage.
-  4. **Documentation Sync:** Technical formalization of "Two Doors, One House" B2B2C ingress, hard client-side session invalidation, and strict JWT signature verification.
+### 6.2 Plans
+| Plan | Who | Price | Notes |
+|---|---|---|---|
+| Founding | UAT pilot advisors | Free forever | `advisors.is_founding_advisor = true`; set by SQL cut-off date before launch |
+| Free | Any advisor | Free | Limited (student cap, TBD) |
+| Pro | Any advisor | Paid (Stripe) | Higher/no limits |
 
-### Phase 1: UAT Pilot (Advisor #1 Launch)
-* **Objective:** Execute real-world User Acceptance Testing (UAT) with our target launch cohort (Advisor #1: UTM Faculty of Computing, Software Engineering).
-* **Cap & Eligibility:** Strictly capped at **maximum 5 Founding Advisors**.
-* **Founding Advisor Privileges:** Every pilot advisor is designated with `is_founding_advisor = true` in `public.advisors`. This flag grants **permanently free, full access** across all current and future platform features without monthly audit quotas or subscription tier limits.
-* **Target Feature Scope:**
-  * Cohort Gatekeeper with 6-character alphanumeric lockable codes.
-  * In-memory PyMuPDF transcript extraction with zero-temperature LLM fallback.
-  * Forensic Tamper Trap (`is_altered`, `ai_grade`) and Advisor Corrections Queue.
-  * Loose Admission Safety Net with matric format enforcement, collision contestation, and one-click privileged revocation.
+Constraint until revenue: stay on free tiers (Supabase, Render, Vercel, Resend). No cron/polling.
 
-### Phase 2: Commercial Self-Serve & Advisor Pro
-* **Objective:** Transition from controlled pilot to self-sustaining Product-Led Growth (PLG) and individual advisor subscriptions.
-* **Target Features:**
-  * **Stripe Billing Integration:** Tiered self-service subscriptions (Freemium vs Advisor Pro vs Department Tier).
-  * **Single-Player Mode (Door 2):** Direct student registration bound to degree blueprints via `students.template_id`, bypassing cohort dependencies.
-  * **Advanced Cohort Management:** Multi-cohort scheduling, intake archival, and bulk document purge upon advisor sign-off.
-  * **Email Notification Queues:** Background email dispatch for dispute resolutions and cohort invitations.
+### 6.3 Roadmap
+| # | Milestone | Status |
+|---|---|---|
+| 1 | Curriculum upload (CSV template) | Done |
+| 2 | Elective slots | Done |
+| 3 | Tenant grading scale + multi-attempt records | Done |
+| — | Advising notes + email notify; upload security (migs 29–30) | Done / 30 pending apply |
+| 4 | Template editor + manual elective override | Next |
+| 5 | Plans & limits | |
+| 6 | Stripe billing | |
+| 6b | Pre-launch polish + performance pass (dead code, UTM prefix in DegreeAuditView, `/health` leak, Render paid plan, backups) | |
+| 7 | Public launch (legal: SSM, PDPA privacy policy + consent) | |
 
-### Phase 3: Enterprise & Institutional Governance
-* **Objective:** University-wide campus deployment and central academic administration.
-* **Features Deferred to Phase 3:**
-  * **Curriculum Heatmaps:** Aggregated multi-cohort bottleneck visualization, prerequisite failure density maps, and syllabus drop-off heatmaps identifying systemic academic hurdles across departments.
-  * **Predictive Attrition & Early Warning System (EWS):** Probabilistic machine learning models evaluating student CGPA velocity, prerequisite retakes, and credit completion pace to forecast at-risk students before semester final exams.
-  * **LMS API Synchronization:** Deep bidirectional integration (LTI 1.3 / REST) with university Learning Management Systems (Canvas, Blackboard, Moodle) to automatically ingest exam slips and synchronize verified audit reports.
-  * **Dean & Registrar Portals:** Centralized university governance, multi-department faculty audits, and institutional accreditation compliance reporting.
+Full pre-launch list: project doc `claude/launch-checklist.md`.
 
+### 6.4 Pilot
+- Tenant `UTM`: matric `^[A-Z][0-9]{2}[A-Z]{2}[0-9]{4}$`, student domain `graduate.utm.my`, min pass `D+`, default prereq min `C`, repeat policy `latest`.
+- UAT feedback via questionnaire; founding flag left on for all UAT advisors.
