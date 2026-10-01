@@ -42,13 +42,18 @@ app = FastAPI(
 )
 
 # Configure CORS
-app.add_middleware(
-    CORSMiddleware,
+# NOTE: Starlette's allow_origins does exact string matching — glob patterns such as
+# "https://*.vercel.app" do NOT work there. Use BACKEND_CORS_ORIGIN_REGEX (a real
+# Python regex) for dynamic preview/staging origins.
+_cors_kwargs: dict = dict(
     allow_origins=[str(origin).rstrip("/") for origin in settings.BACKEND_CORS_ORIGINS],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+if settings.BACKEND_CORS_ORIGIN_REGEX:
+    _cors_kwargs["allow_origin_regex"] = settings.BACKEND_CORS_ORIGIN_REGEX
+app.add_middleware(CORSMiddleware, **_cors_kwargs)
 
 
 # Step 2: Sterile Global Exception Handler (Anti-Leak)

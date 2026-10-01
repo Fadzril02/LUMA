@@ -751,6 +751,43 @@ async def process_storage_transcript(
     if request.advisor_id:
         _check_advisor_identity(jwt_payload, request.advisor_id)
 
+    # Ownership gate: only the document's assigned advisor may trigger bulk processing.
+    # Look up the uploaded_documents row by storage_path (stored as file_path).
+    # A missing row means the path was never registered → 400 (not a silent 404 that
+    # could be used to probe arbitrary storage paths).
+    if not request.storage_path:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="storage_path is required to verify document ownership."
+        )
+    if not supabase_svc.client:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database client unavailable"
+        )
+    _ps_res = (
+        supabase_svc.client.table("uploaded_documents")
+        .select("id")
+        .eq("file_path", request.storage_path)
+        .limit(1)
+        .execute()
+    )
+    if not _ps_res.data:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "No uploaded_documents row found for the given storage_path. "
+                "Register the document via the student upload flow before processing."
+            )
+        )
+    _ps_doc_id = _ps_res.data[0]["id"]
+    _load_authorized_document(
+        jwt_payload,
+        document_id=_ps_doc_id,
+        allow_student=False,
+        expected_matric=request.matric_number or None,
+    )
+
     # 1. Download PDF bytes
     try:
         pdf_bytes = supabase_svc.download_transcript_bytes(request.storage_path)

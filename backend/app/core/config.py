@@ -35,24 +35,25 @@ class Settings(BaseSettings):
     # Frontend URL & CORS
     FRONTEND_URL: str = "http://localhost:5173"
     BACKEND_CORS_ORIGINS: Union[List[str], str] = [
-        # Production Custom Domains
+        # Production custom domains
         "https://syngrad.my",
         "https://www.syngrad.my",
+        # Known production deployments
         "https://syngrad.vercel.app",
-        # Local Development & Loopback
+        "https://syngrad.onrender.com",
+        "https://luma-two-theta.vercel.app",
+        "https://luma-xswf.onrender.com",
+        # Local development & loopback
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:3000",
         "http://localhost:4173",
-        # Production deployments
-        "https://syngrad.onrender.com",
-        "https://luma-two-theta.vercel.app",
-        "https://luma-xswf.onrender.com",
-        # Preview/branch deployments
-        "https://*.vercel.app",
-        "https://*.netlify.app",
-        "https://*.pages.dev",
     ]
+    # Regex for wildcard-style origins (Starlette requires a real regex; glob patterns
+    # like "https://*.vercel.app" are NOT supported in allow_origins).
+    # For staging set: BACKEND_CORS_ORIGIN_REGEX=^https://syngrad-git-dev-[a-z0-9-]+\.vercel\.app$
+    # Or add the exact staging URL to BACKEND_CORS_ORIGINS instead.
+    BACKEND_CORS_ORIGIN_REGEX: Optional[str] = None
     CORS_ORIGINS: Optional[Union[List[str], str]] = None
 
     @field_validator("BACKEND_CORS_ORIGINS", "CORS_ORIGINS", mode="before")

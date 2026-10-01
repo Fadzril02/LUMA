@@ -180,3 +180,37 @@ def test_extract_unauthorized_never_downloads(fake_db):
         res = c.post("/api/v1/audit/extract", json={"file_path": "slips/a.pdf"})
     assert res.status_code == 403
     dl.assert_not_called()
+
+
+def test_process_storage_other_advisor_403(fake_db):
+    """
+    An advisor who is NOT the student's assigned advisor must be rejected
+    before any PDF download happens.
+    """
+    c = _client_as("other-adv")
+    with patch.object(audit.supabase_svc, "download_transcript_bytes") as dl:
+        res = c.post("/api/v1/audit/process-storage", json={
+            "storage_path": "slips/a.pdf",
+            "advisor_id": "OTHER1",
+            "university_id": "00000000-0000-0000-0000-000000000001",
+        })
+    assert res.status_code == 403, res.text
+    dl.assert_not_called()
+
+
+def test_process_storage_assigned_advisor_passes_ownership(fake_db):
+    """
+    The assigned advisor passes the ownership gate (download will then fail
+    in the stub environment, but the ownership check itself must not raise 403/400).
+    """
+    c = _client_as("adv-uid")
+    with patch.object(audit.supabase_svc, "download_transcript_bytes",
+                      side_effect=RuntimeError("no storage in tests")):
+        res = c.post("/api/v1/audit/process-storage", json={
+            "storage_path": "slips/a.pdf",
+            "advisor_id": "TEST123",
+            "university_id": "00000000-0000-0000-0000-000000000001",
+        })
+    # Ownership passed; failure is from the missing PDF stub → 404 (not 403/400)
+    assert res.status_code == 404, res.text
+

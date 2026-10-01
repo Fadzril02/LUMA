@@ -171,11 +171,6 @@ export const api = {
     return res.data;
   },
 
-  // Process PDF directly from Supabase Storage path
-  processStorageAudit: async (payload: StorageAuditPayload) => {
-    const res = await apiClient.post('/api/v1/audit/process-storage', payload);
-    return res.data;
-  },
 
   // Reject uploaded document via service-role backend endpoint
   rejectDocument: async (documentId: string, rejectionReason?: string) => {
