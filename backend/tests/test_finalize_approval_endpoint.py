@@ -378,7 +378,7 @@ def test_finalize_approval_resolves_custom_university_uuid_from_db():
     }
     mock_supabase = MagicMock()
     # Mock universities table query returning code 'USM'
-    mock_supabase.table().select().eq().limit().execute.return_value.data = [{"code": "USM"}]
+    mock_supabase.table().select().eq().limit().execute.return_value.data = [{"code": "USM", "repeat_policy": "latest"}]
 
     mock_catalog = {
         "SECJ1013": {"course_code": "SECJ1013", "prerequisites": {"type": "AND", "courses": []}}
