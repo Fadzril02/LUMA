@@ -1,0 +1,44 @@
+course_code,course_name,credits,prerequisites,category
+SCSE1013,Fundamental Programming Concept,3,,Core
+SCST1123,Mathematics for Software Engineer,3,,Core
+SCSR1013,Digital Logic,3,,Core
+SCST1143,Database Engineering,3,,Core
+ULRS1032,Integrity and Anti-Corruption,2,,University
+SCSE1203,Software Engineering Principles,3,SCSE1013,Core
+SCSR1033,Computer Organisation and Architecture,3,SCSR1013,Core
+SCST1223,Probability and Statistical Data Analysis,3,,Core
+SCSE1224,Advanced Programming,4,SCSE1013,Core
+SCSR2213,Network Communications,3,,Core
+SCSE2133,Software Process and Project Management,3,SCSE1203,Core
+SCSE2123,Software Requirements Engineering,3,SCSE1203,Core
+SCSE2103,Data Structure and Algorithm,3,SCSE1013,Core
+SCSR2043,Operating System,3,,Core
+SCSM2113,Human Computer Interaction,3,SCSE1203,Core
+SCSM2213,Cross-Platform Application Development,3,SCST1143,Core
+SCSE2233,Software Design & Architecture,3,SCSE1203,Core
+SCSE2243,Application Development Project I,3,SCSE1203 AND SCSE2123,Core
+UHLB2122,Professional Communication Skills 1,2,,University
+UHIS1022,Philosophy and Current Issues,2,,University
+UHLB3132,Professional Communication Skills 2,2,,University
+SCSE3242,Software Engineering Project I,2,"SCSE2243, min_credits: 80",Core
+SCSR3133,Secure Software Programming,3,SCSM2213,Core
+SCSE3213,Software Quality & Testing,3,SCSE2123 AND SCSE2233,Core
+SCSE3223,Application Development Project II,3,SCSE2243,Core
+SCSE3233,Professional Practice in Software Engineering,3,SCSE1203,Core
+UBSS1032,Entrepreneurship and Innovation,2,,University
+SCSE4108,Industrial Training (HW),8,min_credits: 92,Core
+SCSE4114,Industrial Training Report,4,min_credits: 92,Core
+SCSE4214,Software Engineering Project II,4,SCSE3242,Core
+SECB2103/SECP2753/SECP3213,Program Elective (Y2S2 choose 1),3,,Program Elective
+SCST3223/SCSE3143/SCSR3113/SCSE3103/SCSE3203/SCSM3113,Program Elective (Y3S1 choose 3) 1,3,,Program Elective
+SCST3223/SCSE3143/SCSR3113/SCSE3103/SCSE3203/SCSM3113,Program Elective (Y3S1 choose 3) 2,3,,Program Elective
+SCST3223/SCSE3143/SCSR3113/SCSE3103/SCSE3203/SCSM3113,Program Elective (Y3S1 choose 3) 3,3,,Program Elective
+SCSR4453/SCSR4973/SECB3133/SECB3203/SECR5XX3/SECP5XX3/SECJ5XX3,Program Elective incl. PRISMS (Y4S2 choose 2) 1,3,,Program Elective
+SCSR4453/SCSR4973/SECB3133/SECB3203/SECR5XX3/SECP5XX3/SECJ5XX3,Program Elective incl. PRISMS (Y4S2 choose 2) 2,3,,Program Elective
+UKQF2XX2,Service Learning & Community Engagement,2,,University Elective
+UHLXXXX2,Foreign Language Elective,2,,University Elective
+UXXXXXX2,University Elective II (UHMS1182 / UHLM1012),2,,University Elective
+SXXXXXX3,Free Elective I,3,,Free Elective
+SXXXXXX3,Free Elective II,3,,Free Elective
+SXXXXXX3,Free Elective III,3,,Free Elective
+SXXXXXX3,Free Elective IV,3,,Free Elective
