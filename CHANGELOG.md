@@ -3,6 +3,11 @@
 Newest first. Tag format `v0.x-name`. Note: git tags for these milestones are not created yet; create them on the matching commits.
 
 ## Unreleased
+- (nothing yet)
+
+## v0.7-template-editor (2026-10-02)
+- Roadmap 4 complete: requirement engine (4A, migs 31–32), manual elective override (4B, mig 33), progress perf (mig 35), template editor (4C, mig 34).
+- Fixes: py3.12 `Optional` import crash, missing `useRef`, pinned action columns, curriculum upload credits input.
 - Migration 34: `degree_templates.owner_staff_id` (TEXT NULL) tracking uploader advisor; `template_courses.updated_at` (TIMESTAMPTZ).
 - Curriculum template editor (SynGrad roadmap 4C):
   - Uploader-only edit governance: only the advisor who uploaded a degree template can edit it; other tenant advisors have read-only access (`can_edit: false`); NULL owner returns 403 ("Template has no owner; contact support").
