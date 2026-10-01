@@ -52,6 +52,93 @@ class CSVCourseParser:
         }
 
     @classmethod
+    def validate_course_row(
+        cls,
+        code: Any,
+        name: Any,
+        credits: Any,
+        category: Any,
+        prerequisites: Any = "",
+        existing_real_codes: Any = None,
+        row_idx: Any = None,
+    ) -> Tuple[Optional[Dict[str, Any]], List[str]]:
+        """
+        Validates a single course or elective slot row.
+        Shared across CSV ingestion and template editor endpoints.
+        """
+        errors: List[str] = []
+        prefix = f"Row {row_idx}: " if row_idx is not None else ""
+
+        raw_code = (str(code) if code is not None else "").strip().upper().replace(" ", "")
+        raw_name = (str(name) if name is not None else "").strip().title()
+        raw_credits = str(credits).strip() if credits is not None else ""
+        raw_category = (str(category) if category is not None else "").strip().title()
+
+        if not raw_code:
+            errors.append(f"{prefix}Empty course_code.")
+
+        if not raw_name:
+            errors.append(f"{prefix}Empty course_name.")
+
+        credits_int = None
+        if not raw_credits:
+            errors.append(f"{prefix}Invalid credits format ''. Must be an integer.")
+        else:
+            try:
+                credits_int = int(float(raw_credits))
+                if credits_int <= 0:
+                    errors.append(f"{prefix}Invalid credit hours '{raw_credits}'. Must be positive.")
+            except (ValueError, TypeError):
+                errors.append(f"{prefix}Invalid credits format '{raw_credits}'. Must be an integer.")
+
+        if not raw_category:
+            errors.append(f"{prefix}Category is required.")
+
+        # Determine if this row is an elective slot (contains '/' or 'XX')
+        is_elective_slot = ("/" in raw_code) or ("XX" in raw_code)
+        patterns = None
+
+        if is_elective_slot:
+            raw_patterns = [p.strip() for p in raw_code.split("/") if p.strip()]
+            if not raw_patterns:
+                errors.append(f"{prefix}Invalid empty elective slot pattern '{raw_code}'.")
+            else:
+                invalid_patterns = [p for p in raw_patterns if not re.fullmatch(r'^[A-Z0-9]+$', p)]
+                if invalid_patterns:
+                    errors.append(
+                        f"{prefix}Invalid pattern '{invalid_patterns[0]}' in '{raw_code}'. "
+                        f"Patterns must contain only alphanumeric characters."
+                    )
+                else:
+                    patterns = raw_patterns
+        elif raw_code:
+            if not re.fullmatch(r'^[A-Z0-9]+$', raw_code):
+                errors.append(
+                    f"{prefix}Invalid course code '{raw_code}'. Must contain only alphanumeric characters."
+                )
+            elif existing_real_codes is not None and raw_code in existing_real_codes:
+                errors.append(f"{prefix}Duplicate course code '{raw_code}'.")
+
+        prereq_struct = {}
+        if isinstance(prerequisites, dict):
+            prereq_struct = prerequisites
+        else:
+            prereq_struct = cls.parse_prerequisite_string(str(prerequisites or ""))
+
+        if errors:
+            return None, errors
+
+        return {
+            "code": raw_code,
+            "name": raw_name,
+            "credits": credits_int,
+            "category": raw_category,
+            "is_elective_slot": is_elective_slot,
+            "match_patterns": patterns,
+            "prerequisites": prereq_struct,
+        }, []
+
+    @classmethod
     def parse_csv_content(cls, csv_text: str) -> Tuple[List[Dict[str, Any]], List[str]]:
         """
         Parses CSV string content into course records for database insertion.
@@ -78,7 +165,7 @@ class CSVCourseParser:
             return [], ["Missing required columns: 'course_code' and 'course_name' are mandatory."]
 
         slot_counter = 0
-        seen_real_codes = set()
+        seen_real_codes: set = set()
         for row_idx, row in enumerate(reader, start=2):
             raw_code = (row.get(code_key) or "").strip().upper().replace(" ", "")
             raw_name = (row.get(name_key) or "").strip().title()
@@ -86,75 +173,27 @@ class CSVCourseParser:
             raw_prereqs = (row.get(prereq_key) or "").strip() if prereq_key else ""
             raw_category = (row.get(cat_key) or "").strip().title() if cat_key else ""
 
-            if not raw_code:
-                errors.append(f"Row {row_idx}: Empty course_code.")
+            course_data, row_errors = cls.validate_course_row(
+                code=raw_code,
+                name=raw_name,
+                credits=raw_credits,
+                category=raw_category,
+                prerequisites=raw_prereqs,
+                existing_real_codes=seen_real_codes,
+                row_idx=row_idx,
+            )
+
+            if row_errors:
+                errors.extend(row_errors)
                 continue
 
-            if not raw_name:
-                errors.append(f"Row {row_idx}: Empty course_name.")
-                continue
-
-            # Validate credits as integer
-            try:
-                credits_int = int(float(raw_credits))
-                if credits_int <= 0:
-                    errors.append(f"Row {row_idx}: Invalid credit hours '{raw_credits}'. Must be positive.")
-                    continue
-            except (ValueError, TypeError):
-                errors.append(f"Row {row_idx}: Invalid credits format '{raw_credits}'. Must be an integer.")
-                continue
-
-            # Determine if this row is an elective slot (contains '/' or 'XX')
-            is_elective_slot = ("/" in raw_code) or ("XX" in raw_code)
-
-            if is_elective_slot:
-                # Slot parsing: split by '/'
-                raw_patterns = [p.strip() for p in raw_code.split("/") if p.strip()]
-                if not raw_patterns:
-                    errors.append(f"Row {row_idx}: Invalid empty elective slot pattern '{raw_code}'.")
-                    continue
-
-                # Validate each pattern: must be uppercase alphanumeric (X is wildcard character)
-                invalid_patterns = [p for p in raw_patterns if not re.fullmatch(r'^[A-Z0-9]+$', p)]
-                if invalid_patterns:
-                    errors.append(
-                        f"Row {row_idx}: Invalid pattern '{invalid_patterns[0]}' in '{raw_code}'. "
-                        f"Patterns must contain only alphanumeric characters."
-                    )
-                    continue
-
-                slot_counter += 1
-                slot_no = slot_counter
-                category = raw_category if raw_category else "Elective"
-                patterns = raw_patterns
-            else:
-                # Real course code validation: must be alphanumeric (e.g. SECJ1013)
-                if not re.fullmatch(r'^[A-Z0-9]+$', raw_code):
-                    errors.append(
-                        f"Row {row_idx}: Invalid course code '{raw_code}'. Must contain only alphanumeric characters."
-                    )
-                    continue
-
-                if raw_code in seen_real_codes:
-                    errors.append(f"Row {row_idx}: Duplicate course code '{raw_code}'.")
-                    continue
-                seen_real_codes.add(raw_code)
-
-                slot_no = None
-                patterns = None
-                category = raw_category if raw_category else "Core"
-
-            prereq_struct = cls.parse_prerequisite_string(raw_prereqs)
-
-            courses.append({
-                "code": raw_code,
-                "name": raw_name,
-                "credits": credits_int,
-                "category": category,
-                "is_elective_slot": is_elective_slot,
-                "slot_no": slot_no,
-                "match_patterns": patterns,
-                "prerequisites": prereq_struct
-            })
+            if course_data:
+                if course_data["is_elective_slot"]:
+                    slot_counter += 1
+                    course_data["slot_no"] = slot_counter
+                else:
+                    course_data["slot_no"] = None
+                    seen_real_codes.add(course_data["code"])
+                courses.append(course_data)
 
         return courses, errors

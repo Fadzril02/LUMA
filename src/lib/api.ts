@@ -297,6 +297,109 @@ export const api = {
     );
     return res.data;
   },
+
+  // Curriculum Template Editor (SynGrad Roadmap 4C)
+  getTemplates: async (): Promise<Array<{
+    id: string;
+    program_code: string;
+    program_name: string;
+    syllabus_year: string;
+    total_credits_required: number;
+    owner_staff_id: string | null;
+    can_edit: boolean;
+  }>> => {
+    const res = await apiClient.get('/api/v1/courses/templates');
+    return res.data;
+  },
+
+  getTemplateDetail: async (templateId: string): Promise<{
+    id: string;
+    program_code: string;
+    program_name: string;
+    syllabus_year: string;
+    total_credits_required: number;
+    owner_staff_id: string | null;
+    can_edit: boolean;
+    rows: Array<{
+      id: string;
+      template_id: string;
+      course_code: string;
+      course_name: string;
+      credit_hour: number;
+      category: string;
+      is_core_requirement: boolean;
+      is_elective_slot: boolean;
+      slot_no: number | null;
+      match_patterns: string[] | null;
+      prerequisites: any;
+      created_at?: string;
+      updated_at?: string;
+    }>;
+  }> => {
+    const res = await apiClient.get(`/api/v1/courses/templates/${encodeURIComponent(templateId)}`);
+    return res.data;
+  },
+
+  updateTemplate: async (
+    templateId: string,
+    payload: { program_name?: string; total_credits_required?: number }
+  ): Promise<any> => {
+    const res = await apiClient.patch(`/api/v1/courses/templates/${encodeURIComponent(templateId)}`, payload);
+    return res.data;
+  },
+
+  addTemplateRow: async (
+    templateId: string,
+    payload: {
+      course_code: string;
+      course_name: string;
+      credit_hour: number;
+      category: string;
+      prerequisites?: any;
+    }
+  ): Promise<any> => {
+    const res = await apiClient.post(`/api/v1/courses/templates/${encodeURIComponent(templateId)}/rows`, payload);
+    return res.data;
+  },
+
+  updateTemplateRow: async (
+    templateId: string,
+    rowId: string,
+    payload: {
+      course_code?: string;
+      course_name?: string;
+      credit_hour?: number;
+      category?: string;
+      prerequisites?: any;
+    }
+  ): Promise<any> => {
+    const res = await apiClient.patch(
+      `/api/v1/courses/templates/${encodeURIComponent(templateId)}/rows/${encodeURIComponent(rowId)}`,
+      payload
+    );
+    return res.data;
+  },
+
+  deleteTemplateRow: async (
+    templateId: string,
+    rowId: string
+  ): Promise<{ deleted: boolean; row_id: string; cascaded_overrides_count: number }> => {
+    const res = await apiClient.delete(
+      `/api/v1/courses/templates/${encodeURIComponent(templateId)}/rows/${encodeURIComponent(rowId)}`
+    );
+    return res.data;
+  },
+
+  getTemplateRowImpact: async (
+    templateId: string,
+    rowId: string
+  ): Promise<{ overrides_count: number; cohorts_using_template: number }> => {
+    const res = await apiClient.get(
+      `/api/v1/courses/templates/${encodeURIComponent(templateId)}/rows/${encodeURIComponent(rowId)}/impact`
+    );
+    return res.data;
+  },
 };
+
 
 

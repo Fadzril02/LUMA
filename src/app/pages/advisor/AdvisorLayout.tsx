@@ -9,7 +9,8 @@ import {
   LayoutDashboard, 
   ChevronRight,
   GraduationCap,
-  Loader2
+  Loader2,
+  BookOpen
 } from "lucide-react";
 import { useAuth } from "../../../context/AuthContext";
 import { supabase } from "../../../lib/supabase";
@@ -103,6 +104,13 @@ export function AdvisorLayout({
         text: `${badgeCounts.pendingQueue} Pending`,
         className: "bg-blue-50 text-blue-900 border border-blue-200"
       } : undefined
+    },
+    {
+      id: "curriculum",
+      label: "Curriculum",
+      description: "Degree templates & courses",
+      icon: BookOpen,
+      badge: undefined
     }
   ];
 

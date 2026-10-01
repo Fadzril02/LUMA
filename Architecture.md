@@ -28,7 +28,7 @@ Sections 1–5 were written at v1.0.0 and are partly outdated (e.g. `registratio
 | `advisor_invites` | invite codes for advisor registration |
 | `advisors`, `students` | identity columns protected by triggers; `students.matric_no` currently globally unique (blocks same matric at two tenants — fix before 2nd university) |
 | `cohorts` | cohort code → template; students join with code |
-| `degree_templates`, `template_courses` | tenant-scoped curriculum; elective slots = code containing `/` or `XX`, auto-numbered, `match_patterns`; partial unique index on real courses only |
+| `degree_templates`, `template_courses` | tenant-scoped curriculum; `degree_templates.owner_staff_id` (mig 34) enforces uploader-only editing; `template_courses.updated_at`; elective slots = code containing `/` or `XX`, auto-numbered, `match_patterns`; partial unique index on real courses only |
 | `academic_records` | one row per attempt, unique `(tenant_id, matric_no, course_code, semester)`; semester normalised `SEM n YYYY/YYYY`; tenant `repeat_policy` picks the counted attempt |
 | `uploaded_documents` | slip metadata, `extracted_data` incl. server-side `original_courses`, `processing_status`, fraud flag; browser cannot write status/results (mig 29) |
 | `advising_logs` | advisor notes, student can read own; `created_at`/matric/advisor locked on UPDATE; notification sent-at for rate limit |
@@ -54,8 +54,15 @@ Sections 1–5 were written at v1.0.0 and are partly outdated (e.g. `registratio
 | `POST /register/student` | new user | cohort code + matric + name; matric checked against `tenants.matric_regex` |
 | `POST /register/advisor` | new user | invite code |
 | `GET /register/validate-cohort/{code}` | public | cohort lookup |
-| `POST /courses/upload-csv` | advisor | curriculum template upload |
+| `POST /courses/upload-csv` | advisor | curriculum template upload; sets `owner_staff_id` from advisor JWT |
 | `GET /courses/template-csv` | advisor | blank template download |
+| `GET /courses/templates` | advisor | list tenant templates with `can_edit` ownership flag |
+| `GET /courses/templates/{id}` | advisor | template detail and sorted course rows |
+| `PATCH /courses/templates/{id}` | advisor (owner) | update template program name or required credits |
+| `POST /courses/templates/{id}/rows` | advisor (owner) | add row to template (reuses shared row validator) |
+| `PATCH /courses/templates/{id}/rows/{row_id}` | advisor (owner) | edit template row (reuses shared row validator) |
+| `DELETE /courses/templates/{id}/rows/{row_id}` | advisor (owner) | delete row, cascades elective overrides, renumbers slots |
+| `GET /courses/templates/{id}/rows/{row_id}/impact` | advisor | calculate deletion impact (`overrides_count`, `cohorts_using_template`) |
 | `POST /audit/extract` | student/advisor (owner) | parse slip: regex first, Groq only for unparsed lines; saves results server-side |
 | `POST /audit/submit-verification` | student | confirm/edit rows; server computes `is_altered` vs `original_courses` |
 | `POST /audit/finalize-approval` | advisor (own advisee) | write `academic_records` |
@@ -74,7 +81,7 @@ Sections 1–5 were written at v1.0.0 and are partly outdated (e.g. `registratio
 - Summary: PNG (sem GPA), PNGK (CGPA), KK, KD, CE. Computed GPA is cross-checked against printed; mismatch = warning, never auto-correct.
 
 ### 0.7 Migrations (applied in order; never edit after applied)
-01–16 legacy (written against a drifted DB; staging is built from a prod schema dump instead). 17 tenant curriculum · 18 tenants · 19 advisor_invites · 20 RLS lockdown · 21 drop email advisor policies · 22 elective slots · 23 cohorts lockdown · 24 advising_logs v2 · 25 advising notifications · 26 grading scales · 27 record attempts · 28 roster view · 29 uploaded_documents lockdown · 30 storage + degree_audits RLS (**apply after push**). 31 template_courses category · 32 template_courses course_code text · 33 elective_assignments (4B). From 30 on: apply to staging first, then prod.
+01–16 legacy (written against a drifted DB; staging is built from a prod schema dump instead). 17 tenant curriculum · 18 tenants · 19 advisor_invites · 20 RLS lockdown · 21 drop email advisor policies · 22 elective slots · 23 cohorts lockdown · 24 advising_logs v2 · 25 advising notifications · 26 grading scales · 27 record attempts · 28 roster view · 29 uploaded_documents lockdown · 30 storage + degree_audits RLS (**apply after push**). 31 template_courses category · 32 template_courses course_code text · 33 elective_assignments (4B) · 34 template_owner & auditing (4C) · 35 progress_indexes. From 30 on: apply to staging first, then prod.
 
 ### 0.8 Known gaps
 - `DegreeAuditView.tsx` has a UTM course-prefix regex. Old contest-registration code may remain in auth pages. `students.matric_no` global unique. Render free tier cold starts.

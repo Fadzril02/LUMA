@@ -41,3 +41,59 @@ class CohortResponse(BaseModel):
     curriculum_version: str
     is_active: bool
     created_at: str
+
+
+class TemplateSummaryResponse(BaseModel):
+    id: str
+    program_code: str
+    program_name: str
+    syllabus_year: str
+    total_credits_required: int
+    owner_staff_id: Optional[str] = None
+    can_edit: bool
+
+
+class TemplateDetailResponse(BaseModel):
+    id: str
+    program_code: str
+    program_name: str
+    syllabus_year: str
+    total_credits_required: int
+    owner_staff_id: Optional[str] = None
+    can_edit: bool
+    rows: List[Dict[str, Any]] = []
+
+
+class TemplateUpdate(BaseModel):
+    program_name: Optional[str] = None
+    total_credits_required: Optional[int] = None
+
+
+class TemplateRowCreate(BaseModel):
+    course_code: str
+    course_name: str
+    credit_hour: Optional[int] = None
+    credits: Optional[int] = None
+    category: str
+    prerequisites: Optional[Any] = ""
+
+
+class TemplateRowUpdate(BaseModel):
+    course_code: Optional[str] = None
+    course_name: Optional[str] = None
+    credit_hour: Optional[int] = None
+    credits: Optional[int] = None
+    category: Optional[str] = None
+    prerequisites: Optional[Any] = None
+
+
+class TemplateRowImpactResponse(BaseModel):
+    overrides_count: int
+    cohorts_using_template: int
+
+
+class TemplateRowDeleteResponse(BaseModel):
+    deleted: bool
+    row_id: str
+    cascaded_overrides_count: int
+

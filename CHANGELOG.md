@@ -3,6 +3,13 @@
 Newest first. Tag format `v0.x-name`. Note: git tags for these milestones are not created yet; create them on the matching commits.
 
 ## Unreleased
+- Migration 34: `degree_templates.owner_staff_id` (TEXT NULL) tracking uploader advisor; `template_courses.updated_at` (TIMESTAMPTZ).
+- Curriculum template editor (SynGrad roadmap 4C):
+  - Uploader-only edit governance: only the advisor who uploaded a degree template can edit it; other tenant advisors have read-only access (`can_edit: false`); NULL owner returns 403 ("Template has no owner; contact support").
+  - Backend endpoints (`courses.py`): `GET /courses/templates`, `GET /courses/templates/{id}`, `PATCH /courses/templates/{id}`, `POST /courses/templates/{id}/rows`, `PATCH /courses/templates/{id}/rows/{row_id}`, `DELETE /courses/templates/{id}/rows/{row_id}`, `GET /courses/templates/{id}/rows/{row_id}/impact`.
+  - Single-row validator refactor (`CSVCourseParser.validate_course_row`) shared identically by CSV upload and row editor endpoints (handles course code format, slot detection with `/` or `XX`, credits > 0, category required, prerequisite string parsing with min_credits and min_grade, and duplicate real course code rejection with 422).
+  - Automatic slot renumbering (1..n) after row additions and deletions; slot deletion cascades linked `elective_assignments` and returns count.
+  - Advisor frontend "Curriculum" view (`CurriculumTemplatesView.tsx`): template directory, editable course table, live credits tally comparison ("Rows total X / programme Y credits"), inline 422 error display per row, read-only mode banner for non-uploaders, and deletion impact confirmation modal.
 - Migration 33: `elective_assignments` table for manual elective overrides (kind='assign' or 'exclude'). Unique `(tenant_id, matric_no, course_code)`, partial unique index on slot for assign. RLS select-only for student own / advisor advisee; writes via backend service role only.
 - Manual elective override (SynGrad roadmap 4B): `PUT` and `DELETE` `/audit/progress/{matric_no}/overrides` endpoints (advisor only, advisee check, JWT-derived tenant/advisor ID). Engine slot pinning, course exclusions, stale override fallback with warnings, and bipartite override precedence. Advisor interactive override & exclusion controls in `StudentView.tsx`; read-only badges in student `DegreeAuditView.tsx`.
 - Migration 30: `academic-slips` bucket private; uploads only to own `slips/<matric>_...` path; reads only for files listed in `uploaded_documents` the user can see; `degree_audits` read policies.

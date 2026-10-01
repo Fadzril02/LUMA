@@ -8,6 +8,7 @@ import { AdvisorLayout } from "./AdvisorLayout";
 import { AdvisorDashboard } from "./AdvisorDashboard";
 import { StudentsList } from "./StudentsList";
 import { CorrectionsQueue } from "./CorrectionsQueue";
+import { CurriculumTemplatesView } from "./CurriculumTemplatesView";
 
 export function AdvisorPortal() {
   const { profile, user } = useAuth();
@@ -176,6 +177,10 @@ export function AdvisorPortal() {
 
               {activeTab === "queue" && (
                 <CorrectionsQueue queue={auditQueue} roster={roster} onApproved={fetchAdvisorData} />
+              )}
+
+              {activeTab === "curriculum" && (
+                <CurriculumTemplatesView />
               )}
             </>
           )}
