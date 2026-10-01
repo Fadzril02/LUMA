@@ -39,15 +39,17 @@ router = APIRouter(prefix="/courses", tags=["Course Catalog"])
 supabase_svc = SupabaseService()
 
 SAMPLE_CSV_TEMPLATE = """course_code,course_name,credits,category,prerequisites
-SECJ1013,Programming Technique I,3,Core,None
-SECP1513,Discrete Structure,3,Core,None
-SECR1013,Digital Logic,3,Core,None
-SECJ1023,Programming Technique II,3,Core,SECJ1013
-SECJ2013,Data Structures and Algorithms,3,Core,SECJ1023
-SECJ2203,Software Engineering,3,Core,SECJ1023
-SECV2223,Web Programming,3,Core,SECJ1013 OR SECD2523
-SECJ3032,Final Year Project 1,2,Core,SECJ2203 AND SECJ2013 min_credits: 80
-SECJ4044,Final Year Project 2,4,Core,SECJ3032 min_credits: 90
+ABC1013,Example Core Course (no prerequisite),3,Core,None
+ABC1023,Example Core Course (needs ABC1013),3,Core,ABC1013
+ABC2013,Example Core Course (needs both),3,Core,ABC1013 AND ABC1023
+ABC2023,Example Core Course (needs either),3,Core,ABC1013 OR ABC1023
+ABC3012,Example Project (needs ABC2013 + 80 credits),2,Core,"ABC2013, min_credits: 80"
+ABC4018,Example Industrial Training (needs 92 credits),8,Core,min_credits: 92
+UNI1012,Example University Course,2,University,None
+ABC3103/ABC3113/ABC3123,Program Elective - choose one of the listed courses,3,Program Elective,None
+ABC3103/ABC3113/ABC3123,Program Elective - second pick from the same list,3,Program Elective,None
+ABC5XX3,Program Elective - any course starting ABC5 ending 3,3,Program Elective,None
+SXXXXXX3,Free Elective - any 8-character code starting S ending 3,3,Free Elective,None
 """
 
 

@@ -1384,6 +1384,21 @@ const handleDownloadTemplate = () => {
             </div>
 
             <div className="p-6 space-y-6">
+              <details className="rounded-lg border border-blue-100 bg-blue-50/50 px-4 py-3 text-xs text-gray-700">
+                <summary className="cursor-pointer font-semibold text-blue-900">How to fill the CSV (read before uploading)</summary>
+                <div className="mt-3 space-y-2 leading-relaxed">
+                  <p>Download the template, keep the header row, replace the example rows with your programme. One row = one requirement. Columns: <b>course_code, course_name, credits, category, prerequisites</b>.</p>
+                  <ul className="list-disc pl-5 space-y-1">
+                    <li><b>Core / fixed course:</b> the exact code, e.g. <code>ABC1013</code>.</li>
+                    <li><b>Choose one from a list:</b> codes joined by <code>/</code>, e.g. <code>ABC3103/ABC3113</code>. Need 2 picks? Add the same row twice.</li>
+                    <li><b>Any course matching a pattern:</b> use <code>XX</code> (2 or more X) for unknown characters, e.g. <code>ABC5XX3</code> = any code starting ABC5 ending 3.</li>
+                    <li><b>Category:</b> required, your own words (Core, University, Program Elective, Free Elective…). Progress bars are grouped by it.</li>
+                    <li><b>Prerequisites:</b> <code>None</code>, <code>ABC1013</code>, <code>ABC1013 AND ABC1023</code>, <code>ABC1013 OR ABC1023</code>, or with credits <code>"ABC2013, min_credits: 80"</code> (keep the quotes in CSV).</li>
+                    <li><b>Total credits</b> below must equal the sum of the credits column — SynGrad warns if they differ.</li>
+                  </ul>
+                  <p>Mistakes can be fixed later in <b>Curriculum</b> without re-uploading.</p>
+                </div>
+              </details>
               <div className="space-y-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">

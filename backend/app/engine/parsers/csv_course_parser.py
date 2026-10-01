@@ -166,10 +166,16 @@ class CSVCourseParser:
 
         slot_counter = 0
         seen_real_codes: set = set()
+        if not credit_key:
+            return [], ["CSV is missing the required 'credits' column."]
+
         for row_idx, row in enumerate(reader, start=2):
+            # Skip fully blank rows (spreadsheet apps often leave trailing empty lines)
+            if not any((v or "").strip() for v in row.values() if isinstance(v, str)):
+                continue
             raw_code = (row.get(code_key) or "").strip().upper().replace(" ", "")
             raw_name = (row.get(name_key) or "").strip().title()
-            raw_credits = (row.get(credit_key) or "3").strip() if credit_key else "3"
+            raw_credits = (row.get(credit_key) or "").strip()
             raw_prereqs = (row.get(prereq_key) or "").strip() if prereq_key else ""
             raw_category = (row.get(cat_key) or "").strip().title() if cat_key else ""
 
