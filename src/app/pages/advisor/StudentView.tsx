@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   ArrowLeft,
   GraduationCap,
@@ -17,7 +17,10 @@ import {
   Plus,
   Trash2,
   History,
+  RotateCcw,
+  Edit3,
 } from "lucide-react";
+import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle, Badge, Button, Input } from "../../components/ui";
 import { db } from "../../../lib/supabase";
 import { api } from "../../../lib/api";
@@ -62,7 +65,7 @@ export function StudentView({ student, onBack }: StudentViewProps) {
   const [exemptionsFeedback, setExemptionsFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [showAuditHistory, setShowAuditHistory] = useState<boolean>(false);
 
-  // Degree audit progress state (SynGrad 4A)
+  // Degree audit progress state (SynGrad 4A & 4B)
   const [progressCategories, setProgressCategories] = useState<Array<{ category: string; required: number; earned: number }>>([]);
   const [progressRows, setProgressRows] = useState<any[]>([]);
   const [progressUnassigned, setProgressUnassigned] = useState<any[]>([]);
@@ -71,37 +74,172 @@ export function StudentView({ student, onBack }: StudentViewProps) {
   const [progressLoading, setProgressLoading] = useState(false);
   const [progressError, setProgressError] = useState<string | null>(null);
 
-  useEffect(() => {
+  // 4B: Elective override state
+  const [editingSlotId, setEditingSlotId] = useState<string | null>(null);
+  const [selectedOverrideCourse, setSelectedOverrideCourse] = useState<string>("");
+  const [overrideNote, setOverrideNote] = useState<string>("");
+  const [overrideSaving, setOverrideSaving] = useState<boolean>(false);
+
+  // Exclusion state
+  const [excludingCourseCode, setExcludingCourseCode] = useState<string | null>(null);
+  const [excludeNote, setExcludeNote] = useState<string>("");
+  const [excludeSaving, setExcludeSaving] = useState<boolean>(false);
+
+  const refreshProgress = useCallback(async () => {
     if (!student?.matric_no) return;
-    let isMounted = true;
     setProgressLoading(true);
     setProgressError(null);
-    api.getProgress(student.matric_no)
-      .then((data) => {
-        if (!isMounted) return;
-        setProgressCategories(data.categories || []);
-        setProgressRows(data.rows || []);
-        setProgressUnassigned(data.unassigned || []);
-        setProgressWarnings(data.warnings || []);
-        setProgressTotals(data.totals || null);
-      })
-      .catch((err) => {
-        if (!isMounted) return;
-        setProgressTotals(null);
-        const msg = err?.response?.data?.detail || err?.message || "Could not load progress data.";
-        if (err?.response?.status === 409) {
-          setProgressError(`ℹ️ ${msg}`);
-        } else {
-          setProgressError(msg);
-        }
-      })
-      .finally(() => {
-        if (isMounted) setProgressLoading(false);
-      });
-    return () => {
-      isMounted = false;
-    };
+    try {
+      const data = await api.getProgress(student.matric_no);
+      setProgressCategories(data.categories || []);
+      setProgressRows(data.rows || []);
+      setProgressUnassigned(data.unassigned || []);
+      setProgressWarnings(data.warnings || []);
+      setProgressTotals(data.totals || null);
+    } catch (err: any) {
+      setProgressTotals(null);
+      const msg = err?.response?.data?.detail || err?.message || "Could not load progress data.";
+      if (err?.response?.status === 409) {
+        setProgressError(`ℹ️ ${msg}`);
+      } else {
+        setProgressError(msg);
+      }
+    } finally {
+      setProgressLoading(false);
+    }
   }, [student?.matric_no]);
+
+  useEffect(() => {
+    refreshProgress();
+  }, [refreshProgress]);
+
+  // Candidates for elective slot dropdown: passing courses not used by core rows
+  const availableElectiveCandidates = useMemo(() => {
+    const coreCodes = new Set(
+      progressRows
+        .filter((r) => !r.is_slot)
+        .map((r) => (r.code || "").toUpperCase())
+    );
+
+    const map = new Map<string, { course_code: string; course_name: string; grade: string | null; credits: number }>();
+
+    // 1. From fetchedRecords
+    (fetchedRecords || []).forEach((rec: any) => {
+      const code = (rec.course_code || "").trim().toUpperCase();
+      if (!code || coreCodes.has(code)) return;
+      const g = (rec.grade || "").trim().toUpperCase();
+      const def = findGradeDefinition(g, gradeScale);
+      const isPass = def ? (def.is_pass || def.counts_as_completed) : (g && !["E", "F", "TD", "U"].includes(g));
+      if (isPass) {
+        map.set(code, {
+          course_code: code,
+          course_name: rec.course_name || code,
+          grade: g || null,
+          credits: Number(rec.credits) || 3,
+        });
+      }
+    });
+
+    // 2. From progressUnassigned (guaranteed counted passing courses)
+    (progressUnassigned || []).forEach((u: any) => {
+      const code = (u.course_code || "").trim().toUpperCase();
+      if (!code || coreCodes.has(code)) return;
+      if (!map.has(code)) {
+        map.set(code, {
+          course_code: code,
+          course_name: u.course_name || code,
+          grade: u.grade || null,
+          credits: Number(u.credits) || 3,
+        });
+      }
+    });
+
+    // 3. From progressRows slot satisfied courses
+    (progressRows || []).forEach((r: any) => {
+      if (r.is_slot && r.satisfied_by?.course_code) {
+        const code = (r.satisfied_by.course_code || "").trim().toUpperCase();
+        if (!code || coreCodes.has(code)) return;
+        if (!map.has(code)) {
+          map.set(code, {
+            course_code: code,
+            course_name: r.name || code,
+            grade: r.satisfied_by.grade || null,
+            credits: Number(r.credits) || 3,
+          });
+        }
+      }
+    });
+
+    return Array.from(map.values()).sort((a, b) => a.course_code.localeCompare(b.course_code));
+  }, [progressRows, fetchedRecords, gradeScale, progressUnassigned]);
+
+  const handleSaveSlotOverride = async (templateCourseId: string) => {
+    if (!student?.matric_no || !selectedOverrideCourse) return;
+    setOverrideSaving(true);
+    try {
+      await api.setProgressOverride(student.matric_no, {
+        kind: "assign",
+        course_code: selectedOverrideCourse,
+        template_course_id: templateCourseId,
+        note: overrideNote.trim() || null,
+      });
+      toast.success(`Override saved: assigned ${selectedOverrideCourse}`);
+      setEditingSlotId(null);
+      setSelectedOverrideCourse("");
+      setOverrideNote("");
+      await refreshProgress();
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail || err?.message || "Failed to save override";
+      toast.error(msg);
+    } finally {
+      setOverrideSaving(false);
+    }
+  };
+
+  const handleResetSlotOverride = async (courseCode: string) => {
+    if (!student?.matric_no || !courseCode) return;
+    try {
+      await api.deleteProgressOverride(student.matric_no, courseCode);
+      toast.success(`Reset override for ${courseCode} back to auto`);
+      await refreshProgress();
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail || err?.message || "Failed to reset override";
+      toast.error(msg);
+    }
+  };
+
+  const handleExcludeCourse = async (courseCode: string) => {
+    if (!student?.matric_no || !courseCode) return;
+    setExcludeSaving(true);
+    try {
+      await api.setProgressOverride(student.matric_no, {
+        kind: "exclude",
+        course_code: courseCode,
+        note: excludeNote.trim() || null,
+      });
+      toast.success(`Excluded course ${courseCode}`);
+      setExcludingCourseCode(null);
+      setExcludeNote("");
+      await refreshProgress();
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail || err?.message || "Failed to exclude course";
+      toast.error(msg);
+    } finally {
+      setExcludeSaving(false);
+    }
+  };
+
+  const handleIncludeCourse = async (courseCode: string) => {
+    if (!student?.matric_no || !courseCode) return;
+    try {
+      await api.deleteProgressOverride(student.matric_no, courseCode);
+      toast.success(`Included ${courseCode} back into requirements`);
+      await refreshProgress();
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail || err?.message || "Failed to include course";
+      toast.error(msg);
+    }
+  };
 
   // Diagnostic Hook: Robust try/catch blocks with explicit MODAL_CRASH_DUMP logs
   // Placed unconditionally before any early returns to strictly follow the Rules of Hooks
@@ -1030,47 +1168,153 @@ export function StudentView({ student, onBack }: StudentViewProps) {
                       <th className="text-left px-4 py-2.5 font-bold text-gray-500 uppercase tracking-wider">Category</th>
                       <th className="text-left px-4 py-2.5 font-bold text-gray-500 uppercase tracking-wider">Satisfied By</th>
                       <th className="text-center px-4 py-2.5 font-bold text-gray-500 uppercase tracking-wider">Status</th>
+                      <th className="text-right px-4 py-2.5 font-bold text-gray-500 uppercase tracking-wider">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
                     {progressRows.map((row, i) => (
-                      <tr key={row.template_course_id || i} className={row.status === 'done' ? '' : 'bg-gray-50/60'}>
-                        <td className="px-4 py-2.5 font-mono font-bold text-gray-900 whitespace-nowrap">
-                          {row.code}
-                          {row.is_slot && (
-                            <span className="ml-1.5 text-[10px] bg-blue-100 text-blue-800 font-semibold px-1.5 py-0.5 rounded">SLOT</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-2.5 text-gray-700 max-w-[200px] truncate" title={row.name}>{row.name}</td>
-                        <td className="px-4 py-2.5 text-center font-mono text-gray-600">{row.credits}</td>
-                        <td className="px-4 py-2.5 text-gray-500">{row.category}</td>
-                        <td className="px-4 py-2.5 font-mono text-gray-700">
-                          {row.satisfied_by ? (
-                            <span>
-                              <span className="font-bold">{row.satisfied_by.course_code}</span>
-                              {row.satisfied_by.grade && <span className="ml-1 text-gray-500">({row.satisfied_by.grade})</span>}
-                              {row.satisfied_by.semester && <span className="ml-1 text-gray-400 text-[10px]">{row.satisfied_by.semester}</span>}
-                            </span>
-                          ) : <span className="text-gray-300">—</span>}
-                        </td>
-                        <td className="px-4 py-2.5 text-center">
-                          {row.status === 'done' && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                              <CheckCircle size={10} /> Done
-                            </span>
-                          )}
-                          {row.status === 'in_progress' && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
-                              In Progress
-                            </span>
-                          )}
-                          {row.status === 'missing' && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-gray-100 text-gray-500 border border-gray-200">
-                              Missing
-                            </span>
-                          )}
-                        </td>
-                      </tr>
+                      <React.Fragment key={row.template_course_id || i}>
+                        <tr className={row.status === 'done' ? '' : 'bg-gray-50/60'}>
+                          <td className="px-4 py-2.5 font-mono font-bold text-gray-900 whitespace-nowrap">
+                            {row.code}
+                            {row.is_slot && (
+                              <span className="ml-1.5 text-[10px] bg-blue-100 text-blue-800 font-semibold px-1.5 py-0.5 rounded">SLOT</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-2.5 text-gray-700 max-w-[200px] truncate" title={row.name}>{row.name}</td>
+                          <td className="px-4 py-2.5 text-center font-mono text-gray-600">{row.credits}</td>
+                          <td className="px-4 py-2.5 text-gray-500">{row.category}</td>
+                          <td className="px-4 py-2.5 font-mono text-gray-700">
+                            {row.satisfied_by ? (
+                              <div>
+                                <div>
+                                  <span className="font-bold">{row.satisfied_by.course_code}</span>
+                                  {row.satisfied_by.grade && <span className="ml-1 text-gray-500">({row.satisfied_by.grade})</span>}
+                                  {row.satisfied_by.semester && <span className="ml-1 text-gray-400 text-[10px]">{row.satisfied_by.semester}</span>}
+                                </div>
+                                {(row.source === 'override' || row.override) && (
+                                  <div className="mt-0.5">
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-sans font-semibold bg-blue-50 text-blue-900 border border-blue-200 px-1.5 py-0.2 rounded">
+                                      Set by advisor
+                                    </span>
+                                    {row.override?.note && (
+                                      <p className="text-[10px] text-gray-500 font-sans italic mt-0.5">{row.override.note}</p>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            ) : <span className="text-gray-300">—</span>}
+                          </td>
+                          <td className="px-4 py-2.5 text-center">
+                            {row.status === 'done' && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                <CheckCircle size={10} /> Done
+                              </span>
+                            )}
+                            {row.status === 'in_progress' && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                                In Progress
+                              </span>
+                            )}
+                            {row.status === 'missing' && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-gray-100 text-gray-500 border border-gray-200">
+                                Missing
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                            {row.is_slot ? (
+                              <div className="flex items-center justify-end gap-1.5">
+                                {(row.source === 'override' || row.override) && row.satisfied_by?.course_code && (
+                                  <button
+                                    onClick={() => handleResetSlotOverride(row.satisfied_by.course_code)}
+                                    className="inline-flex items-center gap-1 text-[11px] font-medium text-gray-600 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 border border-gray-200 px-2 py-1 rounded transition-colors"
+                                    title="Reset override to auto-matching"
+                                  >
+                                    <RotateCcw size={11} /> Reset to auto
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => {
+                                    if (editingSlotId === row.template_course_id) {
+                                      setEditingSlotId(null);
+                                    } else {
+                                      setEditingSlotId(row.template_course_id);
+                                      setSelectedOverrideCourse(row.satisfied_by?.course_code || "");
+                                      setOverrideNote(row.override?.note || "");
+                                    }
+                                  }}
+                                  className="inline-flex items-center gap-1 text-[11px] font-medium text-blue-900 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2 py-1 rounded transition-colors"
+                                >
+                                  <Edit3 size={11} /> Change
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="text-gray-300 text-[11px]">—</span>
+                            )}
+                          </td>
+                        </tr>
+
+                        {row.is_slot && editingSlotId === row.template_course_id && (
+                          <tr key={`edit-${row.template_course_id}`} className="bg-blue-50/60 border-b border-blue-200">
+                            <td colSpan={7} className="px-4 py-3">
+                              <div className="flex flex-wrap items-center gap-3">
+                                <span className="text-xs font-bold text-blue-950 flex items-center gap-1">
+                                  <Edit3 size={12} className="text-blue-900" />
+                                  Override Slot {row.code}:
+                                </span>
+                                <select
+                                  value={selectedOverrideCourse}
+                                  onChange={(e) => setSelectedOverrideCourse(e.target.value)}
+                                  className="text-xs font-mono border border-gray-300 rounded-md px-2.5 py-1.5 bg-white text-gray-900 focus:outline-none focus:ring-1 focus:ring-blue-900"
+                                >
+                                  <option value="">-- Select passing course ({availableElectiveCandidates.length} eligible) --</option>
+                                  {availableElectiveCandidates.map((c) => (
+                                    <option key={c.course_code} value={c.course_code}>
+                                      {c.course_code} — {c.course_name} ({c.grade || "Pass"}, {c.credits}cr)
+                                    </option>
+                                  ))}
+                                </select>
+                                <input
+                                  type="text"
+                                  placeholder="Advisor note (optional)..."
+                                  value={overrideNote}
+                                  onChange={(e) => setOverrideNote(e.target.value)}
+                                  className="text-xs border border-gray-300 rounded-md px-2.5 py-1.5 bg-white text-gray-900 flex-1 min-w-[200px] focus:outline-none focus:ring-1 focus:ring-blue-900"
+                                />
+                                <div className="flex items-center gap-1.5">
+                                  <Button
+                                    size="sm"
+                                    disabled={!selectedOverrideCourse || overrideSaving}
+                                    onClick={() => handleSaveSlotOverride(row.template_course_id)}
+                                    className="h-8 text-xs bg-blue-900 hover:bg-blue-800 text-white font-medium"
+                                  >
+                                    {overrideSaving ? "Saving..." : "Save"}
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={overrideSaving}
+                                    onClick={() => {
+                                      setEditingSlotId(null);
+                                      setSelectedOverrideCourse("");
+                                      setOverrideNote("");
+                                    }}
+                                    className="h-8 text-xs text-gray-600 hover:text-gray-900"
+                                  >
+                                    Cancel
+                                  </Button>
+                                </div>
+                              </div>
+                              {availableElectiveCandidates.length === 0 && (
+                                <p className="text-[11px] text-amber-700 mt-1.5">
+                                  No passing courses available outside core requirements to assign to this slot.
+                                </p>
+                              )}
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
                     ))}
                   </tbody>
                 </table>
@@ -1093,22 +1337,106 @@ export function StudentView({ student, onBack }: StudentViewProps) {
 
           {/* Unassigned Courses */}
           {progressUnassigned.length > 0 && (
-            <div className="p-4 rounded-lg bg-gray-50 border border-gray-200 space-y-2">
-              <div className="flex items-center gap-2">
-                <Info size={14} className="text-blue-700" />
-                <span className="text-xs font-bold uppercase tracking-wider text-gray-700">Courses Not Matched to Template</span>
+            <div className="p-4 rounded-lg bg-gray-50 border border-gray-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Info size={14} className="text-blue-700" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-gray-700">Courses Not Matched to Template</span>
+                </div>
+                <span className="text-xs text-gray-500">
+                  {progressUnassigned.length} course{progressUnassigned.length === 1 ? "" : "s"}
+                </span>
               </div>
               <p className="text-xs text-gray-500">
-                These passing courses are recorded but do not map to any row in the student's degree template.
+                These passing courses are recorded but do not map to any row in the student's degree template. You can exclude them from requirements or include them back.
               </p>
-              <div className="flex flex-wrap gap-2 pt-1">
-                {progressUnassigned.map((u) => (
-                  <span key={u.course_code} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white text-gray-700 text-xs font-mono font-semibold border border-gray-200">
-                    {u.course_code}
-                    {u.grade && <span className="text-gray-400">({u.grade})</span>}
-                    {u.credits && <span className="text-gray-400">{u.credits}cr</span>}
-                  </span>
-                ))}
+              <div className="flex flex-col gap-2 pt-1">
+                {progressUnassigned.map((u) => {
+                  const isExcluded = Boolean(u.excluded || u.override?.kind === "exclude");
+                  const isPromptingExclude = excludingCourseCode === u.course_code;
+                  return (
+                    <div
+                      key={u.course_code}
+                      className={`flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-lg border text-xs transition-colors ${
+                        isExcluded
+                          ? "bg-amber-50/70 border-amber-200 text-amber-950"
+                          : "bg-white border-gray-200 text-gray-800"
+                      }`}
+                    >
+                      <div className="flex flex-col gap-0.5">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono font-bold">{u.course_code}</span>
+                          <span className="text-gray-500">— {u.course_name}</span>
+                          {u.grade && <span className="text-gray-500 font-mono">({u.grade})</span>}
+                          {u.credits && <span className="text-gray-400 font-mono">{u.credits}cr</span>}
+                          {isExcluded && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-200 text-amber-900">
+                              Excluded
+                            </span>
+                          )}
+                        </div>
+                        {isExcluded && u.override?.note && (
+                          <p className="text-[11px] text-amber-800 italic mt-0.5">Note: "{u.override.note}"</p>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        {isExcluded ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleIncludeCourse(u.course_code)}
+                            className="h-7 text-xs bg-white hover:bg-emerald-50 text-emerald-800 border-emerald-300 hover:border-emerald-400 font-medium"
+                          >
+                            Include in Requirements
+                          </Button>
+                        ) : isPromptingExclude ? (
+                          <div className="flex items-center gap-1.5 w-full sm:w-auto">
+                            <input
+                              type="text"
+                              placeholder="Reason / note (optional)..."
+                              value={excludeNote}
+                              onChange={(e) => setExcludeNote(e.target.value)}
+                              className="text-xs border border-gray-300 rounded px-2 py-1 bg-white text-gray-900 w-48 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                            />
+                            <Button
+                              size="sm"
+                              disabled={excludeSaving}
+                              onClick={() => handleExcludeCourse(u.course_code)}
+                              className="h-7 text-xs bg-amber-800 hover:bg-amber-900 text-white font-medium"
+                            >
+                              {excludeSaving ? "Saving..." : "Confirm Exclude"}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={excludeSaving}
+                              onClick={() => {
+                                setExcludingCourseCode(null);
+                                setExcludeNote("");
+                              }}
+                              className="h-7 text-xs"
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setExcludingCourseCode(u.course_code);
+                              setExcludeNote("");
+                            }}
+                            className="h-7 text-xs text-amber-800 hover:bg-amber-50 border-amber-300 hover:border-amber-400 font-medium"
+                          >
+                            Exclude
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}

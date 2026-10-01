@@ -496,11 +496,23 @@ export function DegreeAuditView({
                     <td className="px-4 py-2.5 text-gray-500">{row.category}</td>
                     <td className="px-4 py-2.5 font-mono text-gray-700">
                       {row.satisfied_by ? (
-                        <span>
-                          <span className="font-bold">{row.satisfied_by.course_code}</span>
-                          {row.satisfied_by.grade && <span className="ml-1 text-gray-500">({row.satisfied_by.grade})</span>}
-                          {row.satisfied_by.semester && <span className="ml-1 text-gray-400 text-[10px]">{row.satisfied_by.semester}</span>}
-                        </span>
+                        <div>
+                          <div>
+                            <span className="font-bold">{row.satisfied_by.course_code}</span>
+                            {row.satisfied_by.grade && <span className="ml-1 text-gray-500">({row.satisfied_by.grade})</span>}
+                            {row.satisfied_by.semester && <span className="ml-1 text-gray-400 text-[10px]">{row.satisfied_by.semester}</span>}
+                          </div>
+                          {(row.source === 'override' || row.override) && (
+                            <div className="mt-1">
+                              <span className="inline-flex items-center gap-1 text-[10px] font-sans font-semibold bg-blue-50 text-blue-900 border border-blue-200 px-1.5 py-0.5 rounded">
+                                Set by advisor
+                              </span>
+                              {row.override?.note && (
+                                <p className="text-[10px] text-gray-500 font-sans italic mt-0.5">{row.override.note}</p>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       ) : <span className="text-gray-300">—</span>}
                     </td>
                     <td className="px-4 py-2.5 text-center">
@@ -553,10 +565,29 @@ export function DegreeAuditView({
           </p>
           <div className="flex flex-wrap gap-2">
             {progressUnassigned.map((u) => (
-              <span key={u.course_code} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-100 text-gray-700 text-xs font-mono font-semibold border border-gray-200">
-                {u.course_code}
-                {u.grade && <span className="text-gray-400">({u.grade})</span>}
-                {u.credits && <span className="text-gray-400">{u.credits}cr</span>}
+              <span
+                key={u.course_code}
+                className={`inline-flex flex-col gap-1 px-3 py-1.5 rounded-lg text-xs font-mono font-semibold border ${
+                  u.excluded || u.override?.kind === 'exclude'
+                    ? 'bg-amber-50 border-amber-200 text-amber-900'
+                    : 'bg-gray-100 text-gray-700 border-gray-200'
+                }`}
+              >
+                <div className="flex items-center gap-1.5">
+                  <span>{u.course_code}</span>
+                  {u.grade && <span className="text-gray-400">({u.grade})</span>}
+                  {u.credits && <span className="text-gray-400">{u.credits}cr</span>}
+                </div>
+                {(u.excluded || u.override?.kind === 'exclude') && (
+                  <div className="mt-0.5 text-[10px] font-sans">
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-semibold">
+                      Set by advisor (Excluded)
+                    </span>
+                    {u.override?.note && (
+                      <p className="text-gray-500 italic mt-0.5 font-normal">{u.override.note}</p>
+                    )}
+                  </div>
+                )}
               </span>
             ))}
           </div>

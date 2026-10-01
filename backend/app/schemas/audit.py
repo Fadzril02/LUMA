@@ -194,3 +194,10 @@ class RejectDocumentResponse(BaseModel):
     processing_status: str = "Rejected"
     message: str
 
+
+class ElectiveOverrideRequest(BaseModel):
+    kind: str = Field(..., description="'assign' or 'exclude'")
+    course_code: str = Field(..., description="Course code of passing attempt")
+    template_course_id: Optional[str] = Field(None, description="UUID of template course (required if kind='assign')")
+    note: Optional[str] = Field(None, description="Optional advisor note")
+

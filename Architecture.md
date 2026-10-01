@@ -33,6 +33,7 @@ Sections 1–5 were written at v1.0.0 and are partly outdated (e.g. `registratio
 | `uploaded_documents` | slip metadata, `extracted_data` incl. server-side `original_courses`, `processing_status`, fraud flag; browser cannot write status/results (mig 29) |
 | `advising_logs` | advisor notes, student can read own; `created_at`/matric/advisor locked on UPDATE; notification sent-at for rate limit |
 | `degree_audits` | audit snapshots; read: own student or own advisor (mig 30) |
+| `elective_assignments` | manual elective overrides (mig 33): assign/exclude, unique (tenant, matric, course), partial unique on slot for assign |
 | `exemption_audit` | exemption history |
 | view `advisee_roster_summary` | `security_invoker = true`; CGPA/credits computed from tenant grade scale |
 
@@ -62,6 +63,9 @@ Sections 1–5 were written at v1.0.0 and are partly outdated (e.g. `registratio
 | `POST /audit/purge-document` | backend | PDPA purge |
 | `POST /advising-logs/{log_id}/notify` | advisor | email student via Resend; no note text in email; 1/student/hour |
 | `PATCH /students/{matric_no}/exemptions` | advisor | exemptions |
+| `GET /audit/progress/{matric_no}` | student (own) / advisor (advisee) | compute progress against degree template (4A & 4B) |
+| `PUT /audit/progress/{matric_no}/overrides` | advisor (advisee only) | set elective override (kind='assign' or 'exclude') |
+| `DELETE /audit/progress/{matric_no}/overrides/{course_code}` | advisor (advisee only) | remove elective override (restores auto) |
 
 `document_id`/`file_path` access goes through `_load_authorized_document()` in `audit.py`.
 
@@ -70,7 +74,7 @@ Sections 1–5 were written at v1.0.0 and are partly outdated (e.g. `registratio
 - Summary: PNG (sem GPA), PNGK (CGPA), KK, KD, CE. Computed GPA is cross-checked against printed; mismatch = warning, never auto-correct.
 
 ### 0.7 Migrations (applied in order; never edit after applied)
-01–16 legacy (written against a drifted DB; staging is built from a prod schema dump instead). 17 tenant curriculum · 18 tenants · 19 advisor_invites · 20 RLS lockdown · 21 drop email advisor policies · 22 elective slots · 23 cohorts lockdown · 24 advising_logs v2 · 25 advising notifications · 26 grading scales · 27 record attempts · 28 roster view · 29 uploaded_documents lockdown · 30 storage + degree_audits RLS (**apply after push**). From 30 on: apply to staging first, then prod.
+01–16 legacy (written against a drifted DB; staging is built from a prod schema dump instead). 17 tenant curriculum · 18 tenants · 19 advisor_invites · 20 RLS lockdown · 21 drop email advisor policies · 22 elective slots · 23 cohorts lockdown · 24 advising_logs v2 · 25 advising notifications · 26 grading scales · 27 record attempts · 28 roster view · 29 uploaded_documents lockdown · 30 storage + degree_audits RLS (**apply after push**). 31 template_courses category · 32 template_courses course_code text · 33 elective_assignments (4B). From 30 on: apply to staging first, then prod.
 
 ### 0.8 Known gaps
 - `DegreeAuditView.tsx` has a UTM course-prefix regex. Old contest-registration code may remain in auth pages. `students.matric_no` global unique. Render free tier cold starts.

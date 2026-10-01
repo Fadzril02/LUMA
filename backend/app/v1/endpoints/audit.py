@@ -23,11 +23,12 @@ try:
         ParsedLineItem,
         RejectDocumentRequest,
         SubmitVerificationRequest,
-        RejectDocumentResponse
+        RejectDocumentResponse,
+        ElectiveOverrideRequest,
     )
     from app.engine.extractor import PDFExtractor
     from app.engine.parsers.malaysian_regex import MalaysianTranscriptParser
-    from app.engine.grading import load_scale, GradingScale, normalize_semester
+    from app.engine.grading import load_scale, GradingScale, normalize_semester, select_attempts_by_repeat_policy
     from app.engine.graph_resolver import PrerequisiteGraphResolver
     from app.engine.llm_fallback import MicroLLMFallback
     from app.engine.progress import compute_progress
@@ -49,11 +50,12 @@ except ImportError:
         ParsedLineItem,
         RejectDocumentRequest,
         SubmitVerificationRequest,
-        RejectDocumentResponse
+        RejectDocumentResponse,
+        ElectiveOverrideRequest,
     )
     from backend.app.engine.extractor import PDFExtractor
     from backend.app.engine.parsers.malaysian_regex import MalaysianTranscriptParser
-    from backend.app.engine.grading import load_scale, GradingScale, normalize_semester
+    from backend.app.engine.grading import load_scale, GradingScale, normalize_semester, select_attempts_by_repeat_policy
     from backend.app.engine.graph_resolver import PrerequisiteGraphResolver
     from backend.app.engine.llm_fallback import MicroLLMFallback
     from backend.app.engine.progress import compute_progress
@@ -1036,13 +1038,23 @@ async def get_student_progress(
             detail=f"No grading scale configured for tenant '{tenant_id}': {ve}"
         )
 
+    # Load overrides from elective_assignments table (4B)
+    ovr_res = (
+        supabase_svc.client.table("elective_assignments")
+        .select("id, kind, template_course_id, course_code, assigned_by_staff_id, note")
+        .eq("tenant_id", tenant_id)
+        .eq("matric_no", clean_matric)
+        .execute()
+    )
+    overrides = ovr_res.data or []
+
     try:
         result = compute_progress(
             template_rows=template_rows,
             records=records,
             scale=scale,
             repeat_policy=repeat_policy,
-            overrides={},   # Part B will populate from the overrides table
+            overrides=overrides,
             template_total_credits=tmpl_total,
         )
     except Exception as e:
@@ -1052,3 +1064,285 @@ async def get_student_progress(
         )
 
     return {"matric_no": clean_matric, **result}
+
+
+@router.put("/progress/{matric_no}/overrides", status_code=status.HTTP_200_OK)
+async def put_progress_override(
+    matric_no: str,
+    payload: ElectiveOverrideRequest,
+    jwt_payload: Dict[str, Any] = Depends(verify_advisor_jwt),
+):
+    """
+    Advisor only. Set an elective slot override (kind='assign') or course exclusion (kind='exclude').
+    Identical advisee authorization as /audit/progress.
+    tenant_id and assigned_by_staff_id come from JWT/DB, never request body.
+    """
+    jwt_sub = jwt_payload.get("sub")
+    if not jwt_sub:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token: missing sub")
+    if not supabase_svc.client:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database client unavailable")
+
+    clean_matric = (matric_no or "").strip().upper()
+    if not clean_matric:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="matric_no is required")
+
+    # Load student row
+    stu_res = (
+        supabase_svc.client.table("students")
+        .select("matric_no, user_id, advisor_staff_id, tenant_id, cohort_id")
+        .eq("matric_no", clean_matric)
+        .limit(1)
+        .execute()
+    )
+    if not stu_res.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Student '{clean_matric}' not found")
+    student = stu_res.data[0]
+
+    # Advisor only: must match student's assigned advisor
+    adv_res = (
+        supabase_svc.client.table("advisors")
+        .select("staff_id, tenant_id")
+        .eq("user_id", jwt_sub)
+        .limit(1)
+        .execute()
+    )
+    if (
+        not adv_res.data
+        or adv_res.data[0].get("staff_id") != student.get("advisor_staff_id")
+        or adv_res.data[0].get("tenant_id") != student.get("tenant_id")
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the student's assigned advisor can manage progress overrides"
+        )
+    advisor = adv_res.data[0]
+    advisor_staff_id = advisor.get("staff_id")
+    tenant_id = advisor.get("tenant_id") or student.get("tenant_id")
+
+    # Validate kind
+    kind = (payload.kind or "").strip().lower()
+    if kind not in ("assign", "exclude"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="kind must be either 'assign' or 'exclude'"
+        )
+
+    clean_course_code = (payload.course_code or "").replace(" ", "").upper()
+    if not clean_course_code:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="course_code is required"
+        )
+
+    # 1. Validate that course_code is a counted, passing attempt of this student (grade scale + repeat policy)
+    rec_res = (
+        supabase_svc.client.table("academic_records")
+        .select("course_code, course_name, credits, grade, semester, status")
+        .eq("tenant_id", tenant_id)
+        .eq("matric_no", clean_matric)
+        .execute()
+    )
+    records = rec_res.data or []
+    repeat_policy = _load_repeat_policy(tenant_id)
+    try:
+        scale = load_scale(tenant_id, client=supabase_svc.client)
+    except ValueError as ve:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"No grading scale configured for tenant '{tenant_id}': {ve}"
+        )
+
+    counted_attempts = select_attempts_by_repeat_policy(records, scale, repeat_policy)
+    matched_attempt = None
+    for att in counted_attempts:
+        if str(att.get("course_code") or "").replace(" ", "").upper() == clean_course_code:
+            matched_attempt = att
+            break
+
+    if not matched_attempt:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Course '{clean_course_code}' is not a counted attempt for student '{clean_matric}'"
+        )
+
+    grade = str(matched_attempt.get("grade") or "").strip().upper()
+    if not grade or not scale.counts_as_completed(grade, clean_course_code):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Course '{clean_course_code}' is not a passing attempt (grade: '{grade}')"
+        )
+
+    # Resolve student's cohort template
+    cohort_id = student.get("cohort_id")
+    if not cohort_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Student '{clean_matric}' has no cohort assigned"
+        )
+    cohort_res = (
+        supabase_svc.client.table("cohorts")
+        .select("template_id")
+        .eq("id", cohort_id)
+        .limit(1)
+        .execute()
+    )
+    if not cohort_res.data or not cohort_res.data[0].get("template_id"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Cohort for student '{clean_matric}' has no degree template assigned"
+        )
+    student_template_id = cohort_res.data[0]["template_id"]
+
+    clean_template_course_id = None
+    if kind == "assign":
+        if not payload.template_course_id:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="template_course_id is required when kind='assign'"
+            )
+        clean_template_course_id = str(payload.template_course_id).strip()
+
+        # 2. Validate template_course_id belongs to student's cohort template AND is_elective_slot = true
+        tc_res = (
+            supabase_svc.client.table("template_courses")
+            .select("id, template_id, course_code, is_elective_slot")
+            .eq("id", clean_template_course_id)
+            .limit(1)
+            .execute()
+        )
+        if not tc_res.data:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Template course '{clean_template_course_id}' not found"
+            )
+        target_tc = tc_res.data[0]
+        if str(target_tc.get("template_id")) != str(student_template_id):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Template course '{clean_template_course_id}' does not belong to student's cohort template"
+            )
+        if not target_tc.get("is_elective_slot"):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Template course '{clean_template_course_id}' is not an elective slot"
+            )
+
+        # 3. Validate course_code must not be a core row in the template
+        core_res = (
+            supabase_svc.client.table("template_courses")
+            .select("id")
+            .eq("template_id", student_template_id)
+            .eq("course_code", clean_course_code)
+            .eq("is_elective_slot", False)
+            .limit(1)
+            .execute()
+        )
+        if core_res.data:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Course '{clean_course_code}' is a core requirement in the template and cannot be assigned to an elective slot"
+            )
+
+    # 4. Upsert on (tenant_id, matric_no, course_code).
+    # If the target slot already has another assign, replace it.
+    if kind == "assign" and clean_template_course_id:
+        (
+            supabase_svc.client.table("elective_assignments")
+            .delete()
+            .eq("tenant_id", tenant_id)
+            .eq("matric_no", clean_matric)
+            .eq("template_course_id", clean_template_course_id)
+            .execute()
+        )
+
+    # Remove any existing override for this course_code
+    (
+        supabase_svc.client.table("elective_assignments")
+        .delete()
+        .eq("tenant_id", tenant_id)
+        .eq("matric_no", clean_matric)
+        .eq("course_code", clean_course_code)
+        .execute()
+    )
+
+    insert_data = {
+        "tenant_id": tenant_id,
+        "matric_no": clean_matric,
+        "kind": kind,
+        "template_course_id": clean_template_course_id if kind == "assign" else None,
+        "course_code": clean_course_code,
+        "assigned_by_staff_id": advisor_staff_id,
+        "note": (payload.note or "").strip() or None,
+    }
+    ins_res = (
+        supabase_svc.client.table("elective_assignments")
+        .insert(insert_data)
+        .execute()
+    )
+    saved_override = ins_res.data[0] if (ins_res.data and len(ins_res.data) > 0) else insert_data
+    return {"status": "success", "override": saved_override}
+
+
+@router.delete("/progress/{matric_no}/overrides/{course_code}", status_code=status.HTTP_200_OK)
+async def delete_progress_override(
+    matric_no: str,
+    course_code: str,
+    jwt_payload: Dict[str, Any] = Depends(verify_advisor_jwt),
+):
+    """
+    Advisor only. Remove override for course_code (back to auto-matching).
+    Identical advisee authorization as /audit/progress.
+    """
+    jwt_sub = jwt_payload.get("sub")
+    if not jwt_sub:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token: missing sub")
+    if not supabase_svc.client:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database client unavailable")
+
+    clean_matric = (matric_no or "").strip().upper()
+    clean_course_code = (course_code or "").replace(" ", "").upper()
+    if not clean_matric or not clean_course_code:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="matric_no and course_code are required")
+
+    # Load student row
+    stu_res = (
+        supabase_svc.client.table("students")
+        .select("matric_no, user_id, advisor_staff_id, tenant_id")
+        .eq("matric_no", clean_matric)
+        .limit(1)
+        .execute()
+    )
+    if not stu_res.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Student '{clean_matric}' not found")
+    student = stu_res.data[0]
+
+    # Advisor only: must match student's assigned advisor
+    adv_res = (
+        supabase_svc.client.table("advisors")
+        .select("staff_id, tenant_id")
+        .eq("user_id", jwt_sub)
+        .limit(1)
+        .execute()
+    )
+    if (
+        not adv_res.data
+        or adv_res.data[0].get("staff_id") != student.get("advisor_staff_id")
+        or adv_res.data[0].get("tenant_id") != student.get("tenant_id")
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the student's assigned advisor can manage progress overrides"
+        )
+    advisor = adv_res.data[0]
+    tenant_id = advisor.get("tenant_id") or student.get("tenant_id")
+
+    (
+        supabase_svc.client.table("elective_assignments")
+        .delete()
+        .eq("tenant_id", tenant_id)
+        .eq("matric_no", clean_matric)
+        .eq("course_code", clean_course_code)
+        .execute()
+    )
+    return {"status": "success", "message": f"Override for '{clean_course_code}' removed"}

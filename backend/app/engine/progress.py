@@ -148,6 +148,74 @@ def compute_progress(
             # Unknown grade — warn and skip
             warnings.append(f"Unknown grade '{grade}' for course '{code}' — skipped in progress computation.")
 
+    # ------------------------------------------------------------------
+    # Normalize overrides (supports DB row list or legacy/test dict)
+    # ------------------------------------------------------------------
+    assign_by_slot_id: Dict[str, Dict[str, Any]] = {}
+    exclude_by_course_code: Dict[str, Dict[str, Any]] = {}
+
+    if isinstance(overrides, dict):
+        for k, v in overrides.items():
+            if isinstance(v, dict):
+                kind = v.get("kind", "assign")
+                if kind == "assign":
+                    slot_id = str(v.get("template_course_id") or k)
+                    assign_by_slot_id[slot_id] = {
+                        "kind": "assign",
+                        "template_course_id": slot_id,
+                        "course_code": str(v.get("course_code") or "").replace(" ", "").upper(),
+                        "note": v.get("note"),
+                        "assigned_by_staff_id": v.get("assigned_by_staff_id"),
+                    }
+                elif kind == "exclude":
+                    code = str(v.get("course_code") or k).replace(" ", "").upper()
+                    exclude_by_course_code[code] = {
+                        "kind": "exclude",
+                        "course_code": code,
+                        "note": v.get("note"),
+                        "assigned_by_staff_id": v.get("assigned_by_staff_id"),
+                    }
+            else:
+                # Legacy {slot_id: course_code}
+                assign_by_slot_id[str(k)] = {
+                    "kind": "assign",
+                    "template_course_id": str(k),
+                    "course_code": str(v).replace(" ", "").upper(),
+                    "note": None,
+                    "assigned_by_staff_id": None,
+                }
+    elif isinstance(overrides, list):
+        for item in overrides:
+            if not isinstance(item, dict):
+                continue
+            kind = item.get("kind", "assign")
+            if kind == "assign":
+                slot_id = str(item.get("template_course_id") or "")
+                if slot_id:
+                    assign_by_slot_id[slot_id] = {
+                        "kind": "assign",
+                        "template_course_id": slot_id,
+                        "course_code": str(item.get("course_code") or "").replace(" ", "").upper(),
+                        "note": item.get("note"),
+                        "assigned_by_staff_id": item.get("assigned_by_staff_id"),
+                    }
+            elif kind == "exclude":
+                code = str(item.get("course_code") or "").replace(" ", "").upper()
+                if code:
+                    exclude_by_course_code[code] = {
+                        "kind": "exclude",
+                        "course_code": code,
+                        "note": item.get("note"),
+                        "assigned_by_staff_id": item.get("assigned_by_staff_id"),
+                    }
+
+    # Warn if an exclude override references a course not in passing records
+    for exc_code, exc_info in exclude_by_course_code.items():
+        if exc_code not in passing_codes:
+            warnings.append(
+                f"Exclude override for course '{exc_code}' is not a passing/counted attempt — ignoring."
+            )
+
     # Track which passing codes are still available for matching
     unmatched_passing = dict(passing_codes)  # mutable copy
 
@@ -163,17 +231,8 @@ def compute_progress(
     result_rows: List[Dict[str, Any]] = []
 
     # ------------------------------------------------------------------
-    # Step 1 (overrides first): for any template_course_id in overrides,
-    #   pin the specified course_code to that row regardless of pattern.
-    # ------------------------------------------------------------------
-    override_by_tmpl_id: Dict[str, str] = {
-        str(k): str(v).replace(" ", "").upper()
-        for k, v in overrides.items()
-        if v
-    }
-
-    # ------------------------------------------------------------------
     # Step 2: Core rows — satisfied by exact course_code match
+    # Excluded courses never auto-match any row.
     # ------------------------------------------------------------------
     for row in core_rows:
         tmpl_id = str(row.get("id") or "")
@@ -182,35 +241,8 @@ def compute_progress(
         tmpl_credits = int(row.get("credit_hour") or row.get("credits") or 0)
         category = (row.get("category") or "Uncategorised")
 
-        # Override takes precedence
-        if tmpl_id in override_by_tmpl_id:
-            pinned_code = override_by_tmpl_id[tmpl_id]
-            rec = passing_codes.get(pinned_code)
-            if rec:
-                unmatched_passing.pop(pinned_code, None)
-                rec_credits = int(rec.get("credits") or 0)
-                if rec_credits and rec_credits != tmpl_credits:
-                    warnings.append(
-                        f"Credit mismatch for override on '{tmpl_code}': template={tmpl_credits}cr, "
-                        f"record '{pinned_code}'={rec_credits}cr. Using template credits."
-                    )
-                result_rows.append(_make_row(
-                    tmpl_id, tmpl_code, tmpl_name, category, tmpl_credits,
-                    is_slot=False, slot_no=None,
-                    status="done", rec=rec, source="override"
-                ))
-            else:
-                in_rec = in_progress_codes.get(pinned_code)
-                status = "in_progress" if in_rec else "missing"
-                result_rows.append(_make_row(
-                    tmpl_id, tmpl_code, tmpl_name, category, tmpl_credits,
-                    is_slot=False, slot_no=None,
-                    status=status, rec=in_rec, source="override"
-                ))
-            continue
-
-        # Exact match
-        rec = unmatched_passing.get(tmpl_code)
+        # Excluded courses never auto-match
+        rec = unmatched_passing.get(tmpl_code) if (tmpl_code not in exclude_by_course_code) else None
         if rec:
             unmatched_passing.pop(tmpl_code)
             rec_credits = int(rec.get("credits") or 0)
@@ -222,20 +254,20 @@ def compute_progress(
             result_rows.append(_make_row(
                 tmpl_id, tmpl_code, tmpl_name, category, tmpl_credits,
                 is_slot=False, slot_no=None,
-                status="done", rec=rec, source="exact"
+                status="done", rec=rec, source="exact", override=None
             ))
         else:
-            # Check in-progress
-            in_rec = in_progress_codes.get(tmpl_code)
+            in_rec = in_progress_codes.get(tmpl_code) if (tmpl_code not in exclude_by_course_code) else None
             status = "in_progress" if in_rec else "missing"
             result_rows.append(_make_row(
                 tmpl_id, tmpl_code, tmpl_name, category, tmpl_credits,
                 is_slot=False, slot_no=None,
-                status=status, rec=in_rec, source=None
+                status=status, rec=in_rec, source=None, override=None
             ))
 
     # ------------------------------------------------------------------
     # Step 3: Slot rows — Maximum Bipartite Matching (augmenting paths)
+    # Assign overrides fill first; if stale/non-passing, ignore and auto-match.
     # ------------------------------------------------------------------
     resolved_slot_rows: Dict[str, Dict[str, Any]] = {}
     active_slot_rows: List[Dict[str, Any]] = []
@@ -248,31 +280,44 @@ def compute_progress(
         category = (row.get("category") or "Uncategorised")
         slot_no = row.get("slot_no")
 
-        # Overrides applied first
-        if tmpl_id in override_by_tmpl_id:
-            pinned_code = override_by_tmpl_id[tmpl_id]
+        if tmpl_id in assign_by_slot_id:
+            ovr = assign_by_slot_id[tmpl_id]
+            pinned_code = ovr["course_code"]
             rec = passing_codes.get(pinned_code)
-            if rec:
+            if not rec:
+                # Stale override: no longer passing/counted attempt
+                warnings.append(
+                    f"Override for slot '{tmpl_code}' references '{pinned_code}' which is not a passing/counted attempt — ignoring override and auto-matching."
+                )
+                active_slot_rows.append(row)
+            else:
                 unmatched_passing.pop(pinned_code, None)
                 rec_credits = int(rec.get("credits") or 0)
-                if rec_credits and rec_credits != tmpl_credits:
+                slot_cr = rec_credits if rec_credits else tmpl_credits
+                if rec_credits and tmpl_credits and rec_credits != tmpl_credits:
                     warnings.append(
                         f"Credit mismatch for slot override '{tmpl_code}' filled by '{pinned_code}': "
                         f"template={tmpl_credits}cr, record={rec_credits}cr. Using record credits."
                     )
-                    tmpl_credits = rec_credits
+
+                # Check pattern match
+                pats = row.get("match_patterns") or []
+                if not pats and row.get("course_code"):
+                    pats = [p.strip() for p in str(row["course_code"]).split("/") if p.strip()]
+                if pats and not _code_matches_any_pattern(pinned_code, pats):
+                    warnings.append(
+                        f"SLOT filled by advisor override outside its pattern: '{pinned_code}' assigned to '{tmpl_code}'."
+                    )
+
                 resolved_slot_rows[tmpl_id] = _make_row(
-                    tmpl_id, tmpl_code, tmpl_name, category, tmpl_credits,
+                    tmpl_id, tmpl_code, tmpl_name, category, slot_cr,
                     is_slot=True, slot_no=slot_no,
-                    status="done", rec=rec, source="override"
-                )
-            else:
-                in_rec = in_progress_codes.get(pinned_code)
-                status = "in_progress" if in_rec else "missing"
-                resolved_slot_rows[tmpl_id] = _make_row(
-                    tmpl_id, tmpl_code, tmpl_name, category, tmpl_credits,
-                    is_slot=True, slot_no=slot_no,
-                    status=status, rec=in_rec, source="override"
+                    status="done", rec=rec, source="override",
+                    override={
+                        "kind": "assign",
+                        "note": ovr.get("note"),
+                        "assigned_by_staff_id": ovr.get("assigned_by_staff_id"),
+                    }
                 )
         else:
             active_slot_rows.append(row)
@@ -287,7 +332,8 @@ def compute_progress(
         slot_patterns[tmpl_id] = pats
 
     # Build candidates for each slot, ordered by pattern specificity (fewest wildcards first)
-    available_codes = list(unmatched_passing.keys())
+    # Excluded courses never auto-match any slot
+    available_codes = [c for c in unmatched_passing.keys() if c not in exclude_by_course_code]
     slot_candidates: Dict[str, List[str]] = {}
     for row in active_slot_rows:
         tmpl_id = str(row.get("id") or "")
@@ -362,32 +408,41 @@ def compute_progress(
             result_rows.append(_make_row(
                 tmpl_id, tmpl_code, tmpl_name, category, slot_cr,
                 is_slot=True, slot_no=slot_no,
-                status="done", rec=matched_rec, source="pattern"
+                status="done", rec=matched_rec, source="pattern", override=None
             ))
         else:
             in_rec = None
             for code, rec in in_progress_codes.items():
-                if _code_matches_any_pattern(code, pats):
+                if code not in exclude_by_course_code and _code_matches_any_pattern(code, pats):
                     in_rec = rec
                     break
             status = "in_progress" if in_rec else "missing"
             result_rows.append(_make_row(
                 tmpl_id, tmpl_code, tmpl_name, category, tmpl_credits,
                 is_slot=True, slot_no=slot_no,
-                status=status, rec=in_rec, source=None
+                status=status, rec=in_rec, source=None, override=None
             ))
 
     # ------------------------------------------------------------------
-    # Unassigned: passing codes that filled no template row
+    # Unassigned: passing codes that filled no template row.
+    # Excluded courses are listed here with excluded: true and override info.
     # ------------------------------------------------------------------
     unassigned = []
     for code, rec in unmatched_passing.items():
+        is_excluded = code in exclude_by_course_code and code in passing_codes
+        ovr = exclude_by_course_code.get(code) if is_excluded else None
         unassigned.append({
             "course_code": code,
             "course_name": rec.get("course_name") or code,
             "grade": rec.get("grade"),
             "credits": int(rec.get("credits") or 0),
             "semester": rec.get("semester"),
+            "excluded": is_excluded,
+            "override": {
+                "kind": "exclude",
+                "note": ovr.get("note"),
+                "assigned_by_staff_id": ovr.get("assigned_by_staff_id"),
+            } if ovr else None,
         })
 
     # ------------------------------------------------------------------
@@ -440,6 +495,7 @@ def _make_row(
     status: str,
     rec: Optional[Dict[str, Any]],
     source: Optional[str],
+    override: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     satisfied_by = None
     if rec is not None and status in ("done", "in_progress"):
@@ -459,4 +515,5 @@ def _make_row(
         "status": status,
         "satisfied_by": satisfied_by,
         "source": source,
+        "override": override,
     }

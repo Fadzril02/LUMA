@@ -245,13 +245,56 @@ export const api = {
       status: 'done' | 'in_progress' | 'missing';
       satisfied_by: { course_code: string; grade: string | null; semester: string | null } | null;
       source: 'exact' | 'pattern' | 'override' | null;
+      override?: {
+        kind: 'assign' | 'exclude';
+        note: string | null;
+        assigned_by_staff_id: string | null;
+      } | null;
     }>;
     categories: Array<{ category: string; required: number; earned: number }>;
-    unassigned: Array<{ course_code: string; course_name: string; grade: string | null; credits: number; semester: string | null }>;
+    unassigned: Array<{
+      course_code: string;
+      course_name: string;
+      grade: string | null;
+      credits: number;
+      semester: string | null;
+      excluded?: boolean;
+      override?: {
+        kind: 'assign' | 'exclude';
+        note: string | null;
+        assigned_by_staff_id: string | null;
+      } | null;
+    }>;
     totals: { required: number; earned: number };
     warnings: string[];
   }> => {
     const res = await apiClient.get(`/api/v1/audit/progress/${encodeURIComponent(matricNo)}`);
+    return res.data;
+  },
+
+  setProgressOverride: async (
+    matricNo: string,
+    body: {
+      kind: 'assign' | 'exclude';
+      course_code: string;
+      template_course_id?: string | null;
+      note?: string | null;
+    }
+  ): Promise<{ status: string; override: any }> => {
+    const res = await apiClient.put(
+      `/api/v1/audit/progress/${encodeURIComponent(matricNo)}/overrides`,
+      body
+    );
+    return res.data;
+  },
+
+  deleteProgressOverride: async (
+    matricNo: string,
+    courseCode: string
+  ): Promise<{ status: string; message: string }> => {
+    const res = await apiClient.delete(
+      `/api/v1/audit/progress/${encodeURIComponent(matricNo)}/overrides/${encodeURIComponent(courseCode)}`
+    );
     return res.data;
   },
 };

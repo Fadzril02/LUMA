@@ -41,6 +41,7 @@ UTM_GRADES = [
     GradeDefinition("F",  0.00, 9,  False, True,  False),
     GradeDefinition("TD", 0.00, None, False, False, False),
     GradeDefinition("EX", None, None, True,  False, True),   # exemption
+    GradeDefinition("HL", None, None, True,  False, True),   # pass non-graded
 ]
 
 @pytest.fixture
@@ -248,25 +249,86 @@ class TestUnassignedAndCategories:
 
 
 class TestOverrides:
-    def test_override_beats_auto_match(self, scale):
-        """Override maps template slot to ULRS1182 instead of the auto-matched SCSR2213."""
+    def test_assign_outside_pattern_gets_warning(self, scale):
+        """Assign outside pattern fills slot, sets source='override', and adds warning."""
         template = [_slot("s1", "SCSRXXX3", ["SCSRXXX3"], slot_no=1)]
-        records = [_rec("SCSR2213", "C+"), _rec("ULRS1182", "A", credits=2)]
-        # Override: slot s1 → ULRS1182
-        result = compute_progress(template, records, scale, overrides={"s1": "ULRS1182"})
+        records = [_rec("SKEU1013", "A", credits=3)]
+        overrides = [{
+            "kind": "assign",
+            "template_course_id": "s1",
+            "course_code": "SKEU1013",
+            "note": "Dean approval for faculty elective",
+            "assigned_by_staff_id": "ADV01"
+        }]
+        result = compute_progress(template, records, scale, overrides=overrides)
         row = result["rows"][0]
         assert row["status"] == "done"
         assert row["source"] == "override"
-        assert row["satisfied_by"]["course_code"] == "ULRS1182"
-        # SCSR2213 should be unassigned now
-        assert any(u["course_code"] == "SCSR2213" for u in result["unassigned"])
+        assert row["satisfied_by"]["course_code"] == "SKEU1013"
+        assert row["override"]["kind"] == "assign"
+        assert row["override"]["note"] == "Dean approval for faculty elective"
+        assert any("SLOT filled by advisor override outside its pattern" in w for w in result["warnings"])
 
-    def test_override_missing_course_shows_missing(self, scale):
-        template = [_core("t1", "SCSR2213")]
-        records = []  # NONEXISTENT not in records
-        result = compute_progress(template, records, scale, overrides={"t1": "NONEXISTENT"})
+    def test_exclude_removes_course_from_auto_matching(self, scale):
+        """Exclude removes passing course (e.g. UHLB1112 with grade HL) from matching; listed in unassigned."""
+        template = [_slot("s1", "UHLBXXXX", ["UHLBXXXX"], slot_no=1)]
+        records = [_rec("UHLB1112", "HL", credits=2)]
+        overrides = [{
+            "kind": "exclude",
+            "course_code": "UHLB1112",
+            "note": "Taken for co-curricular only",
+            "assigned_by_staff_id": "ADV01"
+        }]
+        result = compute_progress(template, records, scale, overrides=overrides)
         assert result["rows"][0]["status"] == "missing"
-        assert result["rows"][0]["source"] == "override"
+        assert len(result["unassigned"]) == 1
+        unassigned_course = result["unassigned"][0]
+        assert unassigned_course["course_code"] == "UHLB1112"
+        assert unassigned_course["excluded"] is True
+        assert unassigned_course["override"]["kind"] == "exclude"
+        assert unassigned_course["override"]["note"] == "Taken for co-curricular only"
+
+    def test_stale_override_is_ignored_with_warning(self, scale):
+        """If an override points at a course that is no longer passing/counted, ignore it with warning and let slot auto-match."""
+        template = [_slot("s1", "SCSRXXX3", ["SCSRXXX3"], slot_no=1)]
+        records = [_rec("SCSR2213", "B", credits=3)]
+        overrides = [{
+            "kind": "assign",
+            "template_course_id": "s1",
+            "course_code": "NONEXISTENT",
+        }]
+        result = compute_progress(template, records, scale, overrides=overrides)
+        row = result["rows"][0]
+        assert row["status"] == "done"
+        assert row["source"] == "pattern"
+        assert row["satisfied_by"]["course_code"] == "SCSR2213"
+        assert any("ignoring override" in w.lower() for w in result["warnings"])
+
+    def test_assign_override_beats_bipartite_result(self, scale):
+        """An assign override beats the bipartite matching result and pins the course."""
+        slots = [
+            _slot("slot-1", "SCSRXXX3", ["SCSRXXX3"], slot_no=1),
+            _slot("slot-2", "XXXXXXX3", ["XXXXXXX3"], slot_no=2),
+        ]
+        records = [
+            _rec("SCSR2213", "B"),
+            _rec("SKEU1013", "A"),
+        ]
+        # Override pins SKEU1013 to slot-1 (Free Elective course pinned to SCSR slot)
+        overrides = [{
+            "kind": "assign",
+            "template_course_id": "slot-1",
+            "course_code": "SKEU1013",
+        }]
+        res = compute_progress(slots, records, scale, overrides=overrides)
+        r_by_id = {r["template_course_id"]: r for r in res["rows"]}
+        assert r_by_id["slot-1"]["status"] == "done"
+        assert r_by_id["slot-1"]["source"] == "override"
+        assert r_by_id["slot-1"]["satisfied_by"]["course_code"] == "SKEU1013"
+        # slot-2 auto-matches SCSR2213
+        assert r_by_id["slot-2"]["status"] == "done"
+        assert r_by_id["slot-2"]["source"] == "pattern"
+        assert r_by_id["slot-2"]["satisfied_by"]["course_code"] == "SCSR2213"
 
 
 class TestTotals:
@@ -287,15 +349,54 @@ class TestTotals:
 
 class _Query:
     def __init__(self, db, table):
-        self.db, self.table, self.filters, self.payload = db, table, {}, None
+        self.db, self.table, self.filters = db, table, {}
+        self._action = "select"
+        self._payload = None
 
-    def select(self, *_a, **_k): return self
-    def eq(self, col, val): self.filters[col] = val; return self
-    def limit(self, *_a): return self
+    def select(self, *_a, **_k):
+        self._action = "select"
+        return self
+
+    def insert(self, payload):
+        self._action = "insert"
+        self._payload = payload
+        return self
+
+    def delete(self):
+        self._action = "delete"
+        return self
+
+    def eq(self, col, val):
+        self.filters[col] = val
+        return self
+
+    def limit(self, *_a):
+        return self
 
     def execute(self):
-        rows = [r for r in self.db.get(self.table, []) if all(r.get(k) == v for k, v in self.filters.items())]
-        return type("Res", (), {"data": rows})()
+        table_rows = self.db.setdefault(self.table, [])
+        if self._action == "select":
+            rows = [r for r in table_rows if all(r.get(k) == v for k, v in self.filters.items())]
+            return type("Res", (), {"data": rows})()
+        elif self._action == "delete":
+            deleted = []
+            remaining = []
+            for r in table_rows:
+                if all(r.get(k) == v for k, v in self.filters.items()):
+                    deleted.append(r)
+                else:
+                    remaining.append(r)
+            self.db[self.table] = remaining
+            return type("Res", (), {"data": deleted})()
+        elif self._action == "insert":
+            new_rows = self._payload if isinstance(self._payload, list) else [self._payload]
+            for row in new_rows:
+                r_copy = dict(row)
+                if "id" not in r_copy:
+                    r_copy["id"] = "gen-uuid"
+                table_rows.append(r_copy)
+            return type("Res", (), {"data": new_rows})()
+        return type("Res", (), {"data": []})()
 
 
 class _FakeClient:
@@ -318,19 +419,55 @@ def _endpoint_db():
             {"user_id": "adv-uid", "staff_id": "TEST123", "tenant_id": "UTM"},
             {"user_id": "non-adv",  "staff_id": "OTHER9",  "tenant_id": "UTM"},
         ],
-        "cohorts": [{"id": "cohort-1", "template_id": "tmpl-1"}],
-        "degree_templates": [{"id": "tmpl-1", "total_credits_required": 130}],
-        "template_courses": [{
-            "id": "tc-1", "template_id": "tmpl-1",
-            "course_code": "SCSR2213", "course_name": "Data Structures",
-            "credit_hour": 3, "category": "Core",
-            "is_elective_slot": False, "slot_no": None, "match_patterns": None,
-        }],
+        "cohorts": [
+            {"id": "cohort-1", "template_id": "tmpl-1"},
+            {"id": "cohort-other", "template_id": "tmpl-other"},
+        ],
+        "degree_templates": [
+            {"id": "tmpl-1", "total_credits_required": 130},
+            {"id": "tmpl-other", "total_credits_required": 130},
+        ],
+        "template_courses": [
+            {
+                "id": "tc-1", "template_id": "tmpl-1",
+                "course_code": "SCSR2213", "course_name": "Data Structures",
+                "credit_hour": 3, "category": "Core",
+                "is_elective_slot": False, "slot_no": None, "match_patterns": None,
+            },
+            {
+                "id": "tc-slot-1", "template_id": "tmpl-1",
+                "course_code": "SCSRXXX3", "course_name": "Elective Slot 1",
+                "credit_hour": 3, "category": "Elective",
+                "is_elective_slot": True, "slot_no": 1, "match_patterns": ["SCSRXXX3"],
+            },
+            {
+                "id": "tc-slot-2", "template_id": "tmpl-1",
+                "course_code": "XXXXXXX3", "course_name": "Free Elective Slot 2",
+                "credit_hour": 3, "category": "Elective",
+                "is_elective_slot": True, "slot_no": 2, "match_patterns": ["XXXXXXX3"],
+            },
+            {
+                "id": "tc-other-slot", "template_id": "tmpl-other",
+                "course_code": "OTHERXXX", "course_name": "Other Template Slot",
+                "credit_hour": 3, "category": "Elective",
+                "is_elective_slot": True, "slot_no": 1, "match_patterns": ["OTHERXXX"],
+            },
+        ],
         "academic_records": [
             {"course_code": "SCSR2213", "grade": "A", "credits": 3,
              "semester": "SEM 1 2023/2024", "status": "Passed",
              "course_name": "Data Structures", "tenant_id": "UTM", "matric_no": "A24MJ5050"},
+            {"course_code": "SKEU1013", "grade": "B", "credits": 3,
+             "semester": "SEM 2 2023/2024", "status": "Passed",
+             "course_name": "Circuit Theory", "tenant_id": "UTM", "matric_no": "A24MJ5050"},
+            {"course_code": "UHLB1112", "grade": "HL", "credits": 2,
+             "semester": "SEM 2 2023/2024", "status": "Passed",
+             "course_name": "English", "tenant_id": "UTM", "matric_no": "A24MJ5050"},
+            {"course_code": "FAIL1013", "grade": "E", "credits": 3,
+             "semester": "SEM 1 2023/2024", "status": "Failed",
+             "course_name": "Failed Course", "tenant_id": "UTM", "matric_no": "A24MJ5050"},
         ],
+        "elective_assignments": [],
         "tenants": [{"id": "UTM", "repeat_policy": "latest"}],
         "grade_scales": UTM_GRADES_ROWS,
     }
@@ -411,6 +548,122 @@ def test_progress_no_template_409(fake_db_progress):
     c = _client_as("stu-uid")
     res = c.get("/api/v1/audit/progress/A24MJ5050")
     assert res.status_code == 409
+
+
+def test_override_advisor_non_advisee_403(fake_db_progress):
+    c = _client_as("non-adv")
+    res = c.put("/api/v1/audit/progress/A24MJ5050/overrides", json={
+        "kind": "assign",
+        "course_code": "SKEU1013",
+        "template_course_id": "tc-slot-1"
+    })
+    assert res.status_code == 403
+
+
+def test_override_student_put_403(fake_db_progress):
+    c = _client_as("stu-uid")
+    res = c.put("/api/v1/audit/progress/A24MJ5050/overrides", json={
+        "kind": "assign",
+        "course_code": "SKEU1013",
+        "template_course_id": "tc-slot-1"
+    })
+    assert res.status_code == 403
+
+
+def test_override_course_not_passed_422(fake_db_progress):
+    c = _client_as("adv-uid")
+    # FAIL1013 has grade 'E' (not pass)
+    res = c.put("/api/v1/audit/progress/A24MJ5050/overrides", json={
+        "kind": "assign",
+        "course_code": "FAIL1013",
+        "template_course_id": "tc-slot-1"
+    })
+    assert res.status_code == 422
+
+    # NOTTAKEN is not in records
+    res2 = c.put("/api/v1/audit/progress/A24MJ5050/overrides", json={
+        "kind": "assign",
+        "course_code": "NOTTAKEN",
+        "template_course_id": "tc-slot-1"
+    })
+    assert res2.status_code == 422
+
+
+def test_override_assign_to_core_row_422(fake_db_progress):
+    c = _client_as("adv-uid")
+    # SCSR2213 is a core row in template tmpl-1
+    res = c.put("/api/v1/audit/progress/A24MJ5050/overrides", json={
+        "kind": "assign",
+        "course_code": "SCSR2213",
+        "template_course_id": "tc-slot-1"
+    })
+    assert res.status_code == 422
+
+
+def test_override_assign_to_slot_from_another_template_422(fake_db_progress):
+    c = _client_as("adv-uid")
+    # tc-other-slot belongs to tmpl-other, student is in tmpl-1
+    res = c.put("/api/v1/audit/progress/A24MJ5050/overrides", json={
+        "kind": "assign",
+        "course_code": "SKEU1013",
+        "template_course_id": "tc-other-slot"
+    })
+    assert res.status_code == 422
+
+
+def test_override_upsert_replaces(fake_db_progress):
+    c = _client_as("adv-uid")
+    # 1. Assign SKEU1013 to Free Elective slot tc-slot-2
+    res1 = c.put("/api/v1/audit/progress/A24MJ5050/overrides", json={
+        "kind": "assign",
+        "course_code": "SKEU1013",
+        "template_course_id": "tc-slot-2",
+        "note": "First note"
+    })
+    assert res1.status_code == 200
+
+    # 2. Check progress reflects SKEU1013 in tc-slot-2
+    prog1 = c.get("/api/v1/audit/progress/A24MJ5050").json()
+    slot2_row = next(r for r in prog1["rows"] if r["template_course_id"] == "tc-slot-2")
+    assert slot2_row["source"] == "override"
+    assert slot2_row["satisfied_by"]["course_code"] == "SKEU1013"
+
+    # 3. Replace slot assignment with UHLB1112
+    res2 = c.put("/api/v1/audit/progress/A24MJ5050/overrides", json={
+        "kind": "assign",
+        "course_code": "UHLB1112",
+        "template_course_id": "tc-slot-2",
+        "note": "Replaced assignment"
+    })
+    assert res2.status_code == 200
+
+    # 4. Check progress reflects UHLB1112 in tc-slot-2 and SKEU1013 is unassigned
+    prog2 = c.get("/api/v1/audit/progress/A24MJ5050").json()
+    slot2_row_updated = next(r for r in prog2["rows"] if r["template_course_id"] == "tc-slot-2")
+    assert slot2_row_updated["source"] == "override"
+    assert slot2_row_updated["satisfied_by"]["course_code"] == "UHLB1112"
+    assert any(u["course_code"] == "SKEU1013" for u in prog2["unassigned"])
+
+
+def test_override_delete_restores_auto(fake_db_progress):
+    c = _client_as("adv-uid")
+    # Assign SKEU1013 to slot-1 (SCSR slot, outside pattern)
+    res = c.put("/api/v1/audit/progress/A24MJ5050/overrides", json={
+        "kind": "assign",
+        "course_code": "SKEU1013",
+        "template_course_id": "tc-slot-1",
+    })
+    assert res.status_code == 200
+
+    # DELETE the override
+    del_res = c.delete("/api/v1/audit/progress/A24MJ5050/overrides/SKEU1013")
+    assert del_res.status_code == 200
+
+    # Verify progress restored to auto-matching
+    prog = c.get("/api/v1/audit/progress/A24MJ5050").json()
+    slot1_row = next(r for r in prog["rows"] if r["template_course_id"] == "tc-slot-1")
+    # SKEU1013 does not match SCSRXXX3, so slot 1 is missing and not override
+    assert slot1_row["source"] != "override"
 
 
 class TestBipartiteSlotMatching:
