@@ -179,6 +179,7 @@ async def upload_courses_csv(
             "course_name": c["name"],
             "credit_hour": c["credits"],
             "is_core_requirement": (c.get("category") or "").strip().title() == "Core",
+            "category": c["category"],
             "is_elective_slot": c.get("is_elective_slot", False),
             "slot_no": c.get("slot_no"),
             "match_patterns": c.get("match_patterns"),

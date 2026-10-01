@@ -160,7 +160,7 @@ def compute_progress(
         tmpl_code = str(row.get("course_code") or "").replace(" ", "").upper()
         tmpl_name = row.get("course_name") or tmpl_code
         tmpl_credits = int(row.get("credit_hour") or 0)
-        category = row.get("category") or "Core"
+        category = (row.get("category") or "Uncategorised")
 
         # Override takes precedence
         if tmpl_id in override_by_tmpl_id:
@@ -222,7 +222,7 @@ def compute_progress(
         tmpl_code = str(row.get("course_code") or "")  # e.g. "SCSRXXX3/SCSTXXX3"
         tmpl_name = row.get("course_name") or tmpl_code
         tmpl_credits = int(row.get("credit_hour") or 0)
-        category = row.get("category") or "Elective"
+        category = (row.get("category") or "Uncategorised")
         slot_no = row.get("slot_no")
         patterns = row.get("match_patterns") or []
 
