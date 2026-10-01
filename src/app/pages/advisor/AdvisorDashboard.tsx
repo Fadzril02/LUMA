@@ -1033,27 +1033,29 @@ const handleDownloadTemplate = () => {
             </button>
           </div>
 
-          {/* Action 3: Google Form Integration (Secondary / Outline) */}
+          {/* Action 3: UAT feedback form — shown only when VITE_FEEDBACK_FORM_URL is set */}
+          {import.meta.env.VITE_FEEDBACK_FORM_URL && (
           <div className="bg-gray-50/60 border border-gray-200 rounded-xl p-6 flex flex-col justify-between hover:border-gray-300 transition-colors">
             <div className="space-y-2">
               <div className="w-9 h-9 rounded-lg bg-white border border-gray-200 text-emerald-700 flex items-center justify-center shadow-xs">
                 <ExternalLink className="w-4 h-4" />
               </div>
-              <h4 className="text-sm font-semibold text-gray-900">Google Form Integration</h4>
+              <h4 className="text-sm font-semibold text-gray-900">Feedback Form</h4>
               <p className="text-sm text-gray-600 leading-relaxed">
-                Direct students to the institutional Academic Appeal and Discrepancy Petition Google Form for supplementary data intake.
+                Tell us what works and what does not. Share this form with your students too.
               </p>
             </div>
             <a
-              href="https://forms.gle/academic-petition"
+              href={import.meta.env.VITE_FEEDBACK_FORM_URL}
               target="_blank"
               rel="noopener noreferrer"
               className="mt-6 w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-white border border-gray-300 text-xs font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition-colors shadow-xs cursor-pointer"
             >
               <ExternalLink className="w-3.5 h-3.5 text-gray-400" />
-              <span>Open Petition Form</span>
+              <span>Open Feedback Form</span>
             </a>
           </div>
+          )}
         </div>
       </div>
 
