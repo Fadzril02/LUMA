@@ -808,7 +808,7 @@ export function CurriculumTemplatesView() {
                                 className="w-full px-2 py-1 text-xs font-mono bg-white border border-gray-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-blue-900"
                               />
                             </td>
-                            <td className="py-3 px-4 text-right space-x-1 whitespace-nowrap">
+                            <td className="py-3 px-4 text-right space-x-1 whitespace-nowrap sticky right-0 bg-blue-50 z-10 shadow-[-6px_0_6px_-6px_rgba(0,0,0,0.15)]">
                               <button
                                 type="button"
                                 onClick={() => handleSaveEditRow(row.id)}
