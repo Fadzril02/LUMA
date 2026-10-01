@@ -766,6 +766,27 @@ export function CurriculumTemplatesView() {
                                 onChange={(e) => setEditCode(e.target.value)}
                                 className="w-full px-2 py-1 text-xs font-mono bg-white border border-gray-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-blue-900"
                               />
+                              <div className="mt-2 flex items-center gap-1 whitespace-nowrap">
+                              <button
+                                type="button"
+                                onClick={() => handleSaveEditRow(row.id)}
+                                disabled={isSavingRow}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md bg-blue-900 text-white hover:bg-blue-800 disabled:opacity-50"
+                              >
+                                {isSavingRow ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                                Save
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingRowId(null);
+                                  setRowError(null);
+                                }}
+                                className="px-2 py-1 text-xs font-medium text-gray-500 hover:text-gray-800"
+                              >
+                                Cancel
+                              </button>
+                            </div>
                             </td>
                             <td className="py-3 px-4">
                               <input
@@ -808,27 +829,7 @@ export function CurriculumTemplatesView() {
                                 className="w-full px-2 py-1 text-xs font-mono bg-white border border-gray-200 rounded-md focus:outline-hidden focus:ring-1 focus:ring-blue-900"
                               />
                             </td>
-                            <td className="py-3 px-4 text-right space-x-1 whitespace-nowrap sticky right-0 bg-blue-50 z-10 shadow-[-6px_0_6px_-6px_rgba(0,0,0,0.15)]">
-                              <button
-                                type="button"
-                                onClick={() => handleSaveEditRow(row.id)}
-                                disabled={isSavingRow}
-                                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md bg-blue-900 text-white hover:bg-blue-800 disabled:opacity-50"
-                              >
-                                {isSavingRow ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
-                                Save
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setEditingRowId(null);
-                                  setRowError(null);
-                                }}
-                                className="px-2 py-1 text-xs font-medium text-gray-500 hover:text-gray-800"
-                              >
-                                Cancel
-                              </button>
-                            </td>
+                            <td className="py-3 px-4" />
                           </tr>
                         ) : (
                           /* Normal Row Display */
