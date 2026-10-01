@@ -76,6 +76,22 @@ except ImportError:
 router = APIRouter(prefix="/audit", tags=["Degree Audit"])
 
 
+async def _to_thread_retry(fn, *args, **kwargs):
+    """Run a sync Supabase call in a thread; retry ONCE on transport errors.
+
+    Supabase/HTTP2 may drop an idle or concurrently-used connection
+    ("Server disconnected"). Reads are idempotent, so one retry is safe.
+    Non-transport errors (HTTPException, APIError) propagate unchanged.
+    """
+    import httpx
+    try:
+        return await asyncio.to_thread(fn, *args, **kwargs)
+    except httpx.TransportError as e:
+        logger.warning(f"[Progress] transport error, retrying once: {e!r}")
+        await asyncio.sleep(0.2)
+        return await asyncio.to_thread(fn, *args, **kwargs)
+
+
 def _load_repeat_policy(tenant_id: str) -> str:
     """Fail loud: a tenant without a readable repeat_policy is a config error, never default."""
     try:
@@ -995,7 +1011,7 @@ async def get_student_progress(
     t_stage2 = time.perf_counter()
 
     async def _fetch_template_data():
-        cohort_res = await asyncio.to_thread(
+        cohort_res = await _to_thread_retry(
             lambda: supabase_svc.client.table("cohorts")
             .select("template_id")
             .eq("id", cohort_id)
@@ -1027,8 +1043,8 @@ async def get_student_progress(
             )
 
         dt_res, tc_res = await asyncio.gather(
-            asyncio.to_thread(_fetch_dt),
-            asyncio.to_thread(_fetch_tc),
+            _to_thread_retry(_fetch_dt),
+            _to_thread_retry(_fetch_tc),
         )
 
         tmpl_total: Optional[int] = None
@@ -1086,10 +1102,10 @@ async def get_student_progress(
         overrides,
     ) = await asyncio.gather(
         _fetch_template_data(),
-        asyncio.to_thread(_fetch_academic_records),
-        asyncio.to_thread(_fetch_repeat_policy),
-        asyncio.to_thread(_fetch_scale),
-        asyncio.to_thread(_fetch_overrides),
+        _to_thread_retry(_fetch_academic_records),
+        _to_thread_retry(_fetch_repeat_policy),
+        _to_thread_retry(_fetch_scale),
+        _to_thread_retry(_fetch_overrides),
     )
 
     stage2_ms = (time.perf_counter() - t_stage2) * 1000.0
