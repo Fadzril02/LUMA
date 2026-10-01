@@ -377,8 +377,8 @@ async def _extract_core(request: ExtractPDFRequest, jwt_payload: dict, doc: dict
     # 1. Check Metadata for Digital Forgery
     is_fraudulent = False
     try:
-        with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
-            meta = doc.metadata or {}
+        with fitz.open(stream=pdf_bytes, filetype="pdf") as pdf_doc:
+            meta = pdf_doc.metadata or {}
             creator = (meta.get("creator") or "").lower()
             producer = (meta.get("producer") or "").lower()
             suspicious = ['adobe illustrator', 'photoshop', 'canva', 'ilovepdf', 'microsoft', 'word', 'google']
