@@ -530,6 +530,19 @@ def test_progress_student_own_200(fake_db_progress):
     assert "rows" in body and "categories" in body
 
 
+def test_progress_timing_logs_info(fake_db_progress, caplog):
+    import logging
+    caplog.set_level(logging.INFO)
+    c = _client_as("stu-uid")
+    res = c.get("/api/v1/audit/progress/A24MJ5050")
+    assert res.status_code == 200, res.text
+    log_text = caplog.text
+    assert "[Progress] A24MJ5050 Stage 1" in log_text
+    assert "[Progress] A24MJ5050 Stage 2" in log_text
+    assert "[Progress] A24MJ5050 Stage 3" in log_text
+
+
+
 def test_progress_other_student_403(fake_db_progress):
     c = _client_as("stu-other")
     res = c.get("/api/v1/audit/progress/A24MJ5050")

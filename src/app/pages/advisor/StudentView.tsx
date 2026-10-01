@@ -85,12 +85,20 @@ export function StudentView({ student, onBack }: StudentViewProps) {
   const [excludeNote, setExcludeNote] = useState<string>("");
   const [excludeSaving, setExcludeSaving] = useState<boolean>(false);
 
-  const refreshProgress = useCallback(async () => {
+  const progressFetchedMatricRef = useRef<string | null>(null);
+  const progressInFlightRef = useRef<boolean>(false);
+
+  const refreshProgress = useCallback(async (force = false) => {
     if (!student?.matric_no) return;
+    if (!force && (progressInFlightRef.current || progressFetchedMatricRef.current === student.matric_no)) {
+      return;
+    }
+    progressInFlightRef.current = true;
     setProgressLoading(true);
     setProgressError(null);
     try {
       const data = await api.getProgress(student.matric_no);
+      progressFetchedMatricRef.current = student.matric_no;
       setProgressCategories(data.categories || []);
       setProgressRows(data.rows || []);
       setProgressUnassigned(data.unassigned || []);
@@ -105,6 +113,7 @@ export function StudentView({ student, onBack }: StudentViewProps) {
         setProgressError(msg);
       }
     } finally {
+      progressInFlightRef.current = false;
       setProgressLoading(false);
     }
   }, [student?.matric_no]);
@@ -187,7 +196,7 @@ export function StudentView({ student, onBack }: StudentViewProps) {
       setEditingSlotId(null);
       setSelectedOverrideCourse("");
       setOverrideNote("");
-      await refreshProgress();
+      await refreshProgress(true);
     } catch (err: any) {
       const msg = err?.response?.data?.detail || err?.message || "Failed to save override";
       toast.error(msg);
@@ -201,7 +210,7 @@ export function StudentView({ student, onBack }: StudentViewProps) {
     try {
       await api.deleteProgressOverride(student.matric_no, courseCode);
       toast.success(`Reset override for ${courseCode} back to auto`);
-      await refreshProgress();
+      await refreshProgress(true);
     } catch (err: any) {
       const msg = err?.response?.data?.detail || err?.message || "Failed to reset override";
       toast.error(msg);
@@ -220,7 +229,7 @@ export function StudentView({ student, onBack }: StudentViewProps) {
       toast.success(`Excluded course ${courseCode}`);
       setExcludingCourseCode(null);
       setExcludeNote("");
-      await refreshProgress();
+      await refreshProgress(true);
     } catch (err: any) {
       const msg = err?.response?.data?.detail || err?.message || "Failed to exclude course";
       toast.error(msg);
@@ -234,7 +243,7 @@ export function StudentView({ student, onBack }: StudentViewProps) {
     try {
       await api.deleteProgressOverride(student.matric_no, courseCode);
       toast.success(`Included ${courseCode} back into requirements`);
-      await refreshProgress();
+      await refreshProgress(true);
     } catch (err: any) {
       const msg = err?.response?.data?.detail || err?.message || "Failed to include course";
       toast.error(msg);
@@ -807,7 +816,12 @@ export function StudentView({ student, onBack }: StudentViewProps) {
                   <span className="text-xs text-gray-400 font-mono">—</span>
                 )}
               </div>
-              {!progressError && currentCredits !== null && totalRequiredCredits !== null && (
+              {progressLoading && (
+                <div className="w-full bg-gray-100 h-3 rounded-full overflow-hidden animate-pulse">
+                  <div className="bg-gray-300 h-full rounded-full w-1/3" />
+                </div>
+              )}
+              {!progressLoading && !progressError && currentCredits !== null && totalRequiredCredits !== null && (
                 <div className="w-full bg-gray-100 h-3 rounded-full overflow-hidden">
                   <div 
                     className="bg-emerald-500 h-full rounded-full transition-all duration-500" 
@@ -1107,8 +1121,40 @@ export function StudentView({ student, onBack }: StudentViewProps) {
           </div>
         </CardHeader>
         <CardContent className="p-6 space-y-6">
+          {/* Skeleton while progress is loading */}
           {progressLoading && (
-            <p className="text-xs text-gray-400 animate-pulse">Loading requirement matching…</p>
+            <div className="space-y-6 animate-pulse">
+              <div>
+                <div className="h-3.5 bg-gray-200 rounded w-1/4 mb-3" />
+                <div className="space-y-3">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="space-y-1">
+                      <div className="flex justify-between">
+                        <div className="h-3 bg-gray-200 rounded w-1/3" />
+                        <div className="h-3 bg-gray-200 rounded w-16" />
+                      </div>
+                      <div className="w-full bg-gray-100 rounded-full h-2">
+                        <div className="bg-gray-200 h-2 rounded-full w-1/2" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="border border-gray-200 rounded-lg overflow-hidden p-4 space-y-3">
+                <div className="h-3.5 bg-gray-200 rounded w-1/4 mb-4" />
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <div key={i} className="flex items-center gap-4 py-2 border-b border-gray-100">
+                    <div className="h-4 bg-gray-200 rounded w-16" />
+                    <div className="h-4 bg-gray-100 rounded flex-1" />
+                    <div className="h-4 bg-gray-200 rounded w-8" />
+                    <div className="h-4 bg-gray-100 rounded w-20" />
+                    <div className="h-4 bg-gray-100 rounded w-24" />
+                    <div className="h-4 bg-gray-200 rounded w-16" />
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
           {!progressLoading && progressError && (
             <div className="flex items-start gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3">

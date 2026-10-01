@@ -3,9 +3,20 @@ Smart Academic Assessment System - Degree Audit Processing Endpoints
 """
 
 import uuid
+import asyncio
+import time
+import logging
 import fitz  # PyMuPDF
 from fastapi import APIRouter, HTTPException, status, Depends
 from typing import Dict, Any, List, Optional
+
+logger = logging.getLogger("app.v1.endpoints.audit")
+if not logger.handlers:
+    _h = logging.StreamHandler()
+    _h.setFormatter(logging.Formatter("[%(asctime)s] [%(levelname)s] %(name)s: %(message)s"))
+    logger.addHandler(_h)
+logger.setLevel(logging.INFO)
+
 
 try:
     from app.schemas.audit import (
@@ -920,6 +931,8 @@ async def get_student_progress(
     - The student has no cohort assigned.
     - The cohort has no degree template.
     """
+    t_start = time.perf_counter()
+
     jwt_sub = jwt_payload.get("sub")
     if not jwt_sub:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token: missing sub")
@@ -930,7 +943,8 @@ async def get_student_progress(
     if not clean_matric:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="matric_no is required")
 
-    # Load student row
+    # Stage 1: Load student row & verify authorization
+    t_stage1 = time.perf_counter()
     stu_res = (
         supabase_svc.client.table("students")
         .select("matric_no, user_id, advisor_staff_id, tenant_id, cohort_id")
@@ -966,7 +980,7 @@ async def get_student_progress(
 
     tenant_id = student.get("tenant_id") or ""
 
-    # Resolve cohort -> template_id
+    # Resolve cohort id (required)
     cohort_id = student.get("cohort_id")
     if not cohort_id:
         raise HTTPException(
@@ -974,80 +988,118 @@ async def get_student_progress(
             detail=f"Student '{clean_matric}' has no cohort assigned. Assign a cohort before checking progress."
         )
 
-    cohort_res = (
-        supabase_svc.client.table("cohorts")
-        .select("template_id")
-        .eq("id", cohort_id)
-        .limit(1)
-        .execute()
-    )
-    if not cohort_res.data or not cohort_res.data[0].get("template_id"):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Cohort for student '{clean_matric}' has no degree template assigned."
-        )
-    template_id = cohort_res.data[0]["template_id"]
+    stage1_ms = (time.perf_counter() - t_stage1) * 1000.0
+    logger.info(f"[Progress] {clean_matric} Stage 1 (student & auth): {stage1_ms:.2f}ms")
 
-    # Load degree_templates to get total_credits_required
-    tmpl_total: Optional[int] = None
-    dt_res = (
-        supabase_svc.client.table("degree_templates")
-        .select("total_credits_required")
-        .eq("id", template_id)
-        .limit(1)
-        .execute()
-    )
-    if dt_res.data and dt_res.data[0].get("total_credits_required") is not None:
+    # Stage 2: Parallel fetch of independent subsystems
+    t_stage2 = time.perf_counter()
+
+    async def _fetch_template_data():
+        cohort_res = await asyncio.to_thread(
+            lambda: supabase_svc.client.table("cohorts")
+            .select("template_id")
+            .eq("id", cohort_id)
+            .limit(1)
+            .execute()
+        )
+        if not cohort_res.data or not cohort_res.data[0].get("template_id"):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Cohort for student '{clean_matric}' has no degree template assigned."
+            )
+        template_id = cohort_res.data[0]["template_id"]
+
+        def _fetch_dt():
+            return (
+                supabase_svc.client.table("degree_templates")
+                .select("total_credits_required")
+                .eq("id", template_id)
+                .limit(1)
+                .execute()
+            )
+
+        def _fetch_tc():
+            return (
+                supabase_svc.client.table("template_courses")
+                .select("id, course_code, course_name, credit_hour, category, is_elective_slot, slot_no, match_patterns")
+                .eq("template_id", template_id)
+                .execute()
+            )
+
+        dt_res, tc_res = await asyncio.gather(
+            asyncio.to_thread(_fetch_dt),
+            asyncio.to_thread(_fetch_tc),
+        )
+
+        tmpl_total: Optional[int] = None
+        if dt_res.data and dt_res.data[0].get("total_credits_required") is not None:
+            try:
+                tmpl_total = int(dt_res.data[0]["total_credits_required"])
+            except (ValueError, TypeError):
+                tmpl_total = None
+
+        template_rows = tc_res.data or []
+        if not template_rows:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Degree template '{template_id}' has no courses. Upload a template CSV first."
+            )
+        return template_rows, tmpl_total
+
+    def _fetch_academic_records():
+        rec_res = (
+            supabase_svc.client.table("academic_records")
+            .select("course_code, course_name, credits, grade, semester, status")
+            .eq("tenant_id", tenant_id)
+            .eq("matric_no", clean_matric)
+            .execute()
+        )
+        return rec_res.data or []
+
+    def _fetch_repeat_policy():
+        return _load_repeat_policy(tenant_id)
+
+    def _fetch_scale():
         try:
-            tmpl_total = int(dt_res.data[0]["total_credits_required"])
-        except (ValueError, TypeError):
-            tmpl_total = None
+            return load_scale(tenant_id, client=supabase_svc.client)
+        except ValueError as ve:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"No grading scale configured for tenant '{tenant_id}': {ve}"
+            )
 
-    # Load template_courses (real columns: credit_hour, is_elective_slot, slot_no, match_patterns)
-    tc_res = (
-        supabase_svc.client.table("template_courses")
-        .select("id, course_code, course_name, credit_hour, category, is_elective_slot, slot_no, match_patterns")
-        .eq("template_id", template_id)
-        .execute()
-    )
-    template_rows = tc_res.data or []
-    if not template_rows:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Degree template '{template_id}' has no courses. Upload a template CSV first."
+    def _fetch_overrides():
+        ovr_res = (
+            supabase_svc.client.table("elective_assignments")
+            .select("id, kind, template_course_id, course_code, assigned_by_staff_id, note")
+            .eq("tenant_id", tenant_id)
+            .eq("matric_no", clean_matric)
+            .execute()
         )
+        return ovr_res.data or []
 
-    # Load academic_records for this student (all attempts; repeat policy applied in engine)
-    rec_res = (
-        supabase_svc.client.table("academic_records")
-        .select("course_code, course_name, credits, grade, semester, status")
-        .eq("tenant_id", tenant_id)
-        .eq("matric_no", clean_matric)
-        .execute()
+    (
+        (template_rows, tmpl_total),
+        records,
+        repeat_policy,
+        scale,
+        overrides,
+    ) = await asyncio.gather(
+        _fetch_template_data(),
+        asyncio.to_thread(_fetch_academic_records),
+        asyncio.to_thread(_fetch_repeat_policy),
+        asyncio.to_thread(_fetch_scale),
+        asyncio.to_thread(_fetch_overrides),
     )
-    records = rec_res.data or []
 
-    # Load tenant grading scale + repeat_policy
-    repeat_policy = _load_repeat_policy(tenant_id)
-
-    try:
-        scale = load_scale(tenant_id, client=supabase_svc.client)
-    except ValueError as ve:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"No grading scale configured for tenant '{tenant_id}': {ve}"
-        )
-
-    # Load overrides from elective_assignments table (4B)
-    ovr_res = (
-        supabase_svc.client.table("elective_assignments")
-        .select("id, kind, template_course_id, course_code, assigned_by_staff_id, note")
-        .eq("tenant_id", tenant_id)
-        .eq("matric_no", clean_matric)
-        .execute()
+    stage2_ms = (time.perf_counter() - t_stage2) * 1000.0
+    logger.info(
+        f"[Progress] {clean_matric} Stage 2 (parallel fetch): {stage2_ms:.2f}ms "
+        f"(records={len(records)}, overrides={len(overrides)}, template_courses={len(template_rows)})"
     )
-    overrides = ovr_res.data or []
 
+    # Stage 3: Progress Engine Computation
+    t_stage3 = time.perf_counter()
     try:
         result = compute_progress(
             template_rows=template_rows,
@@ -1063,7 +1115,12 @@ async def get_student_progress(
             detail=f"Progress computation failed: {e}"
         )
 
+    stage3_ms = (time.perf_counter() - t_stage3) * 1000.0
+    total_ms = (time.perf_counter() - t_start) * 1000.0
+    logger.info(f"[Progress] {clean_matric} Stage 3 (compute_progress): {stage3_ms:.2f}ms | Total: {total_ms:.2f}ms")
+
     return {"matric_no": clean_matric, **result}
+
 
 
 @router.put("/progress/{matric_no}/overrides", status_code=status.HTTP_200_OK)

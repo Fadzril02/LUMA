@@ -43,6 +43,11 @@ export function StudentPortal() {
     required: null,
     progressError: null,
   });
+  const [progressData, setProgressData] = useState<any>(null);
+  const [progressLoading, setProgressLoading] = useState<boolean>(true);
+  const [progressError, setProgressError] = useState<string | null>(null);
+  const fetchedMatricRef = React.useRef<string | null>(null);
+  const inFlightRef = React.useRef<boolean>(false);
   const [hasUnseenNotes, setHasUnseenNotes] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
 
@@ -92,11 +97,23 @@ export function StudentPortal() {
     // Profile must be loaded before we can fetch student data
     if (!profile?.matric_no) {
       setLoadingData(false);
+      setProgressLoading(false);
       return;
     }
 
-    const fetchDashboardData = async () => {
+    const fetchDashboardData = async (force = false) => {
+      if (!profile?.matric_no) {
+        setLoadingData(false);
+        setProgressLoading(false);
+        return;
+      }
+      if (!force && (inFlightRef.current || fetchedMatricRef.current === profile.matric_no)) {
+        return;
+      }
+      inFlightRef.current = true;
       setLoadingData(true);
+      setProgressLoading(true);
+
       try {
         // ── Pending upload lockout check ────────────────────────────────────
         try {
@@ -153,20 +170,26 @@ export function StudentPortal() {
 
         setCourseHistory(historyMapped);
 
-        // ── Single source of truth for totals: api.getProgress().totals ────
+        // ── Single source of truth for totals & progress: api.getProgress() ────
         let liveEarned: number | null = null;
         let dynamicRequiredCredits: number | null = null;
         let progressErrorMsg: string | null = null;
 
+        setProgressError(null);
         try {
-          const progressData = await api.getProgress(profile.matric_no);
-          if (progressData?.totals) {
-            liveEarned = progressData.totals.earned;
-            dynamicRequiredCredits = progressData.totals.required;
+          const pData = await api.getProgress(profile.matric_no);
+          setProgressData(pData);
+          if (pData?.totals) {
+            liveEarned = pData.totals.earned;
+            dynamicRequiredCredits = pData.totals.required;
           }
         } catch (progErr: any) {
           progressErrorMsg = progErr?.response?.data?.detail || progErr?.message || "Failed to load progress";
+          const formattedMsg = progErr?.response?.status === 409 ? `ℹ️ ${progressErrorMsg}` : progressErrorMsg;
+          setProgressError(formattedMsg);
           console.warn("[StudentPortal] Progress fetch warning:", progressErrorMsg);
+        } finally {
+          setProgressLoading(false);
         }
 
         const liveCgpa = studentCgpa && Number(studentCgpa) > 0 ? studentCgpa : "0.00";
@@ -213,12 +236,15 @@ export function StudentPortal() {
       } catch (err) {
         console.error("[StudentPortal] Dashboard load error:", err);
       } finally {
+        inFlightRef.current = false;
+        fetchedMatricRef.current = profile.matric_no;
         setLoadingData(false);
+        setProgressLoading(false);
       }
     };
 
     fetchDashboardData();
-  }, [profile]);
+  }, [profile?.matric_no]);
 
   // On opening the Advising Notes tab, set student_seen_at = now() for unseen logs
   useEffect(() => {
@@ -375,6 +401,7 @@ export function StudentPortal() {
 
       setIsVerificationModalOpen(false);
       setIsLockedOut(true);
+      fetchedMatricRef.current = null;
       toast.success("Slip verified and sent to your Advisor for official approval!");
     } catch (err: any) {
       toast.error(err?.response?.data?.detail || "Failed to submit ticket. Please try again.");
@@ -546,6 +573,9 @@ export function StudentPortal() {
                   totalRequiredCredits={stats.required} 
                   courses={courseHistory} 
                   matricNo={studentMatric}
+                  progressData={progressData}
+                  progressLoading={progressLoading}
+                  progressError={progressError}
                 />
               )}
               {activeTab === "whatif" && (

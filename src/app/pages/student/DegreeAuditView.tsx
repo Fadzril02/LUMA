@@ -12,6 +12,15 @@ export interface DegreeAuditViewProps {
   totalRequiredCredits?: number;
   courses?: any[];
   matricNo?: string;
+  progressData?: {
+    categories?: Array<{ category: string; required: number; earned: number }>;
+    rows?: any[];
+    unassigned?: any[];
+    warnings?: string[];
+    totals?: { required: number; earned: number } | null;
+  } | null;
+  progressLoading?: boolean;
+  progressError?: string | null;
 }
 
 export function DegreeAuditView({
@@ -20,6 +29,9 @@ export function DegreeAuditView({
   totalRequiredCredits: propRequiredCredits,
   courses: propCourses,
   matricNo: propMatric,
+  progressData: propProgressData,
+  progressLoading: propProgressLoading,
+  progressError: propProgressError,
 }: DegreeAuditViewProps) {
   const { profile, user } = useAuth();
 
@@ -32,7 +44,7 @@ export function DegreeAuditView({
     !propCourses || propCgpa === undefined || propEarnedCredits === undefined
   );
 
-  // Progress engine state (from /audit/progress/{matric})
+  // Progress engine state (from /audit/progress/{matric}) if not passed as prop
   const [progressCategories, setProgressCategories] = useState<Array<{ category: string; required: number; earned: number }>>([]);
   const [progressRows, setProgressRows] = useState<any[]>([]);
   const [progressUnassigned, setProgressUnassigned] = useState<any[]>([]);
@@ -40,6 +52,15 @@ export function DegreeAuditView({
   const [progressTotals, setProgressTotals] = useState<{ required: number; earned: number } | null>(null);
   const [progressLoading, setProgressLoading] = useState<boolean>(false);
   const [progressError, setProgressError] = useState<string | null>(null);
+
+  // Resolved effective progress values (prioritize lifted props)
+  const effectiveProgressCategories = propProgressData !== undefined ? (propProgressData?.categories || []) : progressCategories;
+  const effectiveProgressRows = propProgressData !== undefined ? (propProgressData?.rows || []) : progressRows;
+  const effectiveProgressUnassigned = propProgressData !== undefined ? (propProgressData?.unassigned || []) : progressUnassigned;
+  const effectiveProgressWarnings = propProgressData !== undefined ? (propProgressData?.warnings || []) : progressWarnings;
+  const effectiveProgressTotals = propProgressData !== undefined ? (propProgressData?.totals || null) : progressTotals;
+  const effectiveProgressLoading = propProgressLoading !== undefined ? propProgressLoading : progressLoading;
+  const effectiveProgressError = propProgressError !== undefined ? propProgressError : progressError;
 
   useEffect(() => {
     let isMounted = true;
@@ -51,14 +72,13 @@ export function DegreeAuditView({
     };
   }, []);
 
-
   const activeMatric = propMatric || profile?.matric_no || "";
 
   // Derive final display values cleanly during render: props always override local fetches
   const liveCgpa = Number(propCgpa ?? fetchedCgpa ?? 0).toFixed(2);
   // Single source of truth for totals: api.getProgress().totals (no hardcoded fallback)
-  const liveEarnedCredits = progressTotals?.earned ?? null;
-  const totalRequiredCredits = progressTotals?.required ?? null;
+  const liveEarnedCredits = effectiveProgressTotals?.earned ?? null;
+  const totalRequiredCredits = effectiveProgressTotals?.required ?? null;
   const currentCourses = propCourses ?? courseList;
 
   // Dynamic progress percentage: (live_earned_credits / total_required_credits) * 100
@@ -66,6 +86,7 @@ export function DegreeAuditView({
     totalRequiredCredits && totalRequiredCredits > 0 && liveEarnedCredits !== null
       ? Math.min(100, Math.round((liveEarnedCredits / totalRequiredCredits) * 100))
       : 0;
+
 
   useEffect(() => {
     // If all essential data was passed via props, skip redundant DB fetches
@@ -163,8 +184,9 @@ export function DegreeAuditView({
     };
   }, [propCourses, propCgpa, propEarnedCredits, activeMatric, user?.id]);
 
-  // Fetch progress engine results separately (once matric is known)
+  // Fetch progress engine results separately ONLY if not passed via props
   useEffect(() => {
+    if (propProgressData !== undefined) return;
     if (!activeMatric) return;
     let isMounted = true;
     setProgressLoading(true);
@@ -191,7 +213,7 @@ export function DegreeAuditView({
       })
       .finally(() => { if (isMounted) setProgressLoading(false); });
     return () => { isMounted = false; };
-  }, [activeMatric, user?.id]);
+  }, [activeMatric, user?.id, propProgressData]);
 
   // Filter approved and non-passing courses
   const approvedCourses = currentCourses.filter((c) => {
@@ -220,7 +242,7 @@ export function DegreeAuditView({
   });
 
   // dynamicCategories is now sourced from the progress engine API (no hardcoded prefixes)
-  const dynamicCategories = progressCategories.map((c, idx) => ({
+  const dynamicCategories = effectiveProgressCategories.map((c: any, idx: number) => ({
     ...c,
     color: ["bg-blue-900", "bg-blue-700", "bg-blue-500", "bg-blue-400", "bg-blue-300"][idx % 5],
   }));
@@ -336,10 +358,10 @@ export function DegreeAuditView({
               <BookOpen size={18} />
             </div>
           </div>
-          {progressLoading ? (
-            <p className="text-xs text-gray-400 mt-3 animate-pulse">Loading credits…</p>
-          ) : progressError ? (
-            <p className="text-xs text-rose-600 mt-3 font-semibold leading-relaxed">{progressError}</p>
+          {effectiveProgressLoading ? (
+            <div className="mt-3 h-8 w-28 bg-gray-200 rounded animate-pulse" />
+          ) : effectiveProgressError ? (
+            <p className="text-xs text-rose-600 mt-3 font-semibold leading-relaxed">{effectiveProgressError}</p>
           ) : liveEarnedCredits !== null && totalRequiredCredits !== null ? (
             <div className="mt-3 flex items-baseline gap-1.5">
               <span className="text-4xl font-extrabold text-gray-900 tracking-tight font-mono">
@@ -362,10 +384,10 @@ export function DegreeAuditView({
               <CheckCircle size={18} />
             </div>
           </div>
-          {progressLoading ? (
-            <p className="text-xs text-gray-400 mt-3 animate-pulse">Calculating…</p>
-          ) : progressError ? (
-            <p className="text-xs text-rose-600 mt-3 font-semibold leading-relaxed">{progressError}</p>
+          {effectiveProgressLoading ? (
+            <div className="mt-3 h-8 w-20 bg-gray-200 rounded animate-pulse" />
+          ) : effectiveProgressError ? (
+            <p className="text-xs text-rose-600 mt-3 font-semibold leading-relaxed">{effectiveProgressError}</p>
           ) : liveEarnedCredits !== null && totalRequiredCredits !== null ? (
             <div className="mt-3 flex items-baseline gap-1.5">
               <span className="text-4xl font-extrabold text-gray-900 tracking-tight font-mono">
@@ -393,10 +415,10 @@ export function DegreeAuditView({
           </div>
           <div className="text-right">
             <span className="text-xs font-semibold text-gray-500">Overall Progress</span>
-            {progressLoading ? (
-              <p className="text-xs text-gray-400 animate-pulse font-mono">Loading…</p>
-            ) : progressError ? (
-              <p className="text-xs text-rose-600 font-semibold">{progressError}</p>
+            {effectiveProgressLoading ? (
+              <div className="h-4 w-28 bg-gray-200 rounded animate-pulse ml-auto mt-1" />
+            ) : effectiveProgressError ? (
+              <p className="text-xs text-rose-600 font-semibold">{effectiveProgressError}</p>
             ) : liveEarnedCredits !== null && totalRequiredCredits !== null ? (
               <p className="text-sm font-extrabold text-blue-900 font-mono">
                 {liveEarnedCredits} / {totalRequiredCredits} Cr ({progressPercentage}%)
@@ -419,47 +441,84 @@ export function DegreeAuditView({
 
         {/* Dynamic Category Progress Bars */}
         <div className="space-y-6">
-          {dynamicCategories.map((item, idx) => {
-            const catPercentage = Math.min(
-              100,
-              item.required > 0 ? Math.round((item.earned / item.required) * 100) : 0
-            );
-
-            return (
-              <div key={idx} className="space-y-2">
-                <div className="flex justify-between items-end">
-                  <span className="text-xs font-bold text-gray-700">{item.category}</span>
-                  <div className="text-right">
-                    <span className="text-sm font-extrabold text-gray-900 font-mono">{item.earned}</span>
-                    <span className="text-xs text-gray-500 font-medium font-mono"> / {item.required} Credits</span>
-                    <span className="ml-2 text-xs font-semibold text-blue-900 font-mono">({catPercentage}%)</span>
+          {effectiveProgressLoading ? (
+            <div className="space-y-4 animate-pulse">
+              {[1, 2, 3].map((n) => (
+                <div key={n} className="space-y-2">
+                  <div className="flex justify-between">
+                    <div className="h-3.5 bg-gray-200 rounded w-1/4" />
+                    <div className="h-3.5 bg-gray-200 rounded w-16" />
+                  </div>
+                  <div className="w-full bg-gray-100 rounded-full h-2.5">
+                    <div className="bg-gray-200 h-2.5 rounded-full w-1/3" />
                   </div>
                 </div>
+              ))}
+            </div>
+          ) : (
+            dynamicCategories.map((item, idx) => {
+              const catPercentage = Math.min(
+                100,
+                item.required > 0 ? Math.round((item.earned / item.required) * 100) : 0
+              );
 
-                <div className="w-full bg-gray-100 rounded-full h-2.5 overflow-hidden">
-                  <div
-                    className={`${item.color} h-2.5 rounded-full transition-all duration-700 ease-out`}
-                    style={{ width: `${catPercentage}%` }}
-                  />
+              return (
+                <div key={idx} className="space-y-2">
+                  <div className="flex justify-between items-end">
+                    <span className="text-xs font-bold text-gray-700">{item.category}</span>
+                    <div className="text-right">
+                      <span className="text-sm font-extrabold text-gray-900 font-mono">{item.earned}</span>
+                      <span className="text-xs text-gray-500 font-medium font-mono"> / {item.required} Credits</span>
+                      <span className="ml-2 text-xs font-semibold text-blue-900 font-mono">({catPercentage}%)</span>
+                    </div>
+                  </div>
+
+                  <div className="w-full bg-gray-100 rounded-full h-2.5 overflow-hidden">
+                    <div
+                      className={`${item.color} h-2.5 rounded-full transition-all duration-700 ease-out`}
+                      style={{ width: `${catPercentage}%` }}
+                    />
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-        {/* Progress loading/error state */}
-          {progressLoading && (
-            <p className="text-xs text-gray-400 mt-4 animate-pulse">Loading requirement matching…</p>
+              );
+            })
           )}
-          {!progressLoading && progressError && (
+          {!effectiveProgressLoading && effectiveProgressError && (
             <div className="mt-4 flex items-start gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3">
               <Info size={14} className="shrink-0 mt-0.5" />
-              <span>{progressError}</span>
+              <span>{effectiveProgressError}</span>
             </div>
           )}
         </div>
       </div>
 
+      {/* Requirement Matching Table Skeleton */}
+      {effectiveProgressLoading && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 animate-pulse">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-9 h-9 rounded-lg bg-gray-200" />
+            <div className="space-y-2 flex-1">
+              <div className="h-4 bg-gray-200 rounded w-1/4" />
+              <div className="h-3 bg-gray-100 rounded w-1/3" />
+            </div>
+          </div>
+          <div className="space-y-3">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <div key={i} className="flex items-center gap-4 py-2.5 border-b border-gray-50">
+                <div className="h-4 bg-gray-200 rounded w-20" />
+                <div className="h-4 bg-gray-100 rounded flex-1" />
+                <div className="h-4 bg-gray-200 rounded w-8" />
+                <div className="h-4 bg-gray-100 rounded w-24" />
+                <div className="h-4 bg-gray-100 rounded w-28" />
+                <div className="h-4 bg-gray-200 rounded w-16" />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Requirement Matching Table (from progress engine) */}
-      {!progressLoading && progressRows.length > 0 && (
+      {!effectiveProgressLoading && effectiveProgressRows.length > 0 && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200">
           <div className="flex items-center gap-3 px-6 pt-5 pb-4 border-b border-gray-100">
             <div className="w-9 h-9 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-900">
@@ -483,7 +542,7 @@ export function DegreeAuditView({
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {progressRows.map((row, i) => (
+                {effectiveProgressRows.map((row, i) => (
                   <tr key={row.template_course_id || i} className={row.status === 'done' ? '' : 'bg-gray-50/60'}>
                     <td className="px-4 py-2.5 font-mono font-bold text-gray-900 whitespace-nowrap">
                       {row.code}
@@ -541,20 +600,20 @@ export function DegreeAuditView({
       )}
 
       {/* Engine Warnings */}
-      {progressWarnings.length > 0 && (
+      {effectiveProgressWarnings.length > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-1">
           <div className="flex items-center gap-2 mb-2">
             <AlertTriangle size={14} className="text-amber-700" />
             <span className="text-xs font-bold text-amber-800">Progress Engine Warnings</span>
           </div>
-          {progressWarnings.map((w, i) => (
+          {effectiveProgressWarnings.map((w, i) => (
             <p key={i} className="text-xs text-amber-700 ml-5">{w}</p>
           ))}
         </div>
       )}
 
       {/* Unassigned Courses */}
-      {progressUnassigned.length > 0 && (
+      {effectiveProgressUnassigned.length > 0 && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
           <div className="flex items-center gap-2 mb-3">
             <Info size={14} className="text-blue-700" />
@@ -564,7 +623,7 @@ export function DegreeAuditView({
             These passing courses are recorded but do not map to any row in your degree template.
           </p>
           <div className="flex flex-wrap gap-2">
-            {progressUnassigned.map((u) => (
+            {effectiveProgressUnassigned.map((u) => (
               <span
                 key={u.course_code}
                 className={`inline-flex flex-col gap-1 px-3 py-1.5 rounded-lg text-xs font-mono font-semibold border ${
