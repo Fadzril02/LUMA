@@ -61,6 +61,18 @@ except ImportError:
     from backend.app.core.auth import verify_advisor_jwt
 
 router = APIRouter(prefix="/audit", tags=["Degree Audit"])
+
+
+def _load_repeat_policy(tenant_id: str) -> str:
+    """Fail loud: a tenant without a readable repeat_policy is a config error, never default."""
+    try:
+        t_res = supabase_svc.client.table("tenants").select("repeat_policy").eq("id", tenant_id).limit(1).execute()
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"Could not load tenant settings: {e}")
+    policy = (t_res.data[0].get("repeat_policy") if t_res.data else None)
+    if not policy:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Tenant '{tenant_id}' has no repeat_policy configured.")
+    return policy
 supabase_svc = SupabaseService()
 
 
@@ -529,14 +541,7 @@ async def finalize_approval(
             detail="Student matric_number is required and cannot be empty."
         )
 
-    repeat_policy = "latest"
-    if supabase_svc.client:
-        try:
-            t_res = supabase_svc.client.table("tenants").select("repeat_policy").eq("id", tenant_id).limit(1).execute()
-            if t_res.data and t_res.data[0].get("repeat_policy"):
-                repeat_policy = t_res.data[0]["repeat_policy"]
-        except Exception:
-            pass
+    repeat_policy = _load_repeat_policy(tenant_id)
 
     # Validate explicit semester and academic session (Requirement: missing semester/session -> 422, no fallback)
     if request.semester is None or str(request.semester).strip() == "" or not request.academic_session or str(request.academic_session).strip() == "":
@@ -1006,19 +1011,7 @@ async def get_student_progress(
     records = rec_res.data or []
 
     # Load tenant grading scale + repeat_policy
-    repeat_policy = "latest"
-    try:
-        t_res = (
-            supabase_svc.client.table("tenants")
-            .select("repeat_policy")
-            .eq("id", tenant_id)
-            .limit(1)
-            .execute()
-        )
-        if t_res.data and t_res.data[0].get("repeat_policy"):
-            repeat_policy = t_res.data[0]["repeat_policy"]
-    except Exception:
-        pass
+    repeat_policy = _load_repeat_policy(tenant_id)
 
     try:
         scale = load_scale(tenant_id, client=supabase_svc.client)
