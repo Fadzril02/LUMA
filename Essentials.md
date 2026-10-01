@@ -195,7 +195,6 @@ src/
   app/pages/advisor/*        AdvisorPortal/Layout, AdvisorDashboard, CorrectionsQueue, StudentsList, StudentView
   app/pages/admin/*          curriculum/intake/elective/prereq tools
   pages/auth/*               StudentAuth, AdvisorLogin, CompleteRegistration
-  pages/advisor/*            LEGACY / dead (fake radar scores) — remove
   context/AuthContext.tsx    profile fetch deferred with setTimeout inside onAuthStateChange
   lib/api.ts                 backend client (Bearer token); lib/gradeScale.ts; lib/tenants.ts; lib/supabase.ts
 

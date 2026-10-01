@@ -49,7 +49,7 @@ Sections 1–5 were written at v1.0.0 and are partly outdated (e.g. `registratio
 ### 0.5 API (prefix `/api/v1`)
 | Endpoint | Who | Purpose |
 |---|---|---|
-| `GET /health` | public | health (⚠ currently returns key prefixes — remove before launch) |
+| `GET /health` | public | health: `{status, environment}` only (also used as Render wake-up ping) |
 | `POST /register/student` | new user | cohort code + matric + name; matric checked against `tenants.matric_regex` |
 | `POST /register/advisor` | new user | invite code |
 | `GET /register/validate-cohort/{code}` | public | cohort lookup |
@@ -59,7 +59,6 @@ Sections 1–5 were written at v1.0.0 and are partly outdated (e.g. `registratio
 | `POST /audit/submit-verification` | student | confirm/edit rows; server computes `is_altered` vs `original_courses` |
 | `POST /audit/finalize-approval` | advisor (own advisee) | write `academic_records` |
 | `POST /audit/reject-document` | advisor (own advisee) | reject |
-| `POST /audit/process-storage` | advisor | legacy path; requires document row (removal pending decision) |
 | `POST /audit/purge-document` | backend | PDPA purge |
 | `POST /advising-logs/{log_id}/notify` | advisor | email student via Resend; no note text in email; 1/student/hour |
 | `PATCH /students/{matric_no}/exemptions` | advisor | exemptions |
@@ -74,7 +73,7 @@ Sections 1–5 were written at v1.0.0 and are partly outdated (e.g. `registratio
 01–16 legacy (written against a drifted DB; staging is built from a prod schema dump instead). 17 tenant curriculum · 18 tenants · 19 advisor_invites · 20 RLS lockdown · 21 drop email advisor policies · 22 elective slots · 23 cohorts lockdown · 24 advising_logs v2 · 25 advising notifications · 26 grading scales · 27 record attempts · 28 roster view · 29 uploaded_documents lockdown · 30 storage + degree_audits RLS (**apply after push**). From 30 on: apply to staging first, then prod.
 
 ### 0.8 Known gaps
-- `/health` leaks key prefixes. `DegreeAuditView.tsx` has a UTM course-prefix regex. Dead code in `src/pages/advisor/` (fake radar scores) and old contest code. `students.matric_no` global unique. Render free tier cold starts.
+- `DegreeAuditView.tsx` has a UTM course-prefix regex. Old contest-registration code may remain in auth pages. `students.matric_no` global unique. Render free tier cold starts.
 
 ---
 

@@ -6,22 +6,6 @@ from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 
 
-class StorageAuditRequest(BaseModel):
-    """
-    Request model for processing a PDF directly from Supabase Storage.
-    Eliminates multipart upload overhead to FastAPI.
-    """
-    tenant_id: Optional[str] = Field(None, description="Multi-tenant identifier (deprecated: extracted server-side from JWT)")
-    storage_path: str = Field(..., description="Path inside the transcripts bucket, e.g., 'transcripts/{advisor_id}/{filename}'")
-    student_id: Optional[str] = Field(None, description="UUID of existing student, or None to auto-create/lookup via matric")
-    advisor_id: str = Field(..., description="UUID of authenticated advisor")
-    university_id: str = Field(..., description="UUID of the university")
-    matric_number: Optional[str] = Field(None, description="Student matric number if known upfront")
-    curriculum_year: Optional[str] = Field(None, description="Curriculum intake year")
-    program_code: Optional[str] = Field(None, description="Program code")
-    cohort_id: Optional[str] = Field(None, description="UUID of student's cohort")
-
-
 class TranscriptProcessRequest(BaseModel):
     """
     Dynamic Multi-Tenant Request model for processing a transcript from storage.

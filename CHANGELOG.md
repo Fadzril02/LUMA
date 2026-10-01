@@ -4,7 +4,9 @@ Newest first. Tag format `v0.x-name`. Note: git tags for these milestones are no
 
 ## Unreleased
 - Migration 30: `academic-slips` bucket private; uploads only to own `slips/<matric>_...` path; reads only for files listed in `uploaded_documents` the user can see; `degree_audits` read policies.
-- `/audit/process-storage` ownership check (advisor-only, document row required).
+- Removed `/audit/process-storage` (bypassed student verification) and dead `src/pages/advisor/` + `StudentRadarChart`.
+- `/health` stripped to `{status, environment}`.
+- Fix: extract crashed saving results (`doc` shadowed by PyMuPDF document).
 - CORS: wildcard origins replaced with `BACKEND_CORS_ORIGIN_REGEX`.
 - DEPLOYMENT.md (staging/production plan).
 
