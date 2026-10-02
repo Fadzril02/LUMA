@@ -38,7 +38,17 @@ def get_supabase_client() -> Optional[Client]:
             "The anon key cannot bypass RLS for administrative operations. Supply the real service_role key."
         )
 
-    return create_client(url, sr_key)
+    # Force HTTP/1.1 with a connection pool. The default shared HTTP/2 connection gets
+    # dropped (GOAWAY / "ConnectionTerminated" / "Server disconnected") when several
+    # threads query in parallel (e.g. /audit/progress). HTTP/1.1 pools are thread-safe.
+    import httpx
+    from supabase.lib.client_options import SyncClientOptions
+    http_client = httpx.Client(
+        http2=False,
+        timeout=httpx.Timeout(30.0),
+        limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+    )
+    return create_client(url, sr_key, options=SyncClientOptions(httpx_client=http_client))
 
 
 class SupabaseService:

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { compareSemesters, semesterHeading } from "../../../lib/semester";
 import { BookOpen, ChevronDown, ChevronUp, AlertTriangle } from "lucide-react";
 import { fetchGradeScale, findGradeDefinition, GradeScaleRow } from "../../../lib/gradeScale";
 
@@ -27,7 +28,7 @@ export function AcademicHistoryView({ courseHistory = [] }: { courseHistory?: an
     return acc;
   }, {} as Record<string, any[]>);
 
-  const sortedSemesters = Object.keys(groupedResults).sort();
+  const sortedSemesters = Object.keys(groupedResults).sort(compareSemesters);
 
   const toggleSem = (sem: string) => {
     setExpandedSems(prev => prev.includes(sem) ? prev.filter(s => s !== sem) : [...prev, sem]);
@@ -62,7 +63,7 @@ export function AcademicHistoryView({ courseHistory = [] }: { courseHistory?: an
                 className="w-full px-6 py-4 flex justify-between items-center bg-gray-50/70 hover:bg-gray-100/70 transition-colors cursor-pointer text-left"
               >
                 <div>
-                  <h3 className="font-bold text-gray-900 text-sm">Semester {sem}</h3>
+                  <h3 className="font-bold text-gray-900 text-sm">{semesterHeading(sem, sortedSemesters)}</h3>
                   <p className="text-xs text-gray-500 mt-0.5">{semCourses.length} Registered Courses</p>
                 </div>
                 {isExpanded ? <ChevronUp className="text-gray-400 w-5 h-5" /> : <ChevronDown className="text-gray-400 w-5 h-5" />}
