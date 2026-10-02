@@ -1,3 +1,4 @@
+import { supabase } from '../../lib/supabase';
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Navigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
@@ -119,6 +120,9 @@ export function CompleteRegistration() {
         full_name: cleanName,
       });
 
+      // Role + tenant were just written to app_metadata server-side; refresh so the
+      // next API call carries them (stale token -> 'Tenant ID cannot be securely verified').
+      await supabase.auth.refreshSession();
       setIsSuccess(true);
       window.location.assign('/student');
     } catch (err: any) {
@@ -164,6 +168,9 @@ export function CompleteRegistration() {
         department: cleanDept,
       });
 
+      // Role + tenant were just written to app_metadata server-side; refresh so the
+      // next API call carries them (stale token -> 'Tenant ID cannot be securely verified').
+      await supabase.auth.refreshSession();
       setIsSuccess(true);
       window.location.assign('/advisor');
     } catch (err: any) {

@@ -78,70 +78,36 @@ test on staging (advisor + student smoke test)
 
 ## Setting Up a Staging Environment from Scratch
 
-### 1. Schema baseline — dump production, restore to staging
+Done once on 2026-10-02. Current staging: Supabase `wgdrmocjwpfcfkqgziri` (Singapore), Render `syngrad-stag` (https://syngrad-stag.onrender.com, branch `dev`), Vercel project `luma` Preview for branch `dev` (https://luma-git-dev-fadzril-my.vercel.app).
 
-> **Why not replay migrations 01–29?**
-> Early migrations (01–16) were written against a drifted database and are not guaranteed
-> to replay cleanly on a blank schema. Use the production dump as the authoritative
-> baseline. Migrations **30 and later** are applied to both environments going forward.
-
-**Linux / macOS / WSL:**
-
-```bash
-# Dump schema only (no data) from production
-supabase db dump --db-url "$PROD_DB_URL" --schema public -f schema.sql
-
-# Apply to a freshly created staging Supabase project
-psql "$STAGING_DB_URL" -f schema.sql
+### 1. Copy schema + reference data (Windows, PostgreSQL 17 client tools)
+Use each project's **Connect → Direct → Session pooler** URI (port 5432). Command Prompt:
 ```
-
-**Windows (no CLI / WSL):**
-
-1. Run the `supabase db dump` command above in WSL or on a Linux machine, then copy `schema.sql` locally.
-2. Open the staging project in the **Supabase dashboard → SQL Editor**.
-3. Paste the contents of `schema.sql` and click **Run**.
-
-After the schema is applied, future migrations are run individually:
-
-```bash
-psql "$STAGING_DB_URL" -f supabase/migrations/30_next_feature.sql
+pg_dump "PROD_URI" --schema=public --schema-only --no-owner -f schema.sql
+pg_dump "PROD_URI" --data-only --no-owner --table=public.tenants --table=public.grade_scales --table=public.grade_scale_presets -f seed.sql
+psql "STAGING_URI" -f schema.sql
+psql "STAGING_URI" -f seed.sql
 ```
+A schema-only dump copies NO rows — tenants and grade scales must come from `seed.sql`. Never copy student data (PDPA). Keep the URIs (they contain DB passwords) out of chats and the repo; reset the DB password if exposed.
 
-### 2. Auth settings (Supabase dashboard)
-
-| Setting             | Value                                               |
-|---------------------|-----------------------------------------------------|
-| Confirm email       | **ON**                                              |
-| SMTP                | Configure with your Resend/SendGrid credentials     |
-| Site URL            | Staging frontend URL (Vercel preview or fixed URL)  |
-| Redirect URLs       | Add the staging frontend URL + `/complete-registration` |
-
-### 3. Seed advisor invite code
-
-The UTM tenant and its grading scale are created by the schema copy
-(originally from migrations 18 and 26). Only an invite code needs to be seeded manually.
-
-Run in the Supabase SQL editor or via `psql`:
-
+### 2. Storage (NOT included in a public-schema dump)
 ```sql
--- UTM tenant + grading scale are created by the schema copy (migrations 18 and 26)
-INSERT INTO advisor_invites (code, tenant_id, expires_at)
-VALUES (upper(substr(md5(random()::text), 1, 8)), 'UTM', now() + interval '30 days')
-RETURNING code;
+insert into storage.buckets (id, name, public) values ('academic-slips','academic-slips',false) on conflict do nothing;
+```
+Then create the two storage policies from migration 30 and VERIFY:
+`select policyname, cmd from pg_policies where schemaname='storage';` must return 2 rows (they silently did not stick the first time).
+
+### 3. Supabase Auth (staging)
+Confirm email ON; custom SMTP (smtp.resend.com:465, user `resend`, own staging Resend key, sender name "SynGrad Staging"); **URL Configuration → Site URL = staging frontend URL, Redirect URLs = `<staging URL>/**`** (otherwise email links go to localhost:3000).
+
+### 4. Invite code
+```sql
+insert into advisor_invites (code, tenant_id, expires_at)
+values (upper(substr(md5(random()::text),1,8)), 'UTM', now() + interval '30 days') returning code;
 ```
 
-Copy the returned `code` — give it to the staging advisor to complete registration.
+### 5. Render staging service
+New Web Service (same project, environment "Staging"), branch `dev`, Python 3, Singapore, Free. Root dir / build / start = production (`uvicorn app.main:app --host 0.0.0.0 --port $PORT`). Env: staging `SUPABASE_URL/ANON_KEY/SERVICE_ROLE_KEY`, `ENVIRONMENT=staging`, `PYTHON_VERSION=3.12.0`, `FRONTEND_URL` + `BACKEND_CORS_ORIGINS` = staging URL (no trailing slash), `BACKEND_CORS_ORIGIN_REGEX=^https://[a-z0-9-]+-git-dev-[a-z0-9-]+\.vercel\.app$`. **Do not set `CORS_ORIGINS`** — it overrides BACKEND_CORS_ORIGINS. `OPTIONS ... 400` in logs = CORS misconfigured.
 
-### 4. Configure backend environment variables
-
-In the Render dashboard for `syngrad-api-staging`, set all variables from the
-**Backend** table above, pointing to the staging Supabase project.
-
-For CORS, either:
-- Add the exact Vercel preview URL to `BACKEND_CORS_ORIGINS`, **or**
-- Set `BACKEND_CORS_ORIGIN_REGEX=^https://syngrad-git-dev-[a-z0-9-]+\.vercel\.app$`
-
-### 5. Configure frontend environment variables
-
-In the Vercel project for the `dev` branch, set `VITE_SUPABASE_URL`,
-`VITE_SUPABASE_ANON_KEY`, and `VITE_API_BASE_URL` pointing at staging services.
+### 6. Vercel (same project)
+Environment Variables, type **Config**: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (anon/publishable — never service_role), `VITE_API_BASE_URL` — once scoped **Production**, once scoped **Preview → branch `dev`**. Deployment Protection off so testers can open the preview. If `dev` == `main` commit, Vercel won't build: push an empty commit to `dev`.
