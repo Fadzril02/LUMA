@@ -128,7 +128,14 @@ def load_scale(
 
     try:
         # Case-insensitive / normalized tenant lookup: match exact or uppercase
-        res = sb_client.table("grade_scales").select("*").or_(f"tenant_id.eq.{tenant_id},tenant_id.eq.{tenant_id.upper()},tenant_id.eq.{tenant_id.lower()}").execute()
+        import httpx
+        def _q():
+            return sb_client.table("grade_scales").select("*").or_(f"tenant_id.eq.{tenant_id},tenant_id.eq.{tenant_id.upper()},tenant_id.eq.{tenant_id.lower()}").execute()
+        try:
+            res = _q()
+        except httpx.TransportError:
+            # Dropped shared HTTP/2 connection; idempotent read, retry once.
+            res = _q()
         rows = res.data if res else []
     except Exception as e:
         raise ValueError(f"Failed to query grade_scales for tenant '{tenant_id}': {e}")

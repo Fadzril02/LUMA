@@ -94,8 +94,15 @@ async def _to_thread_retry(fn, *args, **kwargs):
 
 def _load_repeat_policy(tenant_id: str) -> str:
     """Fail loud: a tenant without a readable repeat_policy is a config error, never default."""
+    import httpx
+    def _q():
+        return supabase_svc.client.table("tenants").select("repeat_policy").eq("id", tenant_id).limit(1).execute()
     try:
-        t_res = supabase_svc.client.table("tenants").select("repeat_policy").eq("id", tenant_id).limit(1).execute()
+        try:
+            t_res = _q()
+        except httpx.TransportError:
+            # Supabase may drop a shared HTTP/2 connection (GOAWAY / ConnectionTerminated). Read is idempotent: retry once.
+            t_res = _q()
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"Could not load tenant settings: {e}")
     policy = (t_res.data[0].get("repeat_policy") if t_res.data else None)
